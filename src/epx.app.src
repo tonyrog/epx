@@ -1,0 +1,8 @@
+{application, epx,
+ [{description, "EPX pixel"},
+  {vsn, "%VSN%"},
+  {modules, [epx_app, epx_sup, epx]},
+  {mod,{epx_app,[]}},
+  {env, []},
+  {applications,[kernel,stdlib]}
+  ]}.
