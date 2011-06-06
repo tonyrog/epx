@@ -1,0 +1,92 @@
+
+SIMD BACKEND
+
+vectors types
+ epx_vector_i8_t    Vector with n signed 8 bits
+ epx_vector_u8_t    Vector with n unsigned 8 bits
+ epx_vector_i16_t   Vector with n signed 16 bits
+ epx_vector_u16_t   Vector with n unsigned 16 bits
+ epx_vector_i32_t   Vector with n signed 32 bits
+ epx_vector_u32_t   Vector with n unsigned 32 bits
+ epx_vector_t       Vector of any content
+
+MACROS
+
+ EPX_SIMD_VECTOR_SIZE 
+
+    sizeof(epx_vector_t) 
+		    
+ EPX_SIMD_VECTOR_ALIGN
+
+    Alignment requried for SIMD operation
+
+ EPX_SIMD_VECTOR_PIXELS_ARGB32  
+
+    Number of A8R8G8B8 that fit into a epx_vector_t
+
+ EPX_SIMD_VECTOR_PIXELS_ARGB16
+
+    Number of R5G6B5 that fit into a epx_vector_t
+
+ EPX_SIMD_VECTOR_PIXELS_ARGB15 
+
+    Number of A1R5G5B5 that fit into a epx_vector_t
+
+
+Required backend functions
+
+    epx_simd_vector_set_8(x1,...xn)    depend on EPX_SIMD_VECTOR_SIZE 
+    epx_simd_vector_set_16(y1,..,ym)   depend on EPX_SIMD_VECTOR_SIZE 
+    epx_simd_vector_set_32(z1,..zk)    depend on EPX_SIMD_VECTOR_SIZE
+
+    epx_vector_t epx_simd_vector_load_ua32(uint32_t* ptr)
+
+    	Load vector from 32 bit aligned pointer, but a pointer
+	that is NOT SIMD aligned.
+
+    epx_vector_t epx_simd_vector_load(void* ptr)
+
+    	Load vector from SIMD aligned address 
+
+    epx_vector_t epx_simd_vector_store(void* ptr, epx_vector_t vec)
+
+    	Store vector at SIMD aligned address 
+
+    epx_vector_u8_t epx_simd_vector_splat_u8(uint8_t v)
+
+    epx_vector_u16_t epx_simd_vector_splat_u16(uint16_t v)
+
+    epx_vector_u32_t epx_simd_vector_splat_u32(uint32_t v)
+
+    epx_vector_u8_t epx_simd_vector_set_pixel(uint8_t a,uint8_t r,
+    		 			      uint8_t g,uint8_t b)
+
+    epx_simd_empty_state()
+
+    epx_simd_prefetch(void* p)
+
+
+    epx_vector_u8_t epx_simd_adds_u8_sse2(epx_vector_u8_t a,
+    		    			  epx_vector_u8_t b);
+
+        add element in a b with unsigned saturation
+
+    epx_vector_u8_t epx_simd_alpha_32(epx_vector_u8_t alpha,
+		                      epx_vector_u8_t src,
+				      epx_vector_u8_t dst);
+
+    epx_vector_u8_t epx_simd_blend_argb32(epx_vector_u8_t src,
+			                  epx_vector_u8_t dst);
+
+
+    epx_vector_u8_t epx_simd_fade_argb32(epx_vector_u16_t fade,
+    		    			 epx_vector_u8_t src,
+					 epx_vector_u8_t dst);
+
+    epx_vector_u8_t epx_simd_blend_rgba32(epx_vector_u8_t src,
+    		    		 	  epx_vector_u8_t dst);
+
+
+    epx_vector_u8_t epx_simd_fade_rgba32(epx_vector_u16_t fade,
+			                 epx_vector_u8_t src,
+			                 epx_vector_u8_t dst);

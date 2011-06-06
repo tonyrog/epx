@@ -1,0 +1,58 @@
+Pixel composition operations
+
+Input pixels alpha and color components
+
+Src        = (Aa, A=(Ar,Ag,Ab))
+Dst        = (Ba, B=(Br,Bg,Bb))
+
+Color      = (Ca, C=(Cr,Cg,Cb))
+Fade	   = F
+
+The result can be tought of as call the function
+
+    Dst = <Name>(Color,Fade,Src,Dst)
+
+Alpha (Xa) is assumed to be in range [0,1] where 0 is fully transparent
+and 1 is fully opaque.
+
+Name  	 Color				Alpha		Comment
+
+-- Potter Duff operators
+
+CLEAR	 0				0		- Transparent
+
+SRC	 A*Aa				Aa		-
+
+DST	 B*Bb				Bb
+
+SRC-OVER Aa*A+(1-Aa)*B*Ba		Aa+Ba-Aa*Ba
+
+DST-OVER Ba*B+(1-Ba)*A*Aa		Aa+Ba-Aa*Ba
+
+SRC-IN	 A*Aa*Ba			Aa*Ba
+
+DST-IN	 B*Aa*Ba			Aa*Ba
+
+SRC-OUT	 A*Aa*(1-Ba)			Aa*(1-Ba)
+
+DST-OUT	 B*Ba*(1-Aa)			Ba*(1-Aa)
+
+SRC-ATOP Aa*A*Ba+(1-Aa)*B*Ba		Ba
+
+DST-ATOP Ba*B*Aa+(1-Ba)*A*Aa		Aa
+
+XOR	 A*Aa*(1-Ba)+B*Ba*(1-Aa)	Aa+Ba-2*Aa*Ba
+
+-- Other operators
+
+COPY	 A				Aa		- plain copy
+
+ADD	 A+B				Aa+Ba		- Saturate
+
+ALPHAc	 Ca*A+(1-Ca)*B			Ca*Aa+(1-Ca)*Ba	- Constant alpha
+
+BLEND    Aa*A+(1-Aa)*B			Aa*Aa+(1-Aa)*Ba - Blend using src alpha
+
+FADEa    Fa=F*Aa,F*A+(1-F)*B		Aa*F+(1-F)*Ba   - Fade using F
+
+SHADOW	 G=lum(A), (1-G)*B		
