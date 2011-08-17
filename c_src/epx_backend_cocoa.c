@@ -16,7 +16,7 @@
 
 #undef HAVE_OPENGL   // not yet
 
-#include "epic.h"
+#include "epx_backend.h"
 #ifdef HAVE_OPENGL
 #include <AGL/agl.h>
 #endif
@@ -26,7 +26,7 @@
 #define kEpicEventDel 2
 
 typedef struct {
-    EBackend b;
+    epx_backend_t b;
     int     ofd;                /* pipe output signal */
     MenuRef menu;
     unsigned short modstate;    /* modifier state */
@@ -34,7 +34,7 @@ typedef struct {
 } CocoaBackend;
 
 typedef struct {
-    EWindow*         ewin;       // reference to EPic representaion
+    epx_window_t*    ewin;       // reference to EPx representaion
     NSRect           winBounds;
     NSUInteger       winAttrs;
     NSWindow*        winNS;       // Cocoa window
@@ -58,27 +58,27 @@ typedef struct {
 } CocoaPixels;
 
 
-EBackend* cocoa_init(EDict* param);
+epx_backend_t* cocoa_init(epx_dict_t* param);
 
-static int cocoa_finish(EBackend*);
-static int cocoa_pic_attach(EBackend*, EPixmap* pic);
-static int cocoa_pic_detach(EBackend*, EPixmap* pic);
-static int cocoa_begin(EWindow* ewin);
-static int cocoa_end(EWindow* ewin, int off_screen);
-static int cocoa_pic_draw(EBackend*, EPixmap* pic, EWindow* win,
+static int cocoa_finish(epx_backend_t*);
+static int cocoa_pic_attach(epx_backend_t*, epx_pixmap_t* pic);
+static int cocoa_pic_detach(epx_backend_t*, epx_pixmap_t* pic);
+static int cocoa_begin(epx_window_t* ewin);
+static int cocoa_end(epx_window_t* ewin, int off_screen);
+static int cocoa_pic_draw(epx_backend_t*, epx_pixmap_t* pic, epx_window_t* win,
 			   int src_x, int src_y, int dst_x, int dst_y,
 			   unsigned int width,
 			   unsigned int height);
-static int cocoa_win_attach(EBackend*, EWindow* win);
-static int cocoa_win_detach(EBackend*, EWindow* win);
-static int cocoa_win_swap(EBackend*, EWindow* win);
-static EHANDLE_T cocoa_evt_attach(EBackend*);
-static int cocoa_evt_detach(EBackend*);
-static int cocoa_evt_read(EBackend*, EEvent*);
-static int cocoa_adjust(EBackend *backend, EDict* param);
-static int cocoa_win_adjust(EWindow*, EDict* param);
+static int cocoa_win_attach(epx_backend_t*, epx_window_t* win);
+static int cocoa_win_detach(epx_backend_t*, epx_window_t* win);
+static int cocoa_win_swap(epx_backend_t*, epx_window_t* win);
+static EPX_HANDLE_T cocoa_evt_attach(epx_backend_t*);
+static int cocoa_evt_detach(epx_backend_t*);
+static int cocoa_evt_read(epx_backend_t*, epx_event_t*);
+static int cocoa_adjust(epx_backend_t *backend, epx_dict_t* param);
+static int cocoa_win_adjust(epx_window_t*, epx_dict_t* param);
 
-static EPicCallbacks cocoa_callbacks =
+static epx_callbacks_t cocoa_callbacks =
 {
     cocoa_finish,
     cocoa_pic_attach,
@@ -250,7 +250,7 @@ static OSStatus cocoa_gl_setup(CocoaWindow* cwin)
     save = aglGetCurrentContext();
     aglSetCurrentContext(cwin->aglContext);
     aglUpdateContext (cwin->aglContext);
-    // FIXME: setup from EDict
+    // FIXME: setup from epx_dict_t
     aglSetInteger (cwin->aglContext, AGL_SWAP_INTERVAL, &swap); 
     aglSetCurrentContext(save);
 
@@ -295,7 +295,7 @@ void* cocoa_event_thread(void* arg)
     // EventRef theEvent;
     // EventTargetRef theTarget;
 
-    EDBGFMT("cocoa_event_thread: running ofd=%d", be->ofd);
+    EPX_DBGFMT("cocoa_event_thread: running ofd=%d", be->ofd);
 
     {
 	ProcessSerialNumber psn;
@@ -330,7 +330,7 @@ void* cocoa_event_thread(void* arg)
 }
 
 
-EBackend* cocoa_init(EDict* param)
+epx_backend_t* cocoa_init(epx_dict_t* param)
 {
 #pragma unused(param)
     CocoaBackend* be;
@@ -339,7 +339,7 @@ EBackend* cocoa_init(EDict* param)
 
     if ((be = (CocoaBackend*) malloc(sizeof(CocoaBackend))) == NULL)
 	return NULL;
-    EOBJECT_INIT((EBackend*)be, EBACKEND_TYPE);
+    EPX_OBJECT_INIT((epx_backend_t*)be, EPX_BACKEND_TYPE);
 
     be->b.cb = &cocoa_callbacks;
     be->b.pending = 0;
@@ -347,16 +347,16 @@ EBackend* cocoa_init(EDict* param)
     be->b.use_opengl = 0;
     be->b.pixmap_list = NULL;
     be->b.window_list = NULL;
-    be->b.event = INVALID_HANDLE;
+    be->b.event = EPX_INVALID_HANDLE;
 
-    if (EDictLookupInteger(param, "use_opengl", &int_param) != -1)
+    if (epx_dict_lookup_integer(param, "use_opengl", &int_param) != -1)
 	be->b.use_opengl = int_param;
 #ifdef HAVE_OPENGL
     be->b.opengl = 1;
 #endif
 
     pipe(cocoa_pipe);
-    be->b.event = (EHANDLE_T) cocoa_pipe[0];
+    be->b.event = (EPX_HANDLE_T) cocoa_pipe[0];
     be->ofd     = cocoa_pipe[1];
     pthread_mutex_init(&cocoa_lock, NULL);
     pthread_mutex_lock(&cocoa_lock);  // Lock until thread is initialised
@@ -366,35 +366,35 @@ EBackend* cocoa_init(EDict* param)
     pthread_mutex_lock(&cocoa_lock);    // Wait for init to complete
     pthread_mutex_unlock(&cocoa_lock);  // Wait for init to complete
 
-    return (EBackend*) &(be->b);
+    return (epx_backend_t*) &(be->b);
 }
 
 /* return the backend event handle */
-static EHANDLE_T cocoa_evt_attach(EBackend* backend)
+static EPX_HANDLE_T cocoa_evt_attach(epx_backend_t* backend)
 {
     CocoaBackend* be = (CocoaBackend*) backend;
-    return (EHANDLE_T) be->b.event;
+    return (EPX_HANDLE_T) be->b.event;
 }
 
-static int cocoa_evt_detach(EBackend* backend)
+static int cocoa_evt_detach(epx_backend_t* backend)
 {
     (void) backend;
     return 0;
 }
 
-static int cocoa_evt_read(EBackend* backend, EEvent* e)
+static int cocoa_evt_read(epx_backend_t* backend, epx_event_t* e)
 {
     int r = 0;
     
     if ((r=backend->pending) == 0) // LOCK atomic check
 	return 0;
-    if (read((int)backend->event, (void*) e, sizeof(EEvent)) < 0)
+    if (read((int)backend->event, (void*) e, sizeof(epx_event_t)) < 0)
 	return -1;
     backend->pending--;  // LOCK atomic! check
     return r;
 }
 
-static int cocoa_finish(EBackend* backend)
+static int cocoa_finish(epx_backend_t* backend)
 {
     CocoaBackend* be = (CocoaBackend*) backend;
 
@@ -405,20 +405,20 @@ static int cocoa_finish(EBackend* backend)
 static void pixel_ReleaseInfo(void *info)
 {
     (void) info;
-    EDBGFMT_MEM("ReleaseInfo");
+    EPX_DBGFMT_MEM("ReleaseInfo");
     /* NOOP */
 }
 
 static const void* pixel_GetBytePointer(void* info)
 {
-    EPixmap* pic = (EPixmap*) info;
+    epx_pixmap_t* pic = (epx_pixmap_t*) info;
     return (void*) pic->data;
 }
 
 static size_t pixel_GetBytesAtOffset(void *info, void *buffer, 
 				     off_t offset, size_t count)
 {
-    EPixmap* pic = (EPixmap*) info;
+    epx_pixmap_t* pic = (epx_pixmap_t*) info;
     memcpy(buffer, pic->data+offset, count);
     return count;
 }
@@ -439,7 +439,7 @@ static CGDataProviderDirectCallbacks dacallbacks =
     pixel_ReleaseInfo
 };
 
-static int cocoa_pic_attach(EBackend* backend, EPixmap* pixmap)
+static int cocoa_pic_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     CocoaBackend* be = (CocoaBackend*) backend;
     CocoaPixels* pe;
@@ -452,52 +452,52 @@ static int cocoa_pic_attach(EBackend* backend, EPixmap* pixmap)
     pe->colorspace = CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB);
     pe->bitmapinfo = 0;
 
-    switch(pixmap->pixelType) {
-    case EPIXEL_TYPE_RGB:
+    switch(pixmap->pixel_format) {
+    case EPX_FORMAT_RGB:
 	pe->bitmapinfo |= kCGImageAlphaNone;         /* RGB format */
 	break;
-    case EPIXEL_TYPE_RGBA:
+    case EPX_FORMAT_RGBA:
 	pe->bitmapinfo |= kCGBitmapByteOrder32Big;
 	pe->bitmapinfo |= kCGImageAlphaNoneSkipLast; /* RGBA format */
 	break;
-    case EPIXEL_TYPE_ARGB:
+    case EPX_FORMAT_ARGB:
 	pe->bitmapinfo |= kCGBitmapByteOrder32Big;
 	pe->bitmapinfo |= kCGImageAlphaNoneSkipFirst; /* ARGB format */
 	break;
-    case EPIXEL_TYPE_BGR: /* ??? */
+    case EPX_FORMAT_BGR: /* ??? */
 	pe->bitmapinfo |= kCGImageAlphaNone;         /* BGR format */
 	break;
-    case EPIXEL_TYPE_BGRA: /* ARGB */
+    case EPX_FORMAT_BGRA: /* ARGB */
 	pe->bitmapinfo |= kCGBitmapByteOrder32Little;
 	pe->bitmapinfo |= kCGImageAlphaNoneSkipFirst;
 	break;
-    case EPIXEL_TYPE_ABGR: /* RGBA */
+    case EPX_FORMAT_ABGR: /* RGBA */
 	pe->bitmapinfo |= kCGBitmapByteOrder32Little;
 	pe->bitmapinfo |= kCGImageAlphaNoneSkipLast;
 	break;
     default:
-	fprintf(stderr, "macos: unhandled pixelType = %d\n", pixmap->pixelType);
+	fprintf(stderr, "macos: unhandled pixelType = %d\n", pixmap->pixel_format);
 	free(pe);
 	return -1;
     }
 
     pe->provider = CGDataProviderCreateDirect(
 	(void*) pixmap, pixmap->sz, &dacallbacks);
-    EObjectLink(&backend->pixmap_list, pixmap);
+    epx_object_link(&backend->pixmap_list, pixmap);
     pixmap->opaque = (void*) pe;
-    pixmap->backend = (EBackend*) be;
+    pixmap->backend = (epx_backend_t*) be;
     return 0;
 }
 
 						
-static int cocoa_pic_detach(EBackend* backend, EPixmap* pixmap)
+static int cocoa_pic_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     CocoaPixels* pe = (CocoaPixels*) pixmap->opaque;
 
     if (pe != NULL) {
 	CGColorSpaceRelease(pe->colorspace);
 	CGDataProviderRelease(pe->provider);
-	EObjectUnlink(&backend->pixmap_list, pixmap);
+	epx_object_unlink(&backend->pixmap_list, pixmap);
 	pixmap->opaque = NULL;
 	pixmap->backend = NULL;
     }
@@ -506,13 +506,13 @@ static int cocoa_pic_detach(EBackend* backend, EPixmap* pixmap)
 
 /* There must be a better way */
 static void draw_image(CGContextRef ctx, CGRect srcRect, CGRect dstRect,
-		       EPixmap* pic)
+		       epx_pixmap_t* pic)
 {
     CocoaPixels* pe = (CocoaPixels*) pic->opaque;
     CGImageRef img;
     CGImageRef srcImg;
-    unsigned int bytesPerRow   = pic->bytesPerRow;
-    unsigned int bitsPerPixel  = pic->bitsPerPixel;
+    unsigned int bytesPerRow   = pic->bytes_per_row;
+    unsigned int bitsPerPixel  = pic->bits_per_pixel;
 
     // Boring to create this every time!
     img = CGImageCreate(pic->width,               /* width in pixels */
@@ -552,7 +552,7 @@ static void draw_image(CGContextRef ctx, CGRect srcRect, CGRect dstRect,
     CGImageRelease(img);
 }
 
-static int cocoa_begin(EWindow* ewin)
+static int cocoa_begin(epx_window_t* ewin)
 {
     CocoaWindow* cwin = (CocoaWindow*) ewin->opaque;
 
@@ -576,7 +576,7 @@ static int cocoa_begin(EWindow* ewin)
     return 0;
 }
 
-static int cocoa_end(EWindow* ewin, int off_screen)
+static int cocoa_end(epx_window_t* ewin, int off_screen)
 {
     (void) off_screen;
     CocoaWindow* cwin = (CocoaWindow*) ewin->opaque;
@@ -606,7 +606,7 @@ static int cocoa_end(EWindow* ewin, int off_screen)
 
 
 
-static int cocoa_pic_draw(EBackend* backend, EPixmap* pic, EWindow* ewin,
+static int cocoa_pic_draw(epx_backend_t* backend, epx_pixmap_t* pic, epx_window_t* ewin,
 			   int src_x, int src_y, int dst_x, int dst_y,
 			   unsigned int width,
 			   unsigned int height)
@@ -620,8 +620,8 @@ static int cocoa_pic_draw(EBackend* backend, EPixmap* pic, EWindow* ewin,
     if (ewin->opengl) {
 #ifdef HAVE_OPENGL
 	// Fixme check for errors
-	EGlLoadTexture(pic, &cwin->textureName, 0, 1,  GL_REPEAT,
-		       src_x, src_y, width, height);
+	epx_gl_load_texture(pic, &cwin->textureName, 0, 1,  GL_REPEAT,
+			    src_x, src_y, width, height);
 	glEnable(GL_TEXTURE_RECTANGLE_EXT); // enable texturing
 	glBindTexture (GL_TEXTURE_RECTANGLE_ARB, cwin->textureName);
 	glBegin(GL_QUADS); {
@@ -651,7 +651,7 @@ static int cocoa_pic_draw(EBackend* backend, EPixmap* pic, EWindow* ewin,
     return 0;
 }
 
-static int cocoa_win_swap(EBackend* backend, EWindow* ewin)
+static int cocoa_win_swap(epx_backend_t* backend, epx_window_t* ewin)
 {
     (void) backend;
 
@@ -671,7 +671,7 @@ static int cocoa_win_swap(EBackend* backend, EWindow* ewin)
     return 0;
 }
 
-static int cocoa_win_attach(EBackend* backend, EWindow* ewin)
+static int cocoa_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 {
     CocoaBackend* be = (CocoaBackend*) backend;
     CocoaWindow* cwin;
@@ -688,8 +688,8 @@ static int cocoa_win_attach(EBackend* backend, EWindow* ewin)
     cwin->winIsSetup = 0;
     ewin->opaque = (void*) cwin;
 
-    EObjectLink(&backend->window_list, ewin);
-    ewin->backend = (EBackend*) be;
+    epx_object_link(&backend->window_list, ewin);
+    ewin->backend = (epx_backend_t*) be;
 
     cwin->winAttrs = 
 	NSTitledWindowMask |
@@ -703,13 +703,13 @@ static int cocoa_win_attach(EBackend* backend, EWindow* ewin)
     cwin->winBounds.size.height = ewin->height;
     cwin->winBounds.size.width  = ewin->width;
 
-    EDBGFMT("cocoa_win_attach: cwin=%p", cwin);
+    EPX_DBGFMT("cocoa_win_attach: cwin=%p", cwin);
     MacCreateEvent(nil, 'EPIC',  kEpicEventNew, GetCurrentEventTime(),
 		   kEventAttributeNone, &newEvent);
     SetEventParameter(newEvent, 'EPIC', 'CWIN', sizeof(CocoaWindow*), &cwin);
     PostEventToQueue(GetMainEventQueue(), newEvent, kEventPriorityHigh);
     ReleaseEvent(newEvent);
-    EDBGFMT("cocoa_win_attach: post done");
+    EPX_DBGFMT("cocoa_win_attach: post done");
 
     while(cwin->winIsSetup == 0)
 	usleep(1000);
@@ -720,14 +720,14 @@ static int cocoa_win_attach(EBackend* backend, EWindow* ewin)
     return 0;
 }
 
-static int cocoa_win_detach(EBackend* backend, EWindow* ewin)
+static int cocoa_win_detach(epx_backend_t* backend, epx_window_t* ewin)
 {
     CocoaWindow* cwin = (CocoaWindow*) ewin->opaque;
 
     if (cwin != NULL) {
 	EventRef  delEvent;
 
-	EObjectUnlink(&backend->window_list, ewin);
+	epx_object_unlink(&backend->window_list, ewin);
 	ewin->opaque = NULL;
 	ewin->backend = NULL;
 
@@ -760,7 +760,7 @@ static pascal OSStatus EPicAppEventHandler(
 	CocoaWindow* cwin;
 	GetEventParameter( inEvent, 'EPIC', 'CWIN', 
 			   NULL, sizeof(CocoaWindow*), NULL, &cwin);
-	EDBGFMT("EPicAppEventHandler:cwin = %p", cwin);
+	EPX_DBGFMT("EPicAppEventHandler:cwin = %p", cwin);
 	if (cwin == NULL)
 	    return eventNotHandledErr;
 	if (eventKind == kEpicEventNew) {
@@ -790,7 +790,7 @@ static pascal OSStatus EPicAppEventHandler(
 			   backing:NSBackingStoreBuffered
 			   defer:NO];
 	    if (!cwin->winNS) {
-		EDBGFMT("EPicAppEventHandler: could not create window %d\n",
+		EPX_DBGFMT("EPicAppEventHandler: could not create window %d\n",
 			(int) err);
 		cwin->winErr = paramErr;  // error code?
 		cwin->winIsSetup = 1;
@@ -809,7 +809,7 @@ static pascal OSStatus EPicAppEventHandler(
 
 
 	    if ((err = InstallStandardEventHandler(GetWindowEventTarget(cwin->winRef))) != noErr) {
-		EDBGFMT("EPicAppEventHandler: could not install standard event handler %d\n",
+		EPX_DBGFMT("EPicAppEventHandler: could not install standard event handler %d\n",
 			(int) err);
 		cwin->winErr = err;
 		cwin->winIsSetup = 1;
@@ -849,25 +849,25 @@ static pascal OSStatus EPicAppEventHandler(
 }
 
 // FilterEvent: return 1 to discard, return 0 to keep
-static int FilterEvent(EEvent* e)
+static int FilterEvent(epx_event_t* e)
 {
     u_int32_t mask;
 
     if (!e->window)
 	return 1;
-    if (e->type == EEVENT_CLOSE)
+    if (e->type == EPX_EVENT_CLOSE)
 	return 0;
     mask = e->window->mask;
     if ((e->type & mask) == 0)
 	return 1;
     switch(e->type) {
-    case EEVENT_BUTTON_PRESS:
-    case EEVENT_BUTTON_RELEASE:
-    case EEVENT_POINTER_MOTION:
+    case EPX_EVENT_BUTTON_PRESS:
+    case EPX_EVENT_BUTTON_RELEASE:
+    case EPX_EVENT_POINTER_MOTION:
 	if ((e->pointer.x < 0) || (e->pointer.y < 0))
 	    return 1;
-	mask &= EEVENT_BUTTON_MASK; // only button events
-	if (mask == EEVENT_BUTTON_ANY)
+	mask &= EPX_EVENT_BUTTON_MASK; // only button events
+	if (mask == EPX_EVENT_BUTTON_ANY)
 	    return 0;
 	if ((e->pointer.button & (mask >> 16)) == 0)
 	    return 1;
@@ -890,10 +890,10 @@ static pascal OSStatus EPicWindowEventHandler(
     UInt32	eventClass = GetEventClass(inEvent);
     UInt32	eventKind = GetEventKind(inEvent);
     CocoaWindow* cwin = (CocoaWindow*) inRefcon;
-    EWindow*      ewin;
+    epx_window_t*      ewin;
     CocoaBackend* be;
     WindowRef     window;
-    EEvent e;
+    epx_event_t e;
 
     if (cwin == NULL)
 	return result;
@@ -921,43 +921,43 @@ static pascal OSStatus EPicWindowEventHandler(
 				typeUInt32, NULL, sizeof(keyMod),
 				NULL, &keyMod);
 	if (eventKind == kEventRawKeyDown)
-	    e.type = EEVENT_KEY_PRESS;
+	    e.type = EPX_EVENT_KEY_PRESS;
 	else if (eventKind == kEventRawKeyUp)
-	    e.type = EEVENT_KEY_RELEASE;
+	    e.type = EPX_EVENT_KEY_RELEASE;
 	e.key.mod  = 0;
 	if (keyMod & shiftKey)
-	    e.key.mod |= EKBD_MOD_LSHIFT;
+	    e.key.mod |= EPX_KBD_MOD_LSHIFT;
 	if (keyMod & controlKey)
-	    e.key.mod |= EKBD_MOD_LCTRL;
+	    e.key.mod |= EPX_KBD_MOD_LCTRL;
 	if (keyMod & optionKey)
-	    e.key.mod |= EKBD_MOD_LALT;
+	    e.key.mod |= EPX_KBD_MOD_LALT;
 	if (keyMod & alphaLock)
-	    e.key.mod |= EKBD_MOD_CAPS;
+	    e.key.mod |= EPX_KBD_MOD_CAPS;
 	if (keyMod & kEventKeyModifierNumLockMask)
-	    e.key.mod |= EKBD_MOD_NUM;
+	    e.key.mod |= EPX_KBD_MOD_NUM;
 	// keyMod & kEventKeyModifierFnMask
 
 	switch(ch) {
 	case kBackspaceCharCode:
-	    e.key.sym = EKBD_KEY_BACKSPACE; break;
+	    e.key.sym = EPX_KBD_KEY_BACKSPACE; break;
 	case kTabCharCode:
-	    e.key.sym = EKBD_KEY_TAB; break;	    
+	    e.key.sym = EPX_KBD_KEY_TAB; break;	    
 	case kReturnCharCode:
-	    e.key.sym = EKBD_KEY_ENTER; break;
+	    e.key.sym = EPX_KBD_KEY_ENTER; break;
 	case kLeftArrowCharCode:
-	    e.key.sym = EKBD_KEY_LEFT; break;
+	    e.key.sym = EPX_KBD_KEY_LEFT; break;
 	case kRightArrowCharCode:
-	    e.key.sym = EKBD_KEY_RIGHT; break;
+	    e.key.sym = EPX_KBD_KEY_RIGHT; break;
 	case kUpArrowCharCode:
-	    e.key.sym = EKBD_KEY_UP; break;
+	    e.key.sym = EPX_KBD_KEY_UP; break;
 	case kDownArrowCharCode:
-	    e.key.sym = EKBD_KEY_DOWN; break;
+	    e.key.sym = EPX_KBD_KEY_DOWN; break;
 	case kPageUpCharCode:
-	    e.key.sym = EKBD_KEY_PAGEUP; break;
+	    e.key.sym = EPX_KBD_KEY_PAGEUP; break;
 	case kPageDownCharCode:
-	    e.key.sym = EKBD_KEY_PAGEDOWN; break;
+	    e.key.sym = EPX_KBD_KEY_PAGEDOWN; break;
 	case kDeleteCharCode:
-	    e.key.sym = EKBD_KEY_DELETE; break;	    
+	    e.key.sym = EPX_KBD_KEY_DELETE; break;	    
 	default:
 	    e.key.sym = (ch & 0x7f);
 	    break;
@@ -971,7 +971,7 @@ static pascal OSStatus EPicWindowEventHandler(
 //  kSpaceCharCode                = 32,
 //  kDeleteCharCode               = 127,
 	e.key.code = keyCode;
-	EDBGFMT("Keyboard event: fd=%d\n", be->ofd);
+	EPX_DBGFMT("Keyboard event: fd=%d\n", be->ofd);
 	goto notHandled_event;
     }
 
@@ -992,7 +992,7 @@ static pascal OSStatus EPicWindowEventHandler(
 			  NULL, &modifiers);
 
 	if (eventKind == kEventMouseWheelMoved) {
-	    e.type = EEVENT_BUTTON_PRESS;
+	    e.type = EPX_EVENT_BUTTON_PRESS;
 	    GetEventParameter(inEvent, kEventParamMouseWheelAxis,
 			      typeMouseWheelAxis, NULL, sizeof(axis), 
 			      NULL, &axis);
@@ -1002,11 +1002,11 @@ static pascal OSStatus EPicWindowEventHandler(
 	}
 	else {
 	    if (eventKind == kEventMouseDown)
-		e.type = EEVENT_BUTTON_PRESS;
+		e.type = EPX_EVENT_BUTTON_PRESS;
 	    else if (eventKind == kEventMouseUp)
-		e.type = EEVENT_BUTTON_RELEASE;
+		e.type = EPX_EVENT_BUTTON_RELEASE;
 	    else if (eventKind == kEventMouseDragged)
-		e.type = EEVENT_POINTER_MOTION;
+		e.type = EPX_EVENT_POINTER_MOTION;
 	    else
 		break;
 	    GetEventParameter(inEvent, kEventParamMouseButton,
@@ -1016,22 +1016,22 @@ static pascal OSStatus EPicWindowEventHandler(
 
 
 	if (button == kEventMouseButtonPrimary)
-	    e.pointer.button = EBUTTON_LEFT;
+	    e.pointer.button = EPX_BUTTON_LEFT;
 	else if (button == kEventMouseButtonTertiary)
-	    e.pointer.button = EBUTTON_MIDDLE;
+	    e.pointer.button = EPX_BUTTON_MIDDLE;
 	else if (button == kEventMouseButtonSecondary)
-	    e.pointer.button = EBUTTON_RIGHT;
+	    e.pointer.button = EPX_BUTTON_RIGHT;
 	else if (axis == kEventMouseWheelAxisX) {
 	    if (delta > 0)
-		e.pointer.button = EWHEEL_LEFT;
+		e.pointer.button = EPX_WHEEL_LEFT;
 	    else if (delta < 0)
-		e.pointer.button = EWHEEL_RIGHT;
+		e.pointer.button = EPX_WHEEL_RIGHT;
 	}
 	else if (axis == kEventMouseWheelAxisY) {
 	    if (delta > 0)
-		e.pointer.button = EWHEEL_UP;
+		e.pointer.button = EPX_WHEEL_UP;
 	    else if (delta < 0)
-		e.pointer.button = EWHEEL_DOWN;
+		e.pointer.button = EPX_WHEEL_DOWN;
 	}
 	else
 	    break;
@@ -1042,7 +1042,7 @@ static pascal OSStatus EPicWindowEventHandler(
 	e.pointer.x = where.x - bounds.origin.x;
 	e.pointer.y = where.y - bounds.origin.y;;
 	e.pointer.z = 0;
-	EDBGFMT("Mouse event(%d): %d (%d,%d)\n", 
+	EPX_DBGFMT("Mouse event(%d): %d (%d,%d)\n", 
 		e.type,button,where.x,where.y);
 	goto notHandled_event;
     }
@@ -1050,11 +1050,11 @@ static pascal OSStatus EPicWindowEventHandler(
     case kEventClassWindow:
         /* if ( eventKind == kEventWindowDrawContent ) {
 	    SetUserFocusWindow(cwin->winRef);
-	    EDBGFMT("WindowDrawContent\n");
+	    EPX_DBGFMT("WindowDrawContent\n");
         }
         else */ if ( eventKind == kEventWindowClose ) {
-	    EDBGFMT("WindowClose\n");
-	    e.type = EEVENT_CLOSE;
+	    EPX_DBGFMT("WindowClose\n");
+	    e.type = EPX_EVENT_CLOSE;
 	    goto handled_event;
         }
         else if (eventKind == kEventWindowClickContentRgn) {
@@ -1076,19 +1076,19 @@ static pascal OSStatus EPicWindowEventHandler(
 	    // What should we use?
             // QDGlobalToLocalPoint(GetWindowPort(window), &where);
 
-	    e.type = EEVENT_BUTTON_PRESS;
+	    e.type = EPX_EVENT_BUTTON_PRESS;
 	    e.pointer.x = where.x; // where.h;
 	    e.pointer.y = where.y; // where.v;
 	    e.pointer.z = 0;
-	    EDBGFMT("WindowClickContentRgn %d, %d\n", where.x, where.y);
+	    EPX_DBGFMT("WindowClickContentRgn %d, %d\n", where.x, where.y);
 	    goto handled_event;
         }
         else if ( eventKind == kEventWindowFocusAcquired) {
-	    e.type = EEVENT_FOCUS_IN;
+	    e.type = EPX_EVENT_FOCUS_IN;
 	    goto handled_event;
 	}
         else if ( eventKind == kEventWindowFocusRelinquish) {
-	    e.type = EEVENT_FOCUS_OUT;
+	    e.type = EPX_EVENT_FOCUS_OUT;
 	    goto handled_event;
 	}
         else if ( eventKind == kEventWindowBoundsChanged ) {
@@ -1099,9 +1099,9 @@ static pascal OSStatus EPicWindowEventHandler(
 			       NULL, &r);
             // We get here also when the window gets moved and doesn't 
 	    // need to be redrawn.
-	    EDBGFMT("WindowBoundsChanged %d,%d,%d,%d\n",
+	    EPX_DBGFMT("WindowBoundsChanged %d,%d,%d,%d\n",
 		    r.top, r.left, r.bottom, r.right);
-	    e.type = EEVENT_RESIZE;
+	    e.type = EPX_EVENT_RESIZE;
 	    e.dimension.w = (r.right-r.left)+1;
 	    e.dimension.h = (r.bottom-r.top)+1;
 	    e.dimension.d = 0;
@@ -1146,7 +1146,7 @@ notHandled_event:
     return eventNotHandledErr;
 }
 
-int cocoa_adjust(EBackend *backend, EDict* param)
+int cocoa_adjust(epx_backend_t *backend, epx_dict_t* param)
 {
     (void) backend;
     (void) param;
@@ -1154,7 +1154,7 @@ int cocoa_adjust(EBackend *backend, EDict* param)
     return 1;
 }
 
-int cocoa_win_adjust(EWindow *win, EDict* param)
+int cocoa_win_adjust(epx_window_t *win, epx_dict_t* param)
 {
     int width, wi;
     int height, hi;
@@ -1162,8 +1162,8 @@ int cocoa_win_adjust(EWindow *win, EDict* param)
     CocoaWindow* cwin = (CocoaWindow*)win->opaque;
 
     printf("cocoa: Window adjust\n");
-    wi=EDictLookupInteger(param, "width", &width);
-    hi=EDictLookupInteger(param, "height", &height);
+    wi=epx_dict_lookup_integer(param, "width", &width);
+    hi=epx_dict_lookup_integer(param, "height", &height);
 
     printf("cocoa:%d width=%d\n", wi, width);
     printf("cocoa:%d height=%d\n", hi, height);
@@ -1182,14 +1182,14 @@ int cocoa_win_adjust(EWindow *win, EDict* param)
 	SizeWindow(cwin->winRef, width, height, false);
     }
     
-    if (EDictLookupBoolean(param, "show", &bool_val) >= 0) {
+    if (epx_dict_lookup_boolean(param, "show", &bool_val) >= 0) {
 	if (bool_val)
 	    ShowWindow(cwin->winRef);
 	else
 	    HideWindow(cwin->winRef);
     }
 
-    if (EDictLookupBoolean(param, "select", &bool_val) >= 0) {
+    if (epx_dict_lookup_boolean(param, "select", &bool_val) >= 0) {
 	if (bool_val)
 	    SelectWindow(cwin->winRef);
     }

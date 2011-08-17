@@ -8,6 +8,8 @@
 
 extern void epx_draw_line_horizontal(epx_pixmap_t* pic, int x1, int x2, int y, 
 				     int flags, epx_pixel_t fg);
+extern void epx_draw_line_vertical(epx_pixmap_t* pic, int x, int y1, int y2,
+				   int flags, epx_pixel_t fg);
 extern void epx_draw_line_plain(epx_pixmap_t* pic, int x1, int y1,int x2,int y2,
 				int flags, epx_pixel_t fg);
 extern void epx_draw_line(epx_pixmap_t* pic, int x0, int y0, int x1, int y1, 
@@ -132,6 +134,11 @@ void epx_pixmap_draw_line(epx_pixmap_t* pic, epx_gc_t* gc,
 	    epx_draw_line_horizontal(pic,x0,x1,y0,
 				     gc->line_style,
 				     gc->foreground_color);
+	else if (x1 == x0) {
+	    epx_draw_line_vertical(pic,x0,y0,y1,
+				   gc->line_style,
+				   gc->foreground_color);
+	}
 	else
 	    epx_draw_line_plain(pic,x0,y0,x1,y1,
 				gc->line_style,

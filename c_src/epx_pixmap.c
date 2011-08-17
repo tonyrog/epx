@@ -147,7 +147,7 @@ static void epx_fill_8(uint8_t* ptr, uint8_t x0, size_t n)
 	*ptr++ = x0;
 }
 
-// swap_8 - maybe used to swap two lines of data
+// swap_8 - may be used to swap two lines of data
 static void epx_swap_8(uint8_t* ptr1, uint8_t* ptr2, size_t n)
 {
     while(n--) {
@@ -1613,21 +1613,6 @@ void epx_pixmap_flip(epx_pixmap_t* pic)
 	ptr2 -= pic->bytes_per_row;
     }
 }
-//
-// FIXME make this buffer thread safe
-//
-static unsigned int pixel_buffer_size = 0;
-static uint8_t* pixel_buffer = NULL;
-
-static uint8_t* pixel_buffer_alloc(unsigned int n)
-{
-    if (pixel_buffer_size  < n) {
-	pixel_buffer = (uint8_t*) realloc(pixel_buffer, n);
-	pixel_buffer_size = n;
-    }
-    return pixel_buffer;
-}
-
 
 // copy area and shift lines left or right 
 static inline void shift_area(uint8_t* src, int src_wb, int src_pt,
@@ -1655,10 +1640,10 @@ static inline void shift_area(uint8_t* src, int src_wb, int src_pt,
 
 
 /* copy area and shift lines left or right */
-static inline void rotate_area(uint8_t* src, int src_wb, int src_pt,
-			       uint8_t* dst, int dst_wb, int dst_pt,
-			       unsigned int width, unsigned int height, 
-			       int amount)
+static inline void shift_area_rotate(uint8_t* src, int src_wb, int src_pt,
+				     uint8_t* dst, int dst_wb, int dst_pt,
+				     unsigned int width, unsigned int height, 
+				     int amount)
 {
     int a = (amount < 0) ? -amount : amount;
     int src_psz = EPX_PIXEL_SIZE(src_pt);
@@ -1687,7 +1672,7 @@ static inline void rotate_area(uint8_t* src, int src_wb, int src_pt,
     a *= src_psz;
 
     if (is_inline) {
-	uint8_t* save = pixel_buffer_alloc(a);
+	uint8_t* save = malloc(a);
 
 	while(height--) {
 	    memcpy(save, src_from, a);
@@ -1698,6 +1683,7 @@ static inline void rotate_area(uint8_t* src, int src_wb, int src_pt,
 	    dst      += dst_wb;
 	    dst_to   += dst_wb;
 	}
+	free(save);
     }
     else {  /* not inline */
 	while(height--) {
@@ -1739,8 +1725,9 @@ void epx_pixmap_scroll_left(epx_pixmap_t* src, epx_pixmap_t* dst,
     int a = amount;
 
     if (rotate)
-	rotate_area(src->data, src->bytes_per_row, src->pixel_format, 
-		    dst->data, dst->bytes_per_row, dst->pixel_format, w, h, a);
+	shift_area_rotate(src->data, src->bytes_per_row, src->pixel_format, 
+			  dst->data, dst->bytes_per_row, dst->pixel_format, 
+			  w, h, a);
     else {
 	shift_area(src->data, src->bytes_per_row, src->pixel_format,
 		   dst->data, dst->bytes_per_row, dst->pixel_format, w, h, a);
@@ -1758,8 +1745,9 @@ void epx_pixmap_scroll_right(epx_pixmap_t* src, epx_pixmap_t* dst,
     int a = amount;
 
     if (rotate)
-	rotate_area(src->data, src->bytes_per_row, src->pixel_format,
-		    dst->data, dst->bytes_per_row, dst->pixel_format, w, h, -a);
+	shift_area_rotate(src->data, src->bytes_per_row, src->pixel_format,
+			  dst->data, dst->bytes_per_row, dst->pixel_format,
+			  w, h, -a);
     else {
 	shift_area(src->data, src->bytes_per_row, src->pixel_format,
 		   dst->data, dst->bytes_per_row, dst->pixel_format, w, h, -a);
@@ -1787,7 +1775,7 @@ void epx_pixmap_scroll_up(epx_pixmap_t* src, epx_pixmap_t* dst,
 
 	if (rotate) {
 	    if (src == dst) {
-		uint8_t* save = pixel_buffer_alloc(amount*src->width*dst->bytes_per_pixel);
+		uint8_t* save = malloc(amount*src->width*dst->bytes_per_pixel);
 		uint8_t* dst_save = EPX_PIXEL_ADDR(dst,0,0);
 
 		epx_copy_area(dst_save, dst->bytes_per_row, dst->pixel_format,
@@ -1800,6 +1788,7 @@ void epx_pixmap_scroll_up(epx_pixmap_t* src, epx_pixmap_t* dst,
 		epx_copy_area(save, dst->bytes_per_row, dst->pixel_format,
 			      dst_ptr, dst->bytes_per_row, dst->pixel_format,
 			      w, amount);
+		free(save);
 	    }
 	    else {
 		epx_copy_area(src_ptr, src->bytes_per_row, src->pixel_format,
@@ -1841,7 +1830,7 @@ void epx_pixmap_scroll_down(epx_pixmap_t* src, epx_pixmap_t* dst,
 
 	if (rotate) {
 	    if (src == dst) {
-		uint8_t* save = pixel_buffer_alloc(amount*src->width*dst->bytes_per_pixel);
+		uint8_t* save = malloc(amount*src->width*dst->bytes_per_pixel);
 		uint8_t* dst_save = EPX_PIXEL_ADDR(dst,0,h);
 
 		epx_copy_area(dst_save, dst->bytes_per_row, dst->pixel_format,
@@ -1854,6 +1843,7 @@ void epx_pixmap_scroll_down(epx_pixmap_t* src, epx_pixmap_t* dst,
 		epx_copy_area(save, dst->bytes_per_row, dst->pixel_format,
 			      dst_ptr, dst->bytes_per_row, dst->pixel_format,
 			      w, amount);
+		free(save);
 	    }
 	    else {
 		epx_copy_area(src_ptr, src->bytes_per_row, src->pixel_format,
@@ -2098,7 +2088,7 @@ void epx_pixmap_rotate_area(epx_pixmap_t* src, epx_pixmap_t* dst, float angle,
 	return;
     dr = dst->clip;
 
-    /* calculate desitionan 
+    /* calculate dest
      *
      * min_dx, max_dx
      * min_dy, max_dy
@@ -2110,19 +2100,19 @@ void epx_pixmap_rotate_area(epx_pixmap_t* src, epx_pixmap_t* dst, float angle,
     min_dx = max_dx = x;
     min_dy = max_dy = y;
 
-    TRANSFORM(x,y, ca, sa, -sa, ca, 0, 0, width-xo, -yo);
+    TRANSFORM(x,y, ca, sa, -sa, ca, 0, 0, (width-1)-xo, -yo);
     min_dx = epx_min_float(min_dx, x);
     max_dx = epx_max_float(max_dx, x);
     min_dy = epx_min_float(min_dy, y);
     max_dy = epx_max_float(max_dy, y);
 
-    TRANSFORM(x,y, ca, sa, -sa, ca, 0, 0, width-xo, height-yo);
+    TRANSFORM(x,y, ca, sa, -sa, ca, 0, 0, (width-1)-xo, (height-1)-yo);
     min_dx = epx_min_float(min_dx, x);
     max_dx = epx_max_float(max_dx, x);
     min_dy = epx_min_float(min_dy, y);
     max_dy = epx_max_float(max_dy, y);
 
-    TRANSFORM(x,y, ca, sa, -sa, ca, 0, 0, -xo, height-yo);
+    TRANSFORM(x,y, ca, sa, -sa, ca, 0, 0, -xo, (height-1)-yo);
     min_dx = epx_min_float(min_dx, x);
     max_dx = epx_max_float(max_dx, x);
     min_dy = epx_min_float(min_dy, y);

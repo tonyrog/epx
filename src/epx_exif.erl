@@ -9,7 +9,7 @@
 
 -include("epx_exif.hrl").
 
-decode_tag(Tag) when integer(Tag) ->
+decode_tag(Tag) when is_integer(Tag) ->
     case Tag of
 	?ExposureTime -> 'ExposureTime';
 	?FNumber -> 'FNumber';

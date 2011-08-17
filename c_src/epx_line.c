@@ -131,6 +131,34 @@ void epx_draw_line_horizontal(epx_pixmap_t* pic, int x1, int x2, int y,
 }
 
 
+void epx_draw_line_vertical(epx_pixmap_t* pic, int x, int y1, int y2,
+			    int flags, epx_pixel_t fg)
+{
+    int yt, yb;
+    uint8_t* ptr;
+
+    if (x < epx_rect_left(&pic->clip))
+	return;
+    if (x > epx_rect_right(&pic->clip))
+	return;
+    if (y1 > y2) epx_swap_int(y1,y2);
+
+    if (y2 < (yt = epx_rect_top(&pic->clip)))
+	return;
+    if (y1 > (yb = epx_rect_bottom(&pic->clip)))
+	return;
+
+    y1 = epx_clip_range(y1, yt, yb);
+    y2 = epx_clip_range(y2, yt, yb);
+    ptr = EPX_PIXEL_ADDR(pic,x,y1);
+    while(y1 <= y2) {
+	put_apixel(ptr, pic->unpack, pic->pack, flags, fg);
+	y1++;
+	ptr += pic->bytes_per_row;
+    }
+}
+
+
 /* Setup inital point and pixel address */
 static void set_p0(epx_pixmap_t* pixmap, epx_line_t* line, int x, int y)
 {
