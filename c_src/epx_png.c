@@ -11,6 +11,8 @@
 #include <sys/types.h>
 #include <sys/time.h>
 
+// we are not using tIME stuff so ignore it, just warnings anyway!
+#define PNG_NO_CONVERT_tIME
 #include <png.h>
 
 #include "epx.h"
@@ -33,12 +35,12 @@ epx_pixmap_t* epx_image_load_png(char* file_name, epx_format_t format)
     int rowbytes;
     png_byte color_type;
     png_byte bit_depth;
-    png_structp png_ptr;
-    png_infop info_ptr;
+    png_structp png_ptr = 0;
+    png_infop info_ptr = 0;
     int width;
     int height;
     epx_pixmap_t* pixmap;
-    int c_warn = 1;
+    png_byte interlace;
 
     /* open file and test for it being a png */
     FILE *fp = fopen(file_name, "rb");
@@ -75,15 +77,59 @@ epx_pixmap_t* epx_image_load_png(char* file_name, epx_format_t format)
 
     png_read_info(png_ptr, info_ptr);
 
-    width       = info_ptr->width;
-    height      = info_ptr->height;
-    color_type  = info_ptr->color_type;
-    bit_depth   = info_ptr->bit_depth;
+    width       = png_get_image_width(png_ptr, info_ptr);
+    height      = png_get_image_height(png_ptr, info_ptr);
+    color_type  = png_get_color_type(png_ptr, info_ptr);
+    bit_depth   = png_get_bit_depth(png_ptr, info_ptr);
+    interlace   = png_get_interlace_type(png_ptr, info_ptr);
 
+    if (color_type == PNG_COLOR_TYPE_PALETTE)
+	png_set_palette_to_rgb(png_ptr);
+
+    if (color_type == PNG_COLOR_TYPE_GRAY) {
+#if PNG_LIBPNG_VER >= 10209
+	png_set_expand_gray_1_2_4_to_8 (png_ptr);
+#else
+	png_set_gray_1_2_4_to_8 (png_ptr);
+#endif
+    }
+
+    if (png_get_valid (png_ptr, info_ptr, PNG_INFO_tRNS))
+	png_set_tRNS_to_alpha (png_ptr);
+
+    if (bit_depth == 16)
+        png_set_strip_16 (png_ptr);
+
+    if (bit_depth < 8)
+        png_set_packing(png_ptr);
+
+    if (color_type == PNG_COLOR_TYPE_GRAY ||
+	color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
+	png_set_gray_to_rgb (png_ptr);
+
+    if (interlace != PNG_INTERLACE_NONE)
+	png_set_interlace_handling (png_ptr);
+
+    switch (color_type) {
+    default:
+    case PNG_COLOR_TYPE_GRAY_ALPHA:
+    case PNG_COLOR_TYPE_RGB_ALPHA:
+	// alpah = 1;
+	// png_set_read_user_transform_fn (png, premultiply_data);
+	break;
+    case PNG_COLOR_TYPE_GRAY:
+    case PNG_COLOR_TYPE_PALETTE:
+    case PNG_COLOR_TYPE_RGB:
+	// alpah = 0;
+	// png_set_read_user_transform_fn (png, convert_bytes_to_data);
+	png_set_filler (png_ptr, 0xff, PNG_FILLER_AFTER);
+	break;
+    }
+    
     png_read_update_info(png_ptr, info_ptr);
 
-    rowbytes = info_ptr->rowbytes;
-
+    rowbytes = png_get_rowbytes(png_ptr, info_ptr);
+    
     /* read file */
     if (setjmp(png_jmpbuf(png_ptr))) {
 	error("%s: Error during read_image", file_name);
@@ -109,97 +155,27 @@ epx_pixmap_t* epx_image_load_png(char* file_name, epx_format_t format)
     fclose(fp);
     fp = 0;
 
-    png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
-
     pixmap = epx_pixmap_create(width, height, format);
 
     for (y = 0; y < height; y++) {
 	int x;
-	epx_pixel_t p;
 	png_byte* ptr = row_pointers[y];
 	
-	switch(color_type) {
-	case PNG_COLOR_TYPE_GRAY:
-	    p.a = EPX_ALPHA_OPAQUE;
-	    for (x = 0; x < width; x++) {
-		p.r = p.g = p.b = ptr[0];
-		epx_pixmap_put_pixel(pixmap, x, y, 0, p);
-		ptr += 1;
-	    }
-	    break;
-	case PNG_COLOR_TYPE_PALETTE:
-	    for (x = 0; x < width; x++) {
-		png_byte index = ptr[0];
-		if ((!(info_ptr->valid & PNG_INFO_PLTE)) ||
-		    (index >= info_ptr->num_palette)) {
-		    if (c_warn) {
-			error("%s; palette or color not present", file_name);
-			c_warn = 0;
-		    }
-		    break;
-		}
-		p.r = info_ptr->palette[index].red;
-		p.g = info_ptr->palette[index].green;
-		p.b = info_ptr->palette[index].blue;
-		p.a = EPX_ALPHA_OPAQUE;
-		if ((index < info_ptr->num_trans) &&
-		    (info_ptr->valid & PNG_INFO_tRNS)) {
-		    p.a = info_ptr->trans[index];
-		}
-		epx_pixmap_put_pixel(pixmap, x, y, 0, p);
-		ptr += 1;
-	    }
-	    break;
-
-	case PNG_COLOR_TYPE_RGB:
-	    for (x = 0; x < width; x++) {
-		p.r = ptr[0];
-		p.g = ptr[1];
-		p.b = ptr[2];
-		p.a = EPX_ALPHA_OPAQUE;
-		if (info_ptr->valid & PNG_INFO_tRNS) {
-		    if ((p.r == info_ptr->trans_values.red) &&
-			(p.g == info_ptr->trans_values.green) &&
-			(p.b == info_ptr->trans_values.blue)) {
-			p.a = EPX_ALPHA_TRANSPARENT;  // fully transparent
-		    }
-		}
-		epx_pixmap_put_pixel(pixmap, x, y, 0, p);
-		ptr += 3;
-	    }
-	    break;
-
-	case PNG_COLOR_TYPE_RGB_ALPHA:
-	    for (x = 0; x < width; x++) {
-		epx_pixel_t p;
-		p.r = ptr[0];
-		p.g = ptr[1];
-		p.b = ptr[2];
-		p.a = ptr[3];
-		epx_pixmap_put_pixel(pixmap, x, y, 0, p);
-		ptr += 4;
-	    }
-	    break;
-
-	case PNG_COLOR_TYPE_GRAY_ALPHA:
-	    for (x = 0; x < width; x++) {
-		p.r = p.g = p.b = ptr[0];
-		p.a = ptr[1];
-		epx_pixmap_put_pixel(pixmap, x, y, 0, p);
-		ptr += 2;
-	    }
-	    break;
-	default:
-	    if (c_warn) {
-		error("%s; unknown color type %d", file_name, color_type);
-		c_warn = 0;
-	    }
-	    break;
+	for (x = 0; x < width; x++) {
+	    epx_pixel_t p;
+	    p.r = ptr[0];
+	    p.g = ptr[1];
+	    p.b = ptr[2];
+	    p.a = ptr[3];
+	    epx_pixmap_put_pixel(pixmap, x, y, 0, p);
+	    ptr += 4;
 	}
 	free(row_pointers[y]);
 	row_pointers[y] = 0;
     }
     free(row_pointers);
+    if (png_ptr)
+	png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
     return pixmap;
 
 error:
@@ -210,5 +186,7 @@ error:
 	    free(row_pointers[y]);
     }
     free(row_pointers);
+    if (png_ptr)
+	png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
     return 0;
 }

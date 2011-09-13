@@ -1,1 +1,3 @@
 *.o
+depend.mk
+epx-config

@@ -19,7 +19,7 @@ typedef struct _epx_filter_ {
 } epx_filter_t;
 
 #define EPX_PIXEL_ADDR(map,x,y) \
-    ((map)->data + ((y)*(map)->bytes_per_row) + ((x)*(map)->bytes_per_pixel))
+    ((map)->data + (((y)*(int)(map)->bytes_per_row) + ((x)*(int)(map)->bytes_per_pixel)))
 
 // align pointer (a MUST be a power of 2) (and constant ;-) 
 #define EPX_ALIGN_OFFS(p,a) (((a) - (((uintptr_t)p) % (a))) % (a))

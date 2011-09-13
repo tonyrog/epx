@@ -115,10 +115,12 @@ void epx_draw_line_horizontal(epx_pixmap_t* pic, int x1, int x2, int y,
     if (y > epx_rect_bottom(&pic->clip))
 	return;
     if (x1 > x2) epx_swap_int(x1,x2);
-
-    if (x2 < (xl = epx_rect_left(&pic->clip)))
+    
+    xl = epx_rect_left(&pic->clip);
+    if (x2 < xl)
 	return;
-    if (x1 > (xr = epx_rect_right(&pic->clip)))
+    xr = epx_rect_right(&pic->clip);
+    if (x1 > xr)
 	return;
 
     x1 = epx_clip_range(x1, xl, xr);
@@ -143,9 +145,11 @@ void epx_draw_line_vertical(epx_pixmap_t* pic, int x, int y1, int y2,
 	return;
     if (y1 > y2) epx_swap_int(y1,y2);
 
-    if (y2 < (yt = epx_rect_top(&pic->clip)))
+    yt = epx_rect_top(&pic->clip);
+    if (y2 < yt)
 	return;
-    if (y1 > (yb = epx_rect_bottom(&pic->clip)))
+    yb = epx_rect_bottom(&pic->clip);
+    if (y1 > yb)
 	return;
 
     y1 = epx_clip_range(y1, yt, yb);
@@ -306,13 +310,18 @@ void trace_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags, epx_pixel_t fg
     LINE_DECL(0);
     LINE_SWAPIN(line,0);
 
+//    fprintf(stderr, "LINE_START: (%d,%d,data=%p,ptr=%p)\r\n", 
+//	    line->p0.x, line->p0.y, pic->data, line->ptr);
+
     if (L(dx,0) > L(dy,0)) {
 	while(L(x1,0) != L(x0,0)) {
 	    LINE_STEP(L(err,0),L(ptr,0),
 		      L(x0,0),L(dx,0),L(sx,0),L(wsx,0),
 		      L(y0,0),L(dy,0),L(sy,0),L(wsy,0));
 	    if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
+//		fprintf(stderr, "(%d,%d,%p)\r\n", L(x0,0), L(y0,0),L(ptr,0));
 		put_apixel(L(ptr,0), pic->unpack,pic->pack, flags, fg);
+//		fprintf(stderr, "OK\r\n");
 	    }
 	}
     }
@@ -322,10 +331,13 @@ void trace_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags, epx_pixel_t fg
 		      L(y0,0),L(dy,0),L(sy,0),L(wsy,0),
 		      L(x0,0),L(dx,0),L(sx,0),L(wsx,0));
 	    if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
+//		fprintf(stderr, "(%d,%d,%p)\r\n", L(x0,0), L(y0,0), L(ptr,0));
 		put_apixel(L(ptr,0), pic->unpack,pic->pack, flags, fg);
+//		fprintf(stderr, "OK\r\n");
 	    }
 	}
     }
+//    fprintf(stderr, "LINE_END:\r\n");
     LINE_SWAPOUT(line,0);
 }
 

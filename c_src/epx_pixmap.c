@@ -157,6 +157,32 @@ static void epx_swap_8(uint8_t* ptr1, uint8_t* ptr2, size_t n)
     }
 }
 
+static void epx_move_area(uint8_t* src, int src_dx, int src_dy,
+			  epx_format_t src_pt,
+			  uint8_t* dst, int dst_dx, int dst_dy,
+			  epx_format_t dst_pt,
+			  int width, int height)
+{
+    epx_pixel_unpack_t unpack_src = epx_pixel_unpack_func(src_pt);
+    epx_pixel_pack_t   pack_dst   = epx_pixel_pack_func(dst_pt);
+
+    while(height--) {
+	uint8_t* src1   = src;
+	uint8_t* dst1   = dst;
+	unsigned width1 = width;
+	while(width1--) {
+	    epx_pixel_t p = unpack_src(src1);
+	    pack_dst(p, dst1);
+	    src1 += src_dx;
+	    dst1 += dst_dx;
+	}
+	src += src_dy;
+	dst += dst_dy;
+    }
+}
+
+
+
 // copy pixel area 
 void epx_copy_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 		   uint8_t* dst, int dst_wb, epx_format_t dst_pt,
