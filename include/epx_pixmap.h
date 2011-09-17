@@ -49,7 +49,7 @@ typedef struct _epx_pixmap_t {
     epx_pixel_unpack_t unpack;
     /*! Pixel pack function */
     epx_pixel_pack_t pack;
-    /*! Number of bytes per pixel, may also be calculated from pixel_type */
+    /*! Number of bytes per pixel, may also be calculated from pixel_format */
     unsigned int bytes_per_pixel;
     /*! Size of pixel area in bytes */
     size_t      sz;

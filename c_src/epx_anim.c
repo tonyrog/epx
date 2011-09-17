@@ -1,25 +1,35 @@
 /*
- * EPIC Animation frame drawing
+ * EPX Animation frame drawing
  *
  */
 
-#include "epic.h"
+#include <stdlib.h>
+#include <memory.h>
+#include <math.h>
+
+#include "epx_simd_int.h"
+#include "epx_pixmap.h"
+#include "epx_anim.h"
+#include "epx_colors.h"
+#include "epx_simd.h"
+
 
 /* Copy animation frame to background */
-void EAnimCopyFrame(EGc* gc, EPixmap* pic, int x, int y,
-		    int width, int height, int src_pt,
-		    EAnimPixels* base, EAnimPixels* current)
+void epx_anim_copy_frame(epx_gc_t* gc, epx_pixmap_t* pic, int x, int y,
+			 int width, int height, epx_format_t src_pt,
+			 epx_anim_pixels_t* base, 
+			 epx_anim_pixels_t* current)
 {
     (void) gc;
     u_int8_t *src = (u_int8_t*) current;
     u_int8_t* src_save = NULL;
     int n_blocks = 0;
-    unsigned char *dst0 = EPIXEL_ADDR(pic, x, y);
-    int dst_wb = pic->bytesPerRow;
-    unsigned int srcPixelType = src_pt;
-    int srcPixelSize = EPIXEL_SIZE(src_pt);
-    unsigned int dstPixelType = pic->pixelType;
-    int dstPixelSize = pic->bytesPerPixel;
+    unsigned char *dst0 = EPX_PIXEL_ADDR(pic, x, y);
+    int dst_wb = pic->bytes_per_row;
+    epx_format_t src_format = src_pt;
+    int srcPixelSize = EPX_PIXEL_SIZE(src_pt);
+    epx_format_t dst_format = pic->pixel_format;
+    int dstPixelSize = pic->bytes_per_pixel;
 
     while(height--) {
 	unsigned char* dst = dst0;
@@ -28,53 +38,54 @@ void EAnimCopyFrame(EGc* gc, EPixmap* pic, int x, int y,
 	dst0 += dst_wb;
 
 	while(w) {
-	    EAnimPixels* hdr = (EAnimPixels*) src;
+	    epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
 	    u_int32_t pcount;
 
-	    if (hdr->type == EANIM_INDIRECT) {
+	    if (hdr->type == EPX_ANIM_INDIRECT) {
 		u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
 		n_blocks = hdr->nblocks;   // number of blocks to run 
-		src_save = src + sizeof(EAnimPixels); // continue point
+		src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		src = isrc;
-		hdr = (EAnimPixels*) src; // switch to indirect header
+		hdr = (epx_anim_pixels_t*) src; // switch to indirect header
 	    }
 
-	    src += sizeof(EAnimPixels);
+	    src += sizeof(epx_anim_pixels_t);
 	    pcount = hdr->count;
 	    w -= pcount;
 
 	    switch(hdr->type) {
-	    case EANIM_SKIP:
+	    case EPX_ANIM_SKIP:
 		break;
 
-	    case EANIM_SHADOW:
-		EDirectCopyRow(src, EPIXEL_TYPE_A8,
-			       dst, dstPixelType, pcount);
+	    case EPX_ANIM_SHADOW:
+		epx_copy_row(src, EPX_FORMAT_A8,
+			     dst, dst_format, pcount);
 		src  += pcount;
 		break;
 
-	    case EANIM_RGBA:
-		EDirectCopyRow(src,EPIXEL_TYPE_RGBA,
-			       dst, dstPixelType, pcount);
+	    case EPX_ANIM_RGBA:
+		epx_copy_row(src,EPX_FORMAT_RGBA,
+			     dst, dst_format, pcount);
 		src += pcount*4;
 		break;
 
-	    case EANIM_BGRA:
-		EDirectCopyRow(src,EPIXEL_TYPE_BGRA,
-			       dst, dstPixelType, pcount);
+	    case EPX_ANIM_BGRA:
+		epx_copy_row(src,EPX_FORMAT_BGRA,
+			       dst, dst_format, pcount);
 		src += pcount*4;
 		break;
 		
-	    case EANIM_COPY: // BGRA values!!!
-		EDirectCopyRow(src, srcPixelType,
-			       dst, dstPixelType,
-			       pcount);
+	    case EPX_ANIM_COPY: // BGRA values!!!
+		epx_copy_row(src, src_format,
+			     dst, dst_format,
+			     pcount);
 		src += pcount*srcPixelSize;
 		break;
 
-	    case EANIM_FILL:
-		EDirectFillRow(dst, dstPixelType, pcount,
-			       epixel_argb(src[0],src[1],src[2],src[3]));
+	    case EPX_ANIM_FILL:
+		epx_fill_row(dst, dst_format, 
+			     epx_pixel_argb(src[0],src[1],src[2],src[3]),
+			     pcount);
 		src += 4;
 		break;
 	    default: 
@@ -92,31 +103,32 @@ void EAnimCopyFrame(EGc* gc, EPixmap* pic, int x, int y,
 }
 
 /* Draw & Blend animation frame with background */
-void EAnimDrawFrame(EGc* gc, EPixmap* pic, int x, int y,
-		    int width, int height, int src_pt,
-		    EAnimPixels* base, EAnimPixels* current)
+void epx_anim_draw_frame(epx_gc_t* gc, epx_pixmap_t* pic, int x, int y,
+			 int width, int height, epx_format_t src_pt,
+			 epx_anim_pixels_t* base,
+			 epx_anim_pixels_t* current)
 {
     u_int8_t fader = gc->fader_value;
     u_int8_t *src = (u_int8_t*) current;
     u_int8_t* src_save = NULL;
     int n_blocks = 0;
-    unsigned char *dst0 = EPIXEL_ADDR(pic, x, y);
-    int dst_wb = pic->bytesPerRow;
-    unsigned int srcPixelType = src_pt;
-    int srcPixelSize = EPIXEL_SIZE(src_pt);
-    unsigned int dstPixelType = pic->pixelType;
-    int dstPixelSize = pic->bytesPerPixel;
-    ERect_t r = {{x,y}, {width,height}};
+    unsigned char *dst0 = EPX_PIXEL_ADDR(pic, x, y);
+    int dst_wb = pic->bytes_per_row;
+    epx_format_t src_format = src_pt;
+    int srcPixelSize = EPX_PIXEL_SIZE(src_pt);
+    epx_format_t dst_format = pic->pixel_format;
+    int dstPixelSize = pic->bytes_per_pixel;
+    epx_rect_t r = {{x,y}, {width,height}};
     int x0, yi;
     int clip_y0, clip_y1;
     int clip_x0, clip_x1, clip_len;
     int need_x_clip;
     
-    if (ERectIsSubRect(&r, &pic->clip)) {
-	if (srcPixelType == dstPixelType) {
-	    if (dstPixelType == EPIXEL_TYPE_BGRA)
+    if (epx_rect_is_subrect(&r, &pic->clip)) {
+	if (src_format == dst_format) {
+	    if (dst_format == EPX_FORMAT_BGRA)
 		goto bgra_noclip;
-	    else if (dstPixelType == EPIXEL_TYPE_RGBA)
+	    else if (dst_format == EPX_FORMAT_RGBA)
 		goto rgba_noclip;
 	    goto no_clip;
 	}
@@ -126,11 +138,11 @@ void EAnimDrawFrame(EGc* gc, EPixmap* pic, int x, int y,
     /* if we must clip the image we do the general stuff */
 
 clip:
-    clip_y0  = ERectTop(&pic->clip);
-    clip_y1  = ERectBottom(&pic->clip);
-    clip_x0  = ERectLeft(&pic->clip);
-    clip_x1  = ERectRight(&pic->clip);
-    clip_len = ERectWidth(&pic->clip);
+    clip_y0  = epx_rect_top(&pic->clip);
+    clip_y1  = epx_rect_bottom(&pic->clip);
+    clip_x0  = epx_rect_left(&pic->clip);
+    clip_x1  = epx_rect_right(&pic->clip);
+    clip_len = epx_rect_width(&pic->clip);
 
     yi = y;
     x0 = x;
@@ -140,37 +152,37 @@ clip:
 	int xi    = x0;
 	int w = width;
 
-	if (!EInRange(yi, clip_y0, clip_y1)) {
+	if (!epx_in_range(yi, clip_y0, clip_y1)) {
 	    // The line is clipped but we must skip the source data
 	    while(w) {
-		EAnimPixels *hdr = (EAnimPixels *) src;
+		epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
 		u_int32_t pcount;
 
-		if (hdr->type == EANIM_INDIRECT) {
+		if (hdr->type == EPX_ANIM_INDIRECT) {
 		    u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
 		    n_blocks = hdr->nblocks;   // number of blocks to run 
-		    src_save = src + sizeof(EAnimPixels); // continue point
+		    src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		    src = isrc;
-		    hdr = (EAnimPixels*) src; // switch to indirect header
+		    hdr = (epx_anim_pixels_t*) src; // switch to indirect header
 		}
-		src += sizeof(EAnimPixels);
+		src += sizeof(epx_anim_pixels_t);
 		pcount = hdr->count;
 		w -= pcount;
 
 		switch(hdr->type) {
-		case EANIM_SKIP:
+		case EPX_ANIM_SKIP:
 		    break;
-		case EANIM_SHADOW:
+		case EPX_ANIM_SHADOW:
 		    src  += pcount;
 		    break;
-		case EANIM_BGRA:
-		case EANIM_RGBA:
+		case EPX_ANIM_BGRA:
+		case EPX_ANIM_RGBA:
 		    src += pcount*4;
 		    break;
-		case EANIM_COPY:
+		case EPX_ANIM_COPY:
 		    src += pcount*srcPixelSize;
 		    break;
-		case EANIM_FILL:
+		case EPX_ANIM_FILL:
 		    src += 4;
 		    break;
 		default:
@@ -184,71 +196,73 @@ clip:
 	    }
 	}
 	else if (!need_x_clip) {  // No horizontal clipping needed
-	    unsigned char *dst = EPIXEL_ADDR(pic, xi, yi);
+	    unsigned char *dst = EPX_PIXEL_ADDR(pic, xi, yi);
 	    while(w) {
-		EAnimPixels *hdr = (EAnimPixels *) src;
+		epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
 		u_int32_t pcount;
 		u_int8_t a;
 
-		if (hdr->type == EANIM_INDIRECT) {
+		if (hdr->type == EPX_ANIM_INDIRECT) {
 		    u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
 		    n_blocks = hdr->nblocks;   // number of blocks to run 
-		    src_save = src + sizeof(EAnimPixels); // continue point
+		    src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		    src = isrc;
-		    hdr = (EAnimPixels*) src; // switch to indirect header
+		    hdr = (epx_anim_pixels_t*) src; // switch to indirect header
 		}
 
-		src += sizeof(EAnimPixels);
+		src += sizeof(epx_anim_pixels_t);
 		pcount = hdr->count;
 		w -= pcount;
 
 		switch(hdr->type) {
-		case EANIM_SKIP:
+		case EPX_ANIM_SKIP:
 		    break;
 
-		case EANIM_SHADOW:
-		    EDirectAddColorRow(src, EPIXEL_TYPE_A8,
-				       dst, dstPixelType,
-				       fader, epixel_transparent(),
-				       pcount, EFLAG_BLEND);
+		case EPX_ANIM_SHADOW:
+		    epx_add_color_row(src, EPX_FORMAT_A8,
+				      dst, dst_format,
+				      fader, epx_pixel_transparent,
+				      pcount, EPX_FLAG_BLEND);
 		    src  += pcount;
 		    break;
 
-		case EANIM_BGRA:
-		    EDirectFadeRow(src,EPIXEL_TYPE_BGRA,
-				   dst, dstPixelType, fader, pcount);
+		case EPX_ANIM_BGRA:
+		    epx_fade_row(src,EPX_FORMAT_BGRA,
+				   dst, dst_format, fader, pcount);
 		    src += pcount*4;
 		    break;
 
-		case EANIM_RGBA:
-		    EDirectFadeRow(src,EPIXEL_TYPE_RGBA,
-				   dst, dstPixelType, fader, pcount);
+		case EPX_ANIM_RGBA:
+		    epx_fade_row(src,EPX_FORMAT_RGBA,
+				   dst, dst_format, fader, pcount);
 		    src += pcount*4;
 		    break;
 		    
-		case EANIM_COPY:
+		case EPX_ANIM_COPY:
 		    if (fader == ALPHA_FACTOR_1)
-			EDirectCopyRow(src, srcPixelType,
-				       dst, dstPixelType,
+			epx_copy_row(src, src_format,
+				       dst, dst_format,
 				       pcount);
 		    else if (fader != ALPHA_FACTOR_0)
-			EDirectAlphaRow(src, srcPixelType,
-					dst, dstPixelType, 
-					fader, pcount);
+			epx_alpha_row(src, src_format,
+				      dst, dst_format, 
+				      fader, pcount);
 		    src += pcount*srcPixelSize;
 		    break;
 
-		case EANIM_FILL:
+		case EPX_ANIM_FILL:
 		    a= (fader==ALPHA_FACTOR_1) ? src[0] : ((src[0]*fader) >> 8);
-		    if (a == EALPHA_TRANSPARENT)
+		    if (a == EPX_ALPHA_TRANSPARENT)
 			;
-		    else if (a == EALPHA_OPAQUE)
-			EDirectFillRow(dst, dstPixelType, pcount,
-				       epixel_argb(a,src[1],src[2],src[3]));
+		    else if (a == EPX_ALPHA_OPAQUE)
+			epx_fill_row(dst, dst_format,
+				     epx_pixel_argb(a,src[1],src[2],src[3]),
+				     pcount);
 		    else
-			EDirectFillRowBlend(dst, dstPixelType, pcount,
-					    epixel_argb(a,src[1],
-							src[2],src[3]));
+			epx_fill_row_blend(dst, dst_format,
+					   epx_pixel_argb(a,src[1],
+							  src[2],src[3]),
+					   pcount);
 		    src += 4;
 		    break;
 		    
@@ -266,47 +280,47 @@ clip:
 	    }
 	}
 	else {  // we need to clip dds
-	    unsigned char *dst = EPIXEL_ADDR(pic, xi, yi);
+	    unsigned char *dst = EPX_PIXEL_ADDR(pic, xi, yi);
 
 	    while(w) {
-		EAnimPixels *hdr = (EAnimPixels *) src;
+		epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
 		u_int32_t pcount;
 		u_int8_t a;
 
-		if (hdr->type == EANIM_INDIRECT) {
+		if (hdr->type == EPX_ANIM_INDIRECT) {
 		    u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
 		    n_blocks = hdr->nblocks;   // number of blocks to run 
-		    src_save = src + sizeof(EAnimPixels); // continue point
+		    src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		    src = isrc;
-		    hdr = (EAnimPixels*) src; // switch to indirect header
+		    hdr = (epx_anim_pixels_t*) src; // switch to indirect header
 		}
 
-		src += sizeof(EAnimPixels);
+		src += sizeof(epx_anim_pixels_t);
 		pcount = hdr->count;
 		w -= pcount;
 
 		switch(hdr->type) {
-		case EANIM_SKIP:
+		case EPX_ANIM_SKIP:
 		    dst  += pcount*dstPixelSize;
 		    xi   += pcount;
 		    break;
 
-		case EANIM_SHADOW: {
+		case EPX_ANIM_SHADOW: {
 		    u_int8_t      *src1 = src;
 		    unsigned char *dst1 = dst;
 		    int n, bx;
 			
-		    n = EIntersectSegments(xi,pcount,clip_x0,clip_len,&bx);
+		    n = epx_intersect_segments(xi,pcount,clip_x0,clip_len,&bx);
 		    if (n > 0) {
 			int offs;
 			if ((offs = (bx - xi))) {
 			    src1 += offs;
 			    dst1 += offs*dstPixelSize;
 			}
-			EDirectAddColorRow(src1, EPIXEL_TYPE_A8,
-					   dst1, dstPixelType,
-					   fader, epixel_transparent(),
-					   n, EFLAG_BLEND);
+			epx_add_color_row(src1, EPX_FORMAT_A8,
+					  dst1, dst_format,
+					  fader, epx_pixel_transparent,
+					  n, EPX_FLAG_BLEND);
 		    }
 		    dst  += pcount*dstPixelSize;
 		    src  += pcount;
@@ -314,19 +328,19 @@ clip:
 		    break;
 		}
 
-		case EANIM_RGBA: {
+		case EPX_ANIM_RGBA: {
 		    u_int8_t      *src1 = src;
 		    unsigned char *dst1 = dst;
 		    int n, bx;
-		    n = EIntersectSegments(xi,pcount,clip_x0,clip_len,&bx);
+		    n = epx_intersect_segments(xi,pcount,clip_x0,clip_len,&bx);
 		    if (n > 0) {
 			int offs;
 			if ((offs = (bx - xi))) {
 			    src1 += offs*4;
 			    dst1 += offs*dstPixelSize;
 			}
-			EDirectFadeRow(src1,EPIXEL_TYPE_RGBA,
-				       dst1, dstPixelType, fader, n);
+			epx_fade_row(src1,EPX_FORMAT_RGBA,
+				     dst1, dst_format, fader, n);
 		    }
 		    dst += pcount*dstPixelSize;
 		    src += pcount*4;
@@ -334,19 +348,19 @@ clip:
 		    break;
 		}
 
-		case EANIM_BGRA: {
+		case EPX_ANIM_BGRA: {
 		    u_int8_t      *src1 = src;
 		    unsigned char *dst1 = dst;
 		    int n, bx;
-		    n = EIntersectSegments(xi,pcount,clip_x0,clip_len,&bx);
+		    n = epx_intersect_segments(xi,pcount,clip_x0,clip_len,&bx);
 		    if (n > 0) {
 			int offs;
 			if ((offs = (bx - xi))) {
 			    src1 += offs*4;
 			    dst1 += offs*dstPixelSize;
 			}
-			EDirectFadeRow(src1,EPIXEL_TYPE_BGRA,
-				       dst1, dstPixelType, fader, n);
+			epx_fade_row(src1,EPX_FORMAT_BGRA,
+				       dst1, dst_format, fader, n);
 		    }
 		    dst += pcount*dstPixelSize;
 		    src += pcount*4;
@@ -354,11 +368,11 @@ clip:
 		    break;
 		}
 		    
-		case EANIM_COPY: {
+		case EPX_ANIM_COPY: {
 		    u_int8_t *src1      = src;
 		    unsigned char *dst1 = dst;
 		    int n, bx;
-		    n = EIntersectSegments(xi,pcount,clip_x0,clip_len,&bx);
+		    n = epx_intersect_segments(xi,pcount,clip_x0,clip_len,&bx);
 		    if (n > 0) {
 			int offs;
 			if ((offs = (bx - xi))) {
@@ -366,13 +380,13 @@ clip:
 			    dst1 += offs*dstPixelSize;
 			}
 			if (fader == ALPHA_FACTOR_1)
-			    EDirectCopyRow(src1, srcPixelType,
-					   dst1, dstPixelType,
-					   n);
+			    epx_copy_row(src1, src_format,
+					 dst1, dst_format,
+					 n);
 			else if (fader != ALPHA_FACTOR_0)
-			    EDirectAlphaRow(src1, srcPixelType,
-					    dst1, dstPixelType, 
-					    fader, n);
+			    epx_alpha_row(src1, src_format,
+					  dst1, dst_format, 
+					  fader, n);
 		    }
 		    dst += pcount*dstPixelSize;
 		    src += pcount*srcPixelSize;
@@ -380,24 +394,25 @@ clip:
 		    break;
 		}
 
-		case EANIM_FILL: {
+		case EPX_ANIM_FILL: {
 		    unsigned char *dst1 = dst;
 		    int n, bx;
-		    n = EIntersectSegments(xi,pcount,clip_x0,clip_len,&bx);
+		    n = epx_intersect_segments(xi,pcount,clip_x0,clip_len,&bx);
 		    if (n > 0) {
 			int offs;
 			if ((offs = (bx - xi))) {
 			    dst1 += offs*dstPixelSize;
 			}
 			a= (fader==ALPHA_FACTOR_1)?src[0]:((src[0]*fader)>>8);
-			if (a == EALPHA_TRANSPARENT)
+			if (a == EPX_ALPHA_TRANSPARENT)
 			    ;
-			else if (a == EALPHA_OPAQUE)
-			    EDirectFillRow(dst1, dstPixelType, n,
-					   epixel_argb(a,src[1],src[2],src[3]));
+			else if (a == EPX_ALPHA_OPAQUE)
+			    epx_fill_row(dst1, dst_format,
+					 epx_pixel_argb(a,src[1],src[2],src[3]), n);
 			else
-			    EDirectFillRowBlend(dst1, dstPixelType, n,
-						epixel_argb(a,src[1],src[2],src[3]));
+			    epx_fill_row_blend(dst1, dst_format,
+					       epx_pixel_argb(a,src[1],src[2],src[3]),
+					       n);
 		    }
 		    dst += pcount*dstPixelSize;
 		    src += 4;
@@ -433,66 +448,68 @@ no_clip:
 	dst0 += dst_wb;
 
 	while(w) {
-	    EAnimPixels* hdr = (EAnimPixels*) src;
+	    epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
 	    u_int32_t pcount;
 	    u_int8_t a;
 
-	    if (hdr->type == EANIM_INDIRECT) {
+	    if (hdr->type == EPX_ANIM_INDIRECT) {
 		u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
 		n_blocks = hdr->nblocks;   // number of blocks to run 
-		src_save = src + sizeof(EAnimPixels); // continue point
+		src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		src = isrc;
-		hdr = (EAnimPixels*) src; // switch to indirect header
+		hdr = (epx_anim_pixels_t*) src; // switch to indirect header
 	    }
 
-	    src += sizeof(EAnimPixels);
+	    src += sizeof(epx_anim_pixels_t);
 	    pcount = hdr->count;
 	    w -= pcount;
 
 	    switch(hdr->type) {
-	    case EANIM_SKIP:
+	    case EPX_ANIM_SKIP:
 		break;
 
-	    case EANIM_SHADOW:
-		EDirectAddColorRow(src, EPIXEL_TYPE_A8,
-				   dst, dstPixelType,
-				   fader, epixel_transparent(),
-				   pcount, EFLAG_BLEND);
+	    case EPX_ANIM_SHADOW:
+		epx_add_color_row(src, EPX_FORMAT_A8,
+				   dst, dst_format,
+				   fader, epx_pixel_transparent,
+				   pcount, EPX_FLAG_BLEND);
 		src  += pcount;
 		break;
 
-	    case EANIM_RGBA:
-		EDirectFadeRow(src,EPIXEL_TYPE_BGRA,
-			       dst, dstPixelType, fader, pcount);
+	    case EPX_ANIM_RGBA:
+		epx_fade_row(src,EPX_FORMAT_BGRA,
+			       dst, dst_format, fader, pcount);
 		src += pcount*4;
 		break;
 
-	    case EANIM_BGRA:
-		EDirectFadeRow(src,EPIXEL_TYPE_BGRA,
-			       dst, dstPixelType, fader, pcount);
+	    case EPX_ANIM_BGRA:
+		epx_fade_row(src,EPX_FORMAT_BGRA,
+			     dst, dst_format, fader, pcount);
 		src += pcount*4;
 		break;
 		
-	    case EANIM_COPY:
+	    case EPX_ANIM_COPY:
 		if (fader == ALPHA_FACTOR_1)
-		    EDirectCopyRow(src, srcPixelType,
-				   dst, dstPixelType, pcount);
+		    epx_copy_row(src, src_format,
+				   dst, dst_format, pcount);
 		else if (fader != ALPHA_FACTOR_0)
-		    EDirectAlphaRow(src, srcPixelType,
-				    dst, dstPixelType, fader, pcount);
+		    epx_alpha_row(src, src_format,
+				    dst, dst_format, fader, pcount);
 		src += pcount*srcPixelSize;
 		break;
 
-	    case EANIM_FILL:
+	    case EPX_ANIM_FILL:
 		a= (fader==ALPHA_FACTOR_1) ? src[0] : ((src[0]*fader) >> 8);
-		if (a == EALPHA_TRANSPARENT)
+		if (a == EPX_ALPHA_TRANSPARENT)
 		    ;
-		else if (a == EALPHA_OPAQUE)
-		    EDirectFillRow(dst, dstPixelType, pcount,
-				   epixel_argb(a,src[1],src[2],src[3]));
+		else if (a == EPX_ALPHA_OPAQUE)
+		    epx_fill_row(dst, dst_format,
+				 epx_pixel_argb(a,src[1],src[2],src[3]),
+				 pcount);
 		else
-		    EDirectFillRowBlend(dst, dstPixelType, pcount,
-					epixel_argb(a,src[1],src[2],src[3]));
+		    epx_fill_row_blend(dst, dst_format,
+				       epx_pixel_argb(a,src[1],src[2],src[3]),
+				       pcount);
 		src += 4;
 		break;
 
@@ -511,7 +528,7 @@ no_clip:
     return;
 /*
  * BGRA anim block draw when no clipping is needed 
- *   both srcPixelType and dstPixelType is BGRA
+ *   both src_format and dst_format is BGRA
  */
 bgra_noclip:
     while(height--) {
@@ -521,71 +538,73 @@ bgra_noclip:
 	dst0 += dst_wb;
 
 	while(w) {
-	    EAnimPixels* hdr = (EAnimPixels*) src;
+	    epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
 	    u_int32_t pcount;
 	    u_int8_t  a;
 
-	    if (hdr->type == EANIM_INDIRECT) {
+	    if (hdr->type == EPX_ANIM_INDIRECT) {
 		u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
 		n_blocks = hdr->nblocks;   // number of blocks to run 
-		src_save = src + sizeof(EAnimPixels); // continue point
+		src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		src = isrc;
-		hdr = (EAnimPixels*) src; // switch to indirect header
+		hdr = (epx_anim_pixels_t*) src; // switch to indirect header
 	    }
 
-	    src += sizeof(EAnimPixels);
+	    src += sizeof(epx_anim_pixels_t);
 	    pcount = hdr->count;
 	    w -= pcount;
 
 	    switch(hdr->type) {
-	    case EANIM_SKIP:
+	    case EPX_ANIM_SKIP:
 		break;
 
-	    case EANIM_SHADOW:
-		EDirectAddColorRow(src, EPIXEL_TYPE_A8,
-				   dst, EPIXEL_TYPE_BGRA,
-				   fader, epixel_transparent(),
-				   pcount, EFLAG_BLEND);
+	    case EPX_ANIM_SHADOW:
+		epx_add_color_row(src, EPX_FORMAT_A8,
+				   dst, EPX_FORMAT_BGRA,
+				   fader, epx_pixel_transparent,
+				   pcount, EPX_FLAG_BLEND);
 		src  += pcount;
 		break;
 
-	    case EANIM_BGRA:
+	    case EPX_ANIM_BGRA:
 		if (fader == ALPHA_FACTOR_0)
 		    ;
 		else if (fader == ALPHA_FACTOR_1)
-		    ESimdBlendAreaRGBA32(src, 0, dst, 0, pcount, 1);
+		    SIMD_CALL(blend_area_rgba32)(src, 0, dst, 0, pcount, 1);
 		else
-		    ESimdFadeAreaRGBA32(src, 0, dst, 0, fader, pcount, 1);
+		    SIMD_CALL(fade_area_rgba32)(src, 0, dst, 0, fader, pcount, 1);
 		src += pcount*4;
 		break;
 
-	    case EANIM_RGBA:
-		EDirectFadeRow(src,EPIXEL_TYPE_RGBA,
-			       dst, EPIXEL_TYPE_BGRA, fader, pcount);
+	    case EPX_ANIM_RGBA:
+		epx_fade_row(src, EPX_FORMAT_RGBA,
+			     dst, EPX_FORMAT_BGRA, fader, pcount);
 		src += pcount*4;
 		break;
 		
-	    case EANIM_COPY: // BGRA => BGRA 
+	    case EPX_ANIM_COPY: // BGRA => BGRA 
 		if (fader == ALPHA_FACTOR_1)
-		    ESimdCopy(src, dst, pcount*4);
+		    SIMD_CALL(copy)(src, dst, pcount*4);
 		else if (fader != ALPHA_FACTOR_0)
-		    ESimdAlphaAreaRGBA32(src,0,dst,0,fader,pcount,1);
+		    SIMD_CALL(alpha_area_rgba32)(src,0,dst,0,fader,pcount,1);
 		src += pcount*4;
 		break;
 
-	    case EANIM_FILL:
+	    case EPX_ANIM_FILL:
 		a= (fader==ALPHA_FACTOR_1) ? src[0] : ((src[0]*fader) >> 8);
-		if (a == EALPHA_TRANSPARENT)
+		if (a == EPX_ALPHA_TRANSPARENT)
 		    ;
-		else if (a == EALPHA_OPAQUE) {
+		else if (a == EPX_ALPHA_OPAQUE) {
 		    // FIXME this can be done by calling wmemset directly
-		    EDirectFillRow(dst, EPIXEL_TYPE_BGRA, pcount,
-				   epixel_argb(a,src[1],src[2],src[3]));
+		    epx_fill_row(dst, EPX_FORMAT_BGRA,
+				 epx_pixel_argb(a,src[1],src[2],src[3]),
+				 pcount);
 		}
 		else /* note! swapping rgb into bgr */
-		    ESimdFillAreaBlendRGBA32(dst, 0, pcount, 1,
-					     epixel_argb(a,src[3],
-							 src[2],src[1]));
+		    SIMD_CALL(fill_area_blend_rgba32)(dst, 0, 
+						      epx_pixel_argb(a,src[3],
+								     src[2],src[1]),
+						      pcount, 1);
 		src += 4;
 		break;
 
@@ -604,7 +623,7 @@ bgra_noclip:
     return;
 /*
  * RGBA anim block draw when no clipping is needed 
- *   both srcPixelType and dstPixelType is RGBA
+ *   both src_format and dst_format is RGBA
  */
 rgba_noclip:
     while(height--) {
@@ -614,71 +633,72 @@ rgba_noclip:
 	dst0 += dst_wb;
 
 	while(w) {
-	    EAnimPixels* hdr = (EAnimPixels*) src;
+	    epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
 	    u_int32_t pcount;
 	    u_int8_t  a;
 
-	    if (hdr->type == EANIM_INDIRECT) {
+	    if (hdr->type == EPX_ANIM_INDIRECT) {
 		u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
 		n_blocks = hdr->nblocks;   // number of blocks to run 
-		src_save = src + sizeof(EAnimPixels); // continue point
+		src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		src = isrc;
-		hdr = (EAnimPixels*) src; // switch to indirect header
+		hdr = (epx_anim_pixels_t*) src; // switch to indirect header
 	    }
 
-	    src += sizeof(EAnimPixels);
+	    src += sizeof(epx_anim_pixels_t);
 	    pcount = hdr->count;
 	    w -= pcount;
 
 	    switch(hdr->type) {
-	    case EANIM_SKIP:
+	    case EPX_ANIM_SKIP:
 		break;
 
-	    case EANIM_SHADOW:
-		EDirectAddColorRow(src, EPIXEL_TYPE_A8,
-				   dst, EPIXEL_TYPE_RGBA,
-				   fader, epixel_transparent(),
-				   pcount, EFLAG_BLEND);
+	    case EPX_ANIM_SHADOW:
+		epx_add_color_row(src, EPX_FORMAT_A8,
+				  dst, EPX_FORMAT_RGBA,
+				  fader, epx_pixel_transparent,
+				  pcount, EPX_FLAG_BLEND);
 		src  += pcount;
 		break;
 
-	    case EANIM_RGBA:
+	    case EPX_ANIM_RGBA:
 		if (fader == ALPHA_FACTOR_0)
 		    ;
 		else if (fader == ALPHA_FACTOR_1)
-		    ESimdBlendAreaRGBA32(src, 0, dst, 0, pcount, 1);
+		    SIMD_CALL(blend_area_rgba32)(src, 0, dst, 0, pcount, 1);
 		else
-		    ESimdFadeAreaRGBA32(src, 0, dst, 0, fader, pcount, 1);
+		    SIMD_CALL(fade_area_rgba32)(src, 0, dst, 0, fader, pcount, 1);
 		src += pcount*4;
 		break;
 
-	    case EANIM_BGRA:
-		EDirectFadeRow(src,EPIXEL_TYPE_BGRA,
-			       dst, EPIXEL_TYPE_RGBA, fader, pcount);
+	    case EPX_ANIM_BGRA:
+		epx_fade_row(src, EPX_FORMAT_BGRA,
+			       dst, EPX_FORMAT_RGBA, fader, pcount);
 		src += pcount*4;
 		break;
 		
-	    case EANIM_COPY: // RGBA => RBGA 
+	    case EPX_ANIM_COPY: // RGBA => RBGA 
 		if (fader == ALPHA_FACTOR_1)
-		    ESimdCopy(src, dst, pcount*4);
+		    SIMD_CALL(copy)(src, dst, pcount*4);
 		else if (fader != ALPHA_FACTOR_0)
-		    ESimdAlphaAreaRGBA32(src,0,dst,0,fader,pcount,1);
+		    SIMD_CALL(alpha_area_rgba32)(src,0,dst,0,fader,pcount,1);
 		src += pcount*4;
 		break;
 
-	    case EANIM_FILL:
+	    case EPX_ANIM_FILL:
 		a= (fader==ALPHA_FACTOR_1) ? src[0] : ((src[0]*fader) >> 8);
-		if (a == EALPHA_TRANSPARENT)
+		if (a == EPX_ALPHA_TRANSPARENT)
 		    ;
-		else if (a == EALPHA_OPAQUE) {
+		else if (a == EPX_ALPHA_OPAQUE) {
 		    // FIXME this can be done by calling wmemset directly
-		    EDirectFillRow(dst, EPIXEL_TYPE_RGBA, pcount,
-				   epixel_argb(a,src[1],src[2],src[3]));
+		    epx_fill_row(dst, EPX_FORMAT_RGBA,
+				 epx_pixel_argb(a,src[1],src[2],src[3]),
+				 pcount);
 		}
 		else
-		    ESimdFillAreaBlendRGBA32(dst, 0, pcount, 1, 
-					     epixel_argb(a,src[1],
-							 src[2],src[3]));
+		    SIMD_CALL(fill_area_blend_rgba32)(dst, 0,
+						      epx_pixel_argb(a,src[1],
+								     src[2],src[3]),  pcount, 1);
 		src += 4;
 		break;
 
