@@ -10,6 +10,8 @@
 #include "erl_nif.h"
 #include "epx.h"
 
+#define MAX_PATH 1024
+
 static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info);
 static int epx_reload(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info);
 static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data, 
@@ -78,6 +80,15 @@ static ERL_NIF_TERM pixmap_draw_rectangle(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc, 
 					const ERL_NIF_TERM argv[]);
+// Pixmap animations
+static ERL_NIF_TERM animation_open(ErlNifEnv* env, int argc, 
+				   const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM animation_copy(ErlNifEnv* env, int argc, 
+				   const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM animation_draw(ErlNifEnv* env, int argc, 
+				   const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM animation_info(ErlNifEnv* env, int argc, 
+				   const ERL_NIF_TERM argv[]);
 
 // Dictionaries
 static ERL_NIF_TERM dict_create(ErlNifEnv* env, int argc, 
@@ -282,7 +293,7 @@ ErlNifFunc epx_funcs[] =
     { "pixmap_draw_line", 6, pixmap_draw_line },
     { "pixmap_draw_rectangle", 6, pixmap_draw_rectangle },
     { "pixmap_draw_ellipse", 6, pixmap_draw_ellipse },
-    
+
     // Dictionary interface
     { "dict_create", 0, dict_create },
     { "dict_copy",   1, dict_copy },
@@ -327,6 +338,12 @@ ErlNifFunc epx_funcs[] =
     { "window_set_event_mask", 2, window_set_event_mask },
     { "window_enable_events", 2, window_enable_events },
     { "window_disable_events", 2, window_disable_events },
+
+    { "animation_info", 2, animation_info },
+    { "animation_draw", 6, animation_draw },
+    { "animation_copy", 6, animation_copy },
+    { "animation_open", 1, animation_open },
+
 };
 
 epx_resource_t dict_res;
@@ -335,6 +352,8 @@ epx_resource_t gc_res;
 epx_resource_t font_res;
 epx_resource_t backend_res;
 epx_resource_t window_res;
+epx_resource_t anim_res;
+
 
 // Atom macros
 #define ATOM(name) atm_##name
@@ -362,6 +381,7 @@ DECL_ATOM(epx_backend);
 DECL_ATOM(epx_dict);
 DECL_ATOM(epx_gc);
 DECL_ATOM(epx_font);
+DECL_ATOM(epx_animation);
 
 
 // pixmap_info
@@ -373,6 +393,14 @@ DECL_ATOM(bytes_per_pixel);
 //DECL_ATOM(pixel_format);
 DECL_ATOM(parent);
 DECL_ATOM(clip);
+
+// animation_info
+//DECL_ATOM(file_name);
+//DECL_ATOM(file_size);
+DECL_ATOM(count);
+//DECL_ATOM(width);
+//DECL_ATOM(height);
+//DECL_ATOM(pixel_format);
 
 // Flags
 DECL_ATOM(solid);
@@ -2587,6 +2615,137 @@ static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc,
     return ATOM(ok);    
 }
 
+static ERL_NIF_TERM animation_open(ErlNifEnv* env, int argc,
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    char path[MAX_PATH];
+    int r;
+    epx_animation_t* anim;
+    ERL_NIF_TERM t;
+
+    if (!(r=enif_get_string(env, argv[0], path, sizeof(path), ERL_NIF_LATIN1)) 
+	|| (r < 0))
+	return enif_make_badarg(env);
+    anim = epx_resource_alloc(&anim_res, sizeof(epx_animation_t));
+    if (!anim)
+	return enif_make_badarg(env); // reason?    
+    if (epx_anim_open_init(anim, path) < 0) {
+	enif_release_resource(anim);
+	return enif_make_badarg(env); // reason?
+    }
+    epx_object_ref(anim);
+    t = make_object(env,ATOM(epx_animation), anim);
+    enif_release_resource(anim);
+    return t;
+}
+
+static ERL_NIF_TERM animation_copy(ErlNifEnv* env, int argc, 
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_pixmap_t* pixmap;
+    epx_gc_t* gc;
+    epx_animation_t* anim;
+    int x;
+    int y;    
+    unsigned int index;
+    epx_anim_pixels_t* base;
+    epx_anim_pixels_t* current;
+
+    if (!get_object(env, argv[0], &anim_res, (void**) &anim))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[1], &index))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[2], &pixmap_res, (void**) &pixmap))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[3], &gc_res, (void**) &gc))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[4], &x))
+	return enif_make_badarg(env);    
+    if (!enif_get_int(env, argv[5], &y))
+	return enif_make_badarg(env);
+
+    if (!(base = epx_anim_get_pixels(anim, 0)))
+	return enif_make_badarg(env);
+    if (!(current = epx_anim_get_pixels(anim, (int)index)))
+	return enif_make_badarg(env);
+    epx_anim_copy_frame(pixmap, gc, x, y, 
+			anim->hdr.width, 
+			anim->hdr.height, 
+			anim->hdr.pixel_format, 
+			base, current);
+    return ATOM(ok);    
+}
+
+static ERL_NIF_TERM animation_draw(ErlNifEnv* env, int argc, 
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_pixmap_t* pixmap;
+    epx_gc_t* gc;
+    epx_animation_t* anim;
+    int x;
+    int y;    
+    unsigned int index;
+    epx_anim_pixels_t* base;
+    epx_anim_pixels_t* current;
+
+    if (!get_object(env, argv[0], &anim_res, (void**) &anim))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[1], &index))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[2], &pixmap_res, (void**) &pixmap))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[3], &gc_res, (void**) &gc))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[4], &x))
+	return enif_make_badarg(env);    
+    if (!enif_get_int(env, argv[5], &y))
+	return enif_make_badarg(env);
+
+    if (!(base = epx_anim_get_pixels(anim, 0)))
+	return enif_make_badarg(env);	
+    if (!(current = epx_anim_get_pixels(anim, (int) index)))
+	return enif_make_badarg(env);	    
+    epx_anim_draw_frame(pixmap, gc, x, y, 
+			anim->hdr.width, 
+			anim->hdr.height, 
+			anim->hdr.pixel_format, 
+			base, current);
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM animation_info(ErlNifEnv* env, int argc, 
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_animation_t* anim;
+    
+    if (!get_object(env, argv[0], &anim_res, (void**) &anim))
+	return enif_make_badarg(env);
+    if (argv[1] == ATOM(file_name)) {
+	return enif_make_string(env, anim->file_name, ERL_NIF_LATIN1);
+    }
+    else if (argv[1] == ATOM(file_size)) {
+	return enif_make_uint(env, anim->mapped_size);
+    }
+    else if (argv[1] == ATOM(count)) {
+	return enif_make_uint(env, anim->hdr.image_count);
+    }
+    if (argv[1] == ATOM(width)) {
+	return enif_make_uint(env, anim->hdr.width);
+    }
+    else if (argv[1] == ATOM(height)) {
+	return enif_make_uint(env, anim->hdr.height);
+    }
+    else if (argv[1] == ATOM(pixel_format)) {
+	return make_pixel_format(env, anim->hdr.pixel_format);
+    }
+    else 
+	return enif_make_badarg(env);
+}
+
 /******************************************************************************
  *
  * Dictionary
@@ -3186,7 +3345,6 @@ static ERL_NIF_TERM gc_get(ErlNifEnv* env, int argc,
  * Font
  *
  *****************************************************************************/
-#define MAX_PATH 1024
 
 static ERL_NIF_TERM font_open(ErlNifEnv* env, int argc,
 			      const ERL_NIF_TERM argv[])
@@ -3472,7 +3630,7 @@ static void* backend_poll(void* arg)
 
 	    EPX_DBGFMT("backend_poll: poll fd=%ld", m.handle);
 
-	    fds[0].fd = (int) m.handle;
+	    fds[0].fd = (int)((long)m.handle);
 	    fds[0].events = POLLIN;
 	    nfd = 1;
 	    if (self->wake[0] >= 0) {
@@ -3945,6 +4103,8 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 		      ERL_NIF_RT_CREATE, &tried);
     epx_resource_init(env, &window_res, "epx_window", window_dtor,
 		      ERL_NIF_RT_CREATE, &tried);
+    epx_resource_init(env, &anim_res, "epx_animation",  object_dtor,
+		      ERL_NIF_RT_CREATE, &tried);
 
     // Load atoms
     LOAD_ATOM(ok);
@@ -3960,6 +4120,7 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     LOAD_ATOM(epx_dict);
     LOAD_ATOM(epx_gc);
     LOAD_ATOM(epx_font);
+    LOAD_ATOM(epx_animation);
 
     // Flags
     LOAD_ATOM(solid);
@@ -3984,6 +4145,9 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     LOAD_ATOM(pixel_format);
     LOAD_ATOM(parent);
     LOAD_ATOM(clip);
+
+    // animation_info
+    LOAD_ATOM(count);
 
     // epx_cap_style_t
     LOAD_ATOM(none);

@@ -12,6 +12,24 @@
 #define EPX_ANIM_BGRA      0x06  // count * BGRA data
 #define EPX_ANIM_FILL      0x07  // fill count*color (ARGB format) pixels
 
+typedef struct {
+    u_int32_t  version;
+    u_int32_t  image_count;
+    u_int32_t  height;
+    u_int32_t  width;
+    u_int32_t  pixel_format;
+} epx_animation_header_t;
+
+typedef struct _epx_animation_t {
+    EPX_OBJECT_MEMBERS(struct _epx_animation_t);
+    char*         file_name;
+    int*          offset_array;
+    uint8_t*      mapped_data;
+    off_t         mapped_size;
+    epx_animation_header_t hdr;
+} epx_animation_t;
+
+
 typedef struct _epx_anim_pixels_t {
     uint8_t    type;       // Draw type 
     uint8_t    itype;      // Indirect Draw type
@@ -20,13 +38,23 @@ typedef struct _epx_anim_pixels_t {
 } epx_anim_pixels_t;
 
 // Pixmap animation interface
-extern void epx_anim_copy_frame(epx_gc_t* gc, epx_pixmap_t* pic, int x, int y,
+
+extern void             epx_anim_init(epx_animation_t* anim);
+extern void             epx_anim_cleanup(epx_animation_t* anim);
+extern epx_animation_t* epx_anim_create(void);
+extern void             epx_anim_destroy(epx_animation_t* anim);
+extern int              epx_anim_open_init(epx_animation_t* anim, char* path);
+
+extern epx_anim_pixels_t* epx_anim_get_pixels(epx_animation_t* anim, int index);
+
+extern void epx_anim_copy_frame(epx_pixmap_t* pic, epx_gc_t* gc, int x, int y,
 				int width, int height, epx_format_t src_pt,
 				epx_anim_pixels_t* base,
 				epx_anim_pixels_t* current);
-extern void epx_anim_draw_frame(epx_gc_t* gc, epx_pixmap_t* pic, int x, int y,
+extern void epx_anim_draw_frame(epx_pixmap_t* pic, epx_gc_t* gc, int x, int y,
 				int width, int height, epx_format_t src_pt,
 				epx_anim_pixels_t* base,
 				epx_anim_pixels_t* current);
+
 
 #endif

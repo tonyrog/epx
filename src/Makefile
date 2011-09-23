@@ -15,7 +15,8 @@ MODULES = \
 	epx_dct \
 	epx_huffman \
 	epx_view \
-	epx_test
+	epx_test \
+	epx_dds_test
 
 
 #	epx_image_gif \

@@ -6,6 +6,14 @@
 #include <stdlib.h>
 #include <memory.h>
 #include <math.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
 
 #include "epx_simd_int.h"
 #include "epx_pixmap.h"
@@ -13,9 +21,140 @@
 #include "epx_colors.h"
 #include "epx_simd.h"
 
+void epx_anim_init(epx_animation_t* anim)
+{
+    EPX_OBJECT_INIT(anim, EPX_ANIM_TYPE);
+
+    memset(&anim->hdr, 0, sizeof(epx_animation_header_t));
+    anim->file_name = NULL;
+    anim->offset_array = NULL;
+    anim->mapped_data = NULL;
+    anim->mapped_size = 0;
+}
+
+void epx_anim_cleanup(epx_animation_t* anim)
+{
+    if (anim->file_name) {
+	free(anim->file_name);
+	anim->file_name = NULL;
+    }
+    if (anim->offset_array) {
+	free(anim->offset_array);
+	anim->offset_array = NULL;
+    }
+    if (anim->mapped_data) {
+	munmap(anim->mapped_data, anim->mapped_size);
+	anim->mapped_data = NULL;
+	anim->mapped_size = 0;
+    }
+}
+
+epx_animation_t* epx_anim_create()
+{
+    epx_animation_t* anim;
+
+    if (!(anim = (epx_animation_t*) malloc(sizeof(epx_animation_t))))
+	return 0;
+    epx_anim_init(anim);
+    anim->on_heap = 1;
+    anim->refc = 1;
+    return anim;
+}
+
+int epx_anim_open_init(epx_animation_t* anim, char* path)
+{
+    int fd;
+    struct stat cache_stat;
+    size_t sz;
+
+    epx_anim_init(anim);
+
+    if ((fd = open(path, O_RDONLY)) < 0)
+	return -1;
+    sz = sizeof(epx_animation_header_t);
+    if (read(fd, (char *) &anim->hdr, sz) != (int) sz) {
+	close(fd);
+	return -EINVAL;
+    }
+    anim->file_name = strdup(path);
+    // fixme: make header little endian ?
+
+    if ((anim->hdr.height<1) || (anim->hdr.height>2048))
+	goto error;
+
+    if ((anim->hdr.width < 1) || (anim->hdr.width > 4096))
+	goto error;
+
+    if ((anim->hdr.image_count < 1)||(anim->hdr.image_count>10000))
+	goto error;
+
+    lseek(fd, 0, SEEK_CUR);
+
+    // Read the offset table.
+    sz = sizeof(int) * anim->hdr.image_count;
+    anim->offset_array = malloc(sz);
+
+    if (read(fd, (char *) anim->offset_array, sz) != (int)sz)
+	goto error;
+
+    lseek(fd, 0, SEEK_CUR);
+    fstat(fd, &cache_stat);
+
+    anim->mapped_data = (uint8_t*) mmap(0,
+					cache_stat.st_size,
+					PROT_READ, MAP_SHARED, 
+					fd, 0);
+    anim->mapped_size = cache_stat.st_size;
+    close(fd);
+    fd = -1;
+
+    if (anim->mapped_data == (uint8_t*) 0xFFFFFFFF)
+	goto error;
+    return 0;
+
+error:
+    if (fd >= 0)
+	close(fd);
+    epx_anim_cleanup(anim);
+    return -EINVAL;
+}
+
+void EPX_ANIM_TYPE_RELEASE(void* arg)
+{
+    epx_animation_t* anim = (epx_animation_t*) arg;
+    EPX_DBGFMT_MEM("EPX_ANIM_TYPE_RELEASE: %p", arg);
+    epx_anim_cleanup(anim);
+    if (anim->on_heap)
+	free(anim);
+}
+
+void epx_anim_destroy(epx_animation_t* anim)
+{
+    epx_object_unref(anim);
+}
+
+
+epx_anim_pixels_t* epx_anim_get_pixels(epx_animation_t* anim, int index)
+{
+    uint8_t* base;
+    uint8_t* ptr0;
+    // uint8_t* ptr1;
+    int n = anim->hdr.image_count;
+
+    if ((index < 0) || (index >= n))
+	return 0;
+
+    base = anim->mapped_data + sizeof(epx_animation_header_t) + sizeof(int)*n;
+    ptr0 = base + anim->offset_array[index];
+//    if (index+1 == n)    // point after end of file
+//	ptr1 = anim->mapped_data + anim->mapped_size;
+//    else
+//	ptr1 = base + anim->offset_array[index+1];
+    return (epx_anim_pixels_t*) ptr0;
+}
 
 /* Copy animation frame to background */
-void epx_anim_copy_frame(epx_gc_t* gc, epx_pixmap_t* pic, int x, int y,
+void epx_anim_copy_frame(epx_pixmap_t* pic,  epx_gc_t* gc, int x, int y,
 			 int width, int height, epx_format_t src_pt,
 			 epx_anim_pixels_t* base, 
 			 epx_anim_pixels_t* current)
@@ -103,7 +242,7 @@ void epx_anim_copy_frame(epx_gc_t* gc, epx_pixmap_t* pic, int x, int y,
 }
 
 /* Draw & Blend animation frame with background */
-void epx_anim_draw_frame(epx_gc_t* gc, epx_pixmap_t* pic, int x, int y,
+void epx_anim_draw_frame(epx_pixmap_t* pic, epx_gc_t* gc, int x, int y,
 			 int width, int height, epx_format_t src_pt,
 			 epx_anim_pixels_t* base,
 			 epx_anim_pixels_t* current)

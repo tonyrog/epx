@@ -42,6 +42,11 @@
 -export([pixmap_draw_line/6]).
 -export([pixmap_draw_rectangle/6]).
 -export([pixmap_draw_ellipse/6]).
+%% Animation
+-export([animation_open/1]).
+-export([animation_copy/6]).
+-export([animation_draw/6]).
+-export([animation_info/2]).
 
 %% Dictionary access
 -export([dict_create/0]).
@@ -261,6 +266,22 @@ pixmap_draw_rectangle(_Pixmap, _Gc, _X, _Y, _Width, _Height) ->
 
 pixmap_draw_ellipse(_Pixmap, _Gc, _X, _Y, _Width, _Height) ->
     erlang:error(nif_not_loaded).
+
+%%
+%% Animation
+%%
+
+animation_open(_File) ->
+    erlang:error(nif_not_loaded).
+    
+animation_copy(_Anim, _Index, _Pixmap, _Gx,  _X, _Y) ->
+    erlang:error(nif_not_loaded).    
+
+animation_draw(_Anim, _Index, _Pixmap, _Gx,  _X, _Y) ->
+    erlang:error(nif_not_loaded).    
+
+animation_info(_Anum, _Key) ->
+    erlang:error(nif_not_loaded).        
 
 %%
 %% Dictionary context

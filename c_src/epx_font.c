@@ -49,7 +49,7 @@ void EPX_FONT_TYPE_RELEASE(void* arg)
 {
     epx_font_t* font = (epx_font_t*) arg;
     
-    EPX_DBGFMT_MEM("EFONT_TYPE_RELEASE: %p", arg);
+    EPX_DBGFMT_MEM("EPX_FONT_TYPE_RELEASE: %p", arg);
 
     if (font->file_name)    free(font->file_name);
     if (font->foundry_name) free(font->foundry_name);

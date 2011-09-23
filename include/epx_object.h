@@ -19,7 +19,8 @@ typedef enum
     EPX_BITMAP_TYPE,
     EPX_GC_TYPE,
     EPX_DICT_TYPE,
-    EPX_FONT_TYPE
+    EPX_FONT_TYPE,
+    EPX_ANIM_TYPE
 } epx_object_type_t;
 
 extern void EPX_BACKEND_TYPE_RELEASE(void*);
@@ -29,6 +30,7 @@ extern void EPX_BITMAP_TYPE_RELEASE(void*);
 extern void EPX_GC_TYPE_RELEASE(void*);
 extern void EPX_DICT_TYPE_RELEASE(void*);
 extern void EPX_FONT_TYPE_RELEASE(void*);
+extern void EPX_ANIM_TYPE_RELEASE(void*);
 
 #define EPX_OBJECT_INIT(obj,Type) do {		\
     (obj)->on_heap = 0;				\
