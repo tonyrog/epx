@@ -65,21 +65,20 @@ static int fb_pic_detach(epx_backend_t*, epx_pixmap_t*);
 static int fb_begin(epx_window_t*);
 static int fb_end(epx_window_t*,int off_screen);
 static int fb_pic_draw(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
-		       int off_screen,
 		       int src_x, int src_y, int dst_x, int dst_y,
 		       unsigned int width,
 		       unsigned int height);
 static int fb_win_attach(epx_backend_t*, epx_window_t*);
 static int fb_win_detach(epx_backend_t*, epx_window_t*);
 static int fb_win_swap(epx_backend_t*, epx_window_t*);
-static EHANDLE_T fb_evt_attach(epx_backend_t*);
+static EPX_HANDLE_T fb_evt_attach(epx_backend_t*);
 static int fb_evt_detach(epx_backend_t*);
 static int fb_evt_read(epx_backend_t*, epx_event_t*);
 static int fb_adjust(epx_backend_t *backend, epx_dict_t* param);
 static int fb_win_adjust(epx_window_t *win, epx_dict_t* param);
 static int viafb_adjust(int fd, epx_dict_t *param);
 
-static EPicCallbacks fb_callbacks =
+static epx_callbacks_t fb_callbacks =
 {
     fb_finish,
     fb_pic_attach,
@@ -285,7 +284,7 @@ static void fb_mod_vinfo(epx_dict_t *param, struct fb_var_screeninfo *vinfo)
     }
 
     if (epx_dict_lookup_integer(param,  "pixel_type", &int_param) != -1) {
-	vinfo->bits_per_pixel = EPIXEL_SIZE(int_param)*8;
+	vinfo->bits_per_pixel = EPX_PIXEL_SIZE(int_param)*8;
     }
 
     if (epx_dict_lookup_integer(param, "pixclock", &int_param) != -1 &&
@@ -349,7 +348,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     if ((be = (FbBackend*) malloc(sizeof(FbBackend))) == NULL)
 	return NULL;
 
-    EOBJECT_INIT((epx_backend_t*)be, EBACKEND_TYPE);
+    EPX_OBJECT_INIT((epx_backend_t*)be, EPX_BACKEND_TYPE);
     be->b.on_heap = 1;
     be->b.refc = 1;
     be->b.pending = 0;
@@ -357,12 +356,12 @@ epx_backend_t* fb_init(epx_dict_t* param)
     be->b.cb = &fb_callbacks;
     be->b.pixmap_list = NULL;
     be->b.window_list = NULL;
-    be->b.event = INVALID_HANDLE;
+    be->b.event = EPX_INVALID_HANDLE;
     be->via_support = 0;
     be->via_primary   = None_Device;
     be->via_secondary = None_Device;
 
-    if (epx_dict_lookup_string(param, "framebuffer_device", &string_param) == -1) {
+    if (epx_dict_lookup_string(param, "framebuffer_device", &string_param, NULL) == -1) {
 	EPX_DBGFMT("mssing framebuffer_device paramter. Defaulting to /dev/fb%d", 
 		0);
 	string_param = "/dev/fb0";
@@ -407,7 +406,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
 
 
     be->vinfo  = be->ovinfo;
-    be->vinfo.bits_per_pixel = EPIXEL_SIZE(EPIXEL_TYPE_ARGB)*8; // Default
+    be->vinfo.bits_per_pixel = EPX_PIXEL_SIZE(EPX_FORMAT_ARGB)*8; // Default
     be->vinfo.xoffset = 0;
     be->vinfo.yoffset = 0;
 
@@ -583,7 +582,7 @@ static int viafb_adjust(int fd, epx_dict_t *param)
     viafb_dump("Before", &via_info);
     
     // Active device
-    if (epx_dict_lookup_string(param, "active_device", &string_param) != -1 &&
+    if (epx_dict_lookup_string(param, "active_device", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("active_device", string_param))) {
 	via_info.device_status = p_entry->val | p_entry->val2;
 	via_info.primary_device = p_entry->val;
@@ -595,7 +594,7 @@ static int viafb_adjust(int fd, epx_dict_t *param)
 
     // SAMM mode
     //  dedotcrawl (http://en.wikipedia.org/wiki/Dot_crawl)
-    if (epx_dict_lookup_string(param, "samm", &string_param) != -1 &&
+    if (epx_dict_lookup_string(param, "samm", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("samm", string_param))) {
 	via_info.samm_status = p_entry->val;
     }
@@ -603,13 +602,13 @@ static int viafb_adjust(int fd, epx_dict_t *param)
     //
     // LCD  config.
     //
-    if (epx_dict_lookup_string(param, "lcd_scaling", &string_param) != -1 &&
+    if (epx_dict_lookup_string(param, "lcd_scaling", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("lcd_scaling", string_param))) {
 	via_info.lcd_operation_flag |= OP_LCD_CENTERING; 
 	via_info.lcd_attributes.display_center = p_entry->val;
     }
 
-    if (epx_dict_lookup_string(param, "lcd_mode", &string_param) != -1 &&
+    if (epx_dict_lookup_string(param, "lcd_mode", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("lcd_mode", string_param))) {
 	via_info.lcd_operation_flag |= OP_LCD_MODE; 
 	via_info.lcd_attributes.display_center = p_entry->val;
@@ -623,25 +622,25 @@ static int viafb_adjust(int fd, epx_dict_t *param)
     // 
     // TV config
     //
-    if (epx_dict_lookup_string(param, "tv_system", &string_param) != -1 &&
+    if (epx_dict_lookup_string(param, "tv_system", &string_param,NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_system", string_param))) {
 	via_info.tv_operation_flag |= OP_TV_SYSTEM; 
 	via_info.tv_attributes.system = p_entry->val;
     }
 
-    if (epx_dict_lookup_string(param, "tv_output_signal", &string_param) != -1 &&
+    if (epx_dict_lookup_string(param, "tv_output_signal", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_output_signal", string_param))) {
 	via_info.tv_operation_flag |= OP_TV_OUT_SIGNAL; 
 	via_info.tv_attributes.out_signal = p_entry->val;
     }
 
-    if (epx_dict_lookup_string(param, "tv_scan", &string_param) != -1 &&
+    if (epx_dict_lookup_string(param, "tv_scan", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_scan", string_param))) {
 	via_info.tv_operation_flag |= OP_TV_LEVEL; 
 	via_info.tv_attributes.level = p_entry->val;
     }
 
-    if (epx_dict_lookup_string(param, "tv_dedotcrawl", &string_param) != -1 &&
+    if (epx_dict_lookup_string(param, "tv_dedotcrawl", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_dedotcrawl", string_param))) {
 	via_info.tv_operation_flag |= OP_TV_DEDOTCRAWL; 
 	via_info.tv_attributes.dedotcrawl = p_entry->val;
@@ -673,7 +672,7 @@ static int viafb_adjust(int fd, epx_dict_t *param)
     }
 
 
-    if (epx_dict_lookup_string(param, "tv_set_ffilter", &string_param) != -1 &&
+    if (epx_dict_lookup_string(param, "tv_set_ffilter", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_set_ffilter", string_param))) {
 	via_info.tv_operation_flag |= OP_TV_SETTING_FFILTER; 
 	via_info.tv_attributes.ffilter_state = p_entry->val;
@@ -685,7 +684,7 @@ static int viafb_adjust(int fd, epx_dict_t *param)
 	via_info.tv_attributes.ffilter = int_param;
     }
 
-    if (epx_dict_lookup_string(param, "tv_set_adaptive_ffilter", &string_param) != -1 &&
+    if (epx_dict_lookup_string(param, "tv_set_adaptive_ffilter", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_set_adaptive_ffilter", string_param))) {
 	via_info.tv_operation_flag |= OP_TV_SETTING_ADAPTIVE_FFILTER; 
 	via_info.tv_attributes.adaptive_ffilter_state = p_entry->val;
@@ -711,10 +710,10 @@ static int viafb_adjust(int fd, epx_dict_t *param)
 
     // pixel type / bits per pixel
     if (epx_dict_lookup_integer(param,  "pixel_type", &int_param) != -1)
-	via_info.first_dev_bpp = EPIXEL_SIZE(int_param)*8;
+	via_info.first_dev_bpp = EPX_PIXEL_SIZE(int_param)*8;
 
     if (epx_dict_lookup_integer(param,  "pixel_type2", &int_param) != -1)
-	via_info.second_dev_bpp = EPIXEL_SIZE(int_param)*8;
+	via_info.second_dev_bpp = EPX_PIXEL_SIZE(int_param)*8;
 
     //
     // Tv position time. 
@@ -824,10 +823,10 @@ static int fb_adjust(epx_backend_t *backend, epx_dict_t* param)
 
 
 /* return the backend event handle */
-static EHANDLE_T fb_evt_attach(epx_backend_t* backend)
+static EPX_HANDLE_T fb_evt_attach(epx_backend_t* backend)
 {
     (void) backend;
-    return INVALID_HANDLE;
+    return EPX_INVALID_HANDLE;
 }
 
 static int fb_evt_detach(epx_backend_t* backend)
@@ -883,16 +882,19 @@ static int fb_pic_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 
 static int fb_begin(epx_window_t* ewin)
 {
-    return 0;
+  (void) ewin;
+  return 0;
 }
 
 static int fb_end(epx_window_t* ewin,int off_screen)
 {
-    return 0;
+  (void) ewin;
+  (void) off_screen;
+  return 0;
 }
 
-static int fb_pic_draw(epx_backend_t* backend, epx_pixmap_t* pixmap, epx_window_t* ewin,
-		       int off_screen,
+static int fb_pic_draw(epx_backend_t* backend, epx_pixmap_t* pixmap, 
+		       epx_window_t* ewin,
 		       int src_x, int src_y, int dst_x, int dst_y,
 		       unsigned int width,
 		       unsigned int height)
@@ -906,7 +908,7 @@ static int fb_pic_draw(epx_backend_t* backend, epx_pixmap_t* pixmap, epx_window_
     /* If we do not draw directly to pixmap. Copy it */
     if (!be->direct_pixmap_draw) {
       epx_pixmap_t* scr;
-      if (off_screen && be->dbuf)
+      if (be->dbuf)
 	scr = (be->cbuf==0) ? &be->screen[1] : &be->screen[0];
       else
 	scr = &be->screen[0];
@@ -956,7 +958,7 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 
     nwin->wstate = 1;
     nwin->dcount = 0;
-    epx_objec_tlink(&backend->window_list, ewin);
+    epx_object_link(&backend->window_list, ewin);
     ewin->opaque  = (void*) nwin;
     ewin->backend = (epx_backend_t*) be;
 
@@ -1040,10 +1042,10 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     be->screen[0].width = be->vinfo.xres;
     be->screen[0].height = be->vinfo.yres;
 
-    be->screen[0].bytesPerPixel = be->vinfo.bits_per_pixel/8;
+    be->screen[0].bytes_per_pixel = be->vinfo.bits_per_pixel/8;
 
-    be->screen[0].bytesPerRow = be->finfo.line_length;
-    be->screen[0].sz = be->screen[0].bytesPerRow * be->screen[0].height;
+    be->screen[0].bytes_per_row = be->finfo.line_length;
+    be->screen[0].sz = be->screen[0].bytes_per_row * be->screen[0].height;
     be->screen[0].clip.xy.x=0;
     be->screen[0].clip.xy.y=0;
     be->screen[0].clip.wh.width=be->screen[0].width;
@@ -1052,10 +1054,10 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     be->screen[1].width = be->vinfo.xres;
     be->screen[1].height = be->vinfo.yres;
 
-    be->screen[1].bytesPerPixel = be->vinfo.bits_per_pixel/8;
+    be->screen[1].bytes_per_pixel = be->vinfo.bits_per_pixel/8;
 
-    be->screen[1].bytesPerRow = be->finfo.line_length;
-    be->screen[1].sz = be->screen[1].bytesPerRow * be->screen[1].height;
+    be->screen[1].bytes_per_row = be->finfo.line_length;
+    be->screen[1].sz = be->screen[1].bytes_per_row * be->screen[1].height;
     be->screen[1].clip.xy.x=0;
     be->screen[1].clip.xy.y=0;
     be->screen[1].clip.wh.width=be->screen[1].width;
@@ -1091,37 +1093,37 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     if (alpha) {
       if (rgb) {
 	if (alpha_first) {
-	  pt = EPIXEL_TYPE_ARGB;
-	  printf("epic_fb: ARGB\n");
+	  pt = EPX_FORMAT_ARGB;
+	  printf("epx_fb: ARGB\n");
 	}
 	else {
-	  pt = EPIXEL_TYPE_RGBA;
-	  printf("epic_fb: RGBA\n");
+	  pt = EPX_FORMAT_RGBA;
+	  printf("epx_fb: RGBA\n");
 	}
       }
       else {
 	if (alpha_first) {
-	  pt = EPIXEL_TYPE_ABGR;
-	  printf("epic_fb: ABGR\n");
+	  pt = EPX_FORMAT_ABGR;
+	  printf("epx_fb: ABGR\n");
 	}
 	else {
-	  pt = EPIXEL_TYPE_BGRA;
-	  printf("epic_fb: BGRA\n");
+	  pt = EPX_FORMAT_BGRA;
+	  printf("epx_fb: BGRA\n");
 	}
       }
     }
     else {
       if (rgb) {
-	pt = EPIXEL_TYPE_RGB;
-	printf("epic_fb: RGB\n");
+	pt = EPX_FORMAT_RGB;
+	printf("epx_fb: RGB\n");
       }
       else {
-	pt = EPIXEL_TYPE_BGR;
-	printf("epic_fb: BGR\n");
+	pt = EPX_FORMAT_BGR;
+	printf("epx_fb: BGR\n");
       }   
     }
-    be->screen[0].pixelType = pt;
-    be->screen[1].pixelType = pt;
+    be->screen[0].pixel_format = pt;
+    be->screen[1].pixel_format = pt;
 
     return 0;
 }
