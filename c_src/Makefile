@@ -48,6 +48,11 @@ endif
 
 CFG_CFLAGS=-I$(EPX_DIR)/include
 
+ifeq ($(TARGET), arm-elf)
+OSNAME = Linux
+CC = arm-elf-gcc
+endif
+
 ifeq ($(OSNAME), Linux)
 LINUX = Yes
 FB    = Yes
