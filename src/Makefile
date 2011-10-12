@@ -6,6 +6,7 @@ MODULES = \
 	epx_app \
 	epx_sup \
 	epx_font \
+	epx_animation \
 	epx_backend \
 	epx_image \
 	epx_image_png \

@@ -20,7 +20,7 @@
 	 terminate/2, code_change/3]).
 
 -define(SERVER,  ?MODULE).
--define(EPX_REG, epx_reg).
+-define(TABLE,   epx_backend_table).
 
 -record(state,
 	{
@@ -36,7 +36,7 @@ default() ->
     backend(default).
 
 backend(ID) ->
-    ets:lookup_element(?EPX_REG, ID, 2).
+    ets:lookup_element(?TABLE, ID, 2).
 
 %% create a new backend - return backend {ok,ID}
 %% or {error,Reason} when bad arg
@@ -82,7 +82,7 @@ start_link(Args) ->
 
 init(Args) ->
     io:format("epx_backend: starting args=~p\n", [Args]),
-    ets:new(?EPX_REG, [set, named_table, protected]),
+    ets:new(?TABLE, [set, named_table, protected]),
     %% maybe create the default backend here?
     {ok, #state{}}.
 
@@ -104,9 +104,9 @@ handle_call({create,Name,Opts}, _From, State) ->
     try epx:backend_open(Name, epx:dict_from_list(Opts)) of
 	Backend ->
 	    ID = State#state.next_id,
-	    ets:insert(?EPX_REG, {ID, Backend}),
+	    ets:insert(?TABLE, {ID, Backend}),
 	    if ID =:= 1 ->
-		    ets:insert(?EPX_REG, {default, Backend});
+		    ets:insert(?TABLE, {default, Backend});
 	       true ->
 		    ok
 	    end,
@@ -116,11 +116,11 @@ handle_call({create,Name,Opts}, _From, State) ->
 	    {reply, {error,einval}, State}
     end;
 handle_call({set_default,ID}, _From, State) ->
-    case ets:lookup(?EPX_REG, ID) of
+    case ets:lookup(?TABLE, ID) of
 	[] ->
 	    {reply, {error,einval}, State};
 	[{_,Backend}] ->
-	    ets:insert(?EPX_REG, {default, Backend}),
+	    ets:insert(?TABLE, {default, Backend}),
 	    {reply, ok, State}
     end;
 handle_call(_Request, _From, State) ->

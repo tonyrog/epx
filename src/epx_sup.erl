@@ -33,5 +33,7 @@ init(Args) ->
 	       permanent, 5000, worker, [epx_backend]},
     Font    = {epx_font, {epx_font, start_link, []},
 	       permanent, 5000, worker, [epx_font]},
-    {ok,{{one_for_all,0,300}, [Backend,Font]}}.
+    Anim    = {epx_animation, {epx_animation, start_link, []},
+	       permanent, 5000, worker, [epx_animation]},
+    {ok,{{one_for_all,0,300}, [Backend,Font,Anim]}}.
 
