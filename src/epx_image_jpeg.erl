@@ -9,6 +9,7 @@
 -export([magic/1, mime_type/0, extensions/0,
 	 read_info/1, write_info/2,
 	 read/2, write/2]).
+-import(erlang, [max/2, min/2]).
 -compile(export_all).
 -import(lists, [reverse/1, map/2]).
 

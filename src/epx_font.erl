@@ -22,7 +22,8 @@
 
 -include("../include/epx.hrl").
 
--define(SERVER, epx_font).
+-define(SERVER, epx_font_srv).
+-define(TABLE,  epx_font_table).
 
 -record(state,
 	{
@@ -39,12 +40,12 @@ add_path(Path) ->
 
 %% Calculate the size of the text in pixels given either
 %% Gc or Font handle
-dimension(Gc,String) when element(1,Gc) =:= epx_gc ->
+dimension(Gc,String) when is_record(Gc, epx_gc) ->
     Font = epx:gc_get(Gc, font),
     {W,_Y} = epx:font_draw_string(undefined,Gc,0,0,String),
     H = epx:font_info(Font, descent) + epx:font_info(Font, ascent),
     {W,H};
-dimension(Font,String) when element(1,Font) =:= epx_font ->
+dimension(Font,String) when is_record(Font, epx_font) ->
     Gc = epx:gc_copy(epx:gc_default()),
     epx:gc_set(Gc, font, Font),
     {W,_Y} = epx:font_draw_string(undefined,Gc,0,0,String),
@@ -60,7 +61,7 @@ info(Font, Item) ->
     epx:font_info(Font, Item).
 
 %% load epx_font_info structure
-info(Font) ->
+info(Font) when is_record(Font, epx_font) ->
     #epx_font_info { 
       file_name = info(Font, file_name),
       handle = Font,
@@ -111,16 +112,16 @@ match_arg([],A) ->
     A.
 
 match_i(MA) ->
-    match_i(ets:first(epx_font), MA).
+    match_i(ets:first(?TABLE), MA).
 
 match_i(Key, MA) ->
-    case ets:lookup(epx_font, Key) of
+    case ets:lookup(?TABLE, Key) of
 	[] ->
 	    false;
 	[FI] ->
 	    case match_fi(FI, MA) of
 		false ->
-		    match_i(ets:next(epx_font,Key), MA);
+		    match_i(ets:next(?TABLE,Key), MA);
 		true ->
 		    Handle = FI#epx_font_info.handle,
 		    epx:font_map(Handle),
@@ -149,10 +150,10 @@ match_fi(FI, MA) ->
 i() ->
     io:format("~15s ~5s ~8s ~15s ~4s ~s\n",
 	      ["Name", "Size", "Weight", "Slant", "Res", "File"]),
-    i(ets:first(epx_font)).
+    i(ets:first(?TABLE)).
 
 i(Key) ->
-    case ets:lookup(epx_font, Key) of
+    case ets:lookup(?TABLE, Key) of
 	[] ->
 	    ok;
 	[FInfo] ->
@@ -164,7 +165,7 @@ i(Key) ->
 		       FInfo#epx_font_info.slant,
 		       FInfo#epx_font_info.resolution_y
 		      ]),
-	    i(ets:next(epx_font, Key))
+	    i(ets:next(?TABLE, Key))
     end.
 
 %%--------------------------------------------------------------------
@@ -190,8 +191,8 @@ start_link() ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([]) ->
-    FTab = ets:new(epx_font, [named_table,set,public,
-			      {keypos, #epx_font_info.file_name}]),
+    FTab = ets:new(?TABLE, [named_table,set,public,
+				    {keypos, #epx_font_info.file_name}]),
     Path0 = filename:join([code:priv_dir(epx), "fonts"]),
     %% We may not block or do recursive calls here
     self() ! refresh,

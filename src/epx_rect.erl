@@ -19,6 +19,10 @@ union({X1,Y1,W1,H1}, {X2,Y2,W2,H2}) ->
     Yb = erlang:max(Y1+H1-1, Y2+H2-1),
     {Xl, Yt, Xr-Xl+1, Yb-Yt+1}.
 
+union([R]) -> R;
+union([R|Rs]) ->
+    union(R,union(Rs)).
+
 intersect(undefined, R) -> R;
 intersect(R, undefined) -> R;
 intersect({X1,Y1,W1,H1}, {X2,Y2,W2,H2}) ->
@@ -35,6 +39,10 @@ intersect({X1,Y1,W1,H1}, {X2,Y2,W2,H2}) ->
 		    {Xl, Yt, Xr-Xl+1, Yb-Yt+1}
 	    end
     end.
+
+intersect([R]) -> R;
+intersect([R|Rs]) ->
+    intersect(R,intersect(Rs)).
 
 %% is Rect A a proper sub-rect of B (intersect(A,B) == A)
 is_subrect(_A, undefined) -> true;

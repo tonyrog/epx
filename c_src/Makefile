@@ -56,7 +56,7 @@ endif
 ifeq ($(OSNAME), Linux)
 LINUX = Yes
 FB    = Yes
-X11   = No
+X11   = Yes
 LD_SHARED	:= $(CC) -shared
 DLL_LIBS=
 endif

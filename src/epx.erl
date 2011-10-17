@@ -121,12 +121,31 @@ init() ->
     io:format("Loading: ~s\n", [Nif]),
     erlang:load_nif(Nif, 0).
 
+%% select 
+assumed_backend() ->
+    case os:getenv("EPX_BACKEND") of
+	false ->
+	    case os:type() of
+		{unix,darwin} -> "macos";
+		{unix,linux} -> 
+		    case os:getenv("DISPLAY") of
+			false -> "fb";
+			_ -> "x11"
+		    end;
+		{unix,_} -> "x11";
+		_ -> "none"
+	    end;
+	Backend ->
+	    Backend
+    end.
+    
 %%
 %% This is a simple version of the start function
 %% For a more robust what use application:start(exp)
 %%
 start() ->
-    start("").
+    Backend = assumed_backend(),
+    start(Backend).
 
 start(Prefered) ->
     case epx_backend:start() of
@@ -134,6 +153,7 @@ start(Prefered) ->
 	    ok;
 	{ok,_Pid} ->
 	    epx_font:start(),
+	    epx_animation:start(),
 	    List = epx:backend_list(),
 	    Name = case lists:member(Prefered, List) of
 		       true -> Prefered;
