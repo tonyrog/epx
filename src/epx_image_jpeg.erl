@@ -9,7 +9,6 @@
 -export([magic/1, mime_type/0, extensions/0,
 	 read_info/1, write_info/2,
 	 read/2, write/2]).
--import(erlang, [max/2, min/2]).
 -compile(export_all).
 -import(lists, [reverse/1, map/2]).
 
@@ -205,7 +204,7 @@ component_vh(Comps, IMG) ->
 component_vh([{Format,_DC,_AC}|Cs], IMG, H, V) ->
     io:format("component_vh: ~p\n", [{component,Format}]),
     {_Q,H0,V0} = epx_image:attribute(IMG, {component,Format}, undefined),
-    component_vh(Cs, IMG, max(H,H0), max(V,V0));
+    component_vh(Cs, IMG, erlang:max(H,H0), erlang:max(V,V0));
 component_vh([], _IMG, H, V) ->
     {H,V}.
 %%
@@ -748,7 +747,7 @@ decode_block_ac(JFd, I, Acs, C) when I > 0 ->
 		R == 0 ->
 		    decode_eob(JFd1, I, Acs);
 		R == 15 ->
-		    Z1 = min(I, 16),
+		    Z1 = erlang:min(I, 16),
 		    Acs1 = cat_zeros(Z1, Acs),
 		    decode_block_ac(JFd1, I-Z1, Acs1, C);
 		R > I ->
