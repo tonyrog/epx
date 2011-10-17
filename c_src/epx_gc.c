@@ -73,7 +73,7 @@ void epx_gc_init(epx_gc_t* gc)
     gc->foreground_color = epx_pixel_blue;
     gc->background_color = epx_pixel_green;
 
-    gc->fader_value      = 255;
+    gc->fader_value      = ALPHA_FACTOR_1;  // 1.0
 
     gc->font = 0;
 

@@ -15,39 +15,12 @@
 -export([move/2, move/3, line/2, line/3, turn/2]).
 
 -export([identity/1, translate/3, scale/3, rotate/2]).
--export([deg_norm/1]).
 -export([set_orientation/2, get_orientation/1]).
 -export([set_position/2, get_position/1]).
--export([x/3, y/3, height/2, width/2, point/2, rect/2]).
-
--record(t2d,
-	{
-	  sx=1.0, ry=0.0,
-	  rx=0.0, sy=1.0,
-	  tx=0.0, ty=0.0
-	 }).
-
-t2d_dxf(Vm, X, Y) ->
-    X*Vm#t2d.sx + Y*Vm#t2d.ry.
-
-t2d_dyf(Vm, X, Y) ->
-    X*Vm#t2d.rx + Y*Vm#t2d.sy.
-
-t2d_xf(Vm, X, Y) ->
-    X*Vm#t2d.sx + Y*Vm#t2d.ry + Vm#t2d.tx.
-
-t2d_yf(Vm, X, Y) ->
-    X*Vm#t2d.rx + Y*Vm#t2d.sy + Vm#t2d.ty.
-
-t2d_hf(Vm, H) ->
-    H*Vm#t2d.sy.
-
-t2d_wf(Vm, W) ->
-    W*Vm#t2d.sx.
-
+-export([x/3, y/3, height/2, width/2, point/2, rectangle/2]).
 
 identity(Pixmap) ->
-    set_vm(Pixmap, #t2d{}).
+    set_vm(Pixmap, epx_t2d:identity()).
 
 %% Get view matrix
 get_vm(Pixmap) ->
@@ -74,19 +47,6 @@ set_position(Pixmap,Pos={_X,_Y}) ->
     put({'EPX_XY',Pixmap},Pos),
     Pos.
 
--define(PI, 3.141592653589793).
-
-deg_norm(A) when is_number(A) ->
-    N = trunc(A / 360),
-    if A < 0 ->
-	    A - ((N-1)*360);
-       true ->
-	    A - N*360
-    end.
-
-deg_to_rad(Deg) ->
-    Deg * (?PI/180.0).
-
 get_orientation(Pixmap) ->
     case get({'EPX_A',Pixmap}) of
 	undefined -> 0.0;
@@ -94,20 +54,15 @@ get_orientation(Pixmap) ->
     end.
 
 set_orientation(Pixmap, Deg) when is_number(Deg) ->
-    Deg1 = deg_norm(Deg),
+    Deg1 = epx_t2d:deg_norm(Deg),
     put({'EPX_A',Pixmap}, Deg1),
     Deg1.
 
 
 set_clip(Pixmap,X,Y,W,H) ->
     Vm = get_vm(Pixmap),
-    Xi = t2d_x(Vm, X, Y),
-    Yi = t2d_y(Vm, X, Y),
-    Wi = t2d_w(Vm, W),
-    Hi = t2d_h(Vm, H),
-    epx:pixmap_set_clip(Pixmap, {Xi, Yi, Wi, Hi}).
-
-
+    {X1,Y1,W1,H1} = epx_t2d:rectangle(Vm,X,Y,W,H),
+    epx:pixmap_set_clip(Pixmap,trunc(X1),trunc(Y1),trunc(W1),trunc(H1)).
 
 push(Pixmap) ->
     Vm    = get_vm(Pixmap),
@@ -153,108 +108,48 @@ draw(Pixmap,Fun) ->
 	pop(Pixmap)
     end.
 
-
-t2d_x(Vm, X, Y) ->
-    round(t2d_xf(Vm, X, Y)).
-
-t2d_y(Vm, X, Y) ->
-    round(t2d_yf(Vm, X, Y)).
-
-t2d_h(Vm, H) ->
-    round(t2d_hf(Vm, H)).
-
-t2d_w(Vm, W) ->
-    round(t2d_wf(Vm, W)).
-
-%%t2d_hi(Vm, H) ->
-%%    round(H*(1/Vm#t2d.sy)).
-
-%%t2d_wi(Vm, W) ->
-%%    round(W*(1/Vm#t2d.sx)).
-
 x(Pixmap, X, Y) ->
-    t2d_x(get_vm(Pixmap), X, Y).
+    epx_t2d:x(get_vm(Pixmap), X, Y).
 
 y(Pixmap, X, Y) ->
-    t2d_y(get_vm(Pixmap), X, Y).
+    epx_t2d:y(get_vm(Pixmap), X, Y).
 
-point(Pixmap, {X,Y}) ->
-    Vm = get_vm(Pixmap),
-    X1 = t2d_x(Vm, X,Y),    
-    Y1 = t2d_y(Vm, X,Y),
-    {X1,Y1}.
+point(Pixmap, Point) ->
+    epx_t2d:point(get_vm(Pixmap), Point).
 
 width(Pixmap, W) ->
-    t2d_w(get_vm(Pixmap), W).
+    epx_t2d:width(get_vm(Pixmap), W).
 
 height(Pixmap, H) ->
-    t2d_h(get_vm(Pixmap), H).
+    epx_t2d:height(get_vm(Pixmap), H).
 
-rect(Pixmap, {X,Y,W,H}) ->
-    Vm = get_vm(Pixmap),
-    X1 = t2d_x(Vm, X, Y),    
-    Y1 = t2d_y(Vm, X, Y),
-    W1 = t2d_w(Vm, W),
-    H1 = t2d_h(Vm, H),
-    {X1,Y1,W1,H1}.
+rectangle(Pixmap, Rect) ->
+    epx_t2d:rectangle(get_vm(Pixmap),Rect).
 
-%%
-%% Translate - Transform "matrix"
-%%  | sx  ry  tx |   | 1 0 x |     | sx ry sx*x+ry*y+tx |
-%%  | rx  sy  ty | * | 0 1 y |  =  | rx sy rx*x+sy*y+ty |
-%%  | 0   0   1  |   | 0 0 1 |     | 0  0  1            |
-%%
 translate(Pixmap,X,Y) when is_number(X), is_number(Y) ->
-    Vm = get_vm(Pixmap),
-    Tx = Vm#t2d.tx + Vm#t2d.sx*X + Vm#t2d.ry*Y,
-    Ty = Vm#t2d.ty + Vm#t2d.rx*X + Vm#t2d.sy*Y,
-    set_vm(Pixmap, Vm#t2d { tx=Tx, ty=Ty}).
+    T1 = epx_t2d:translate(get_vm(Pixmap),X,Y),
+    set_vm(Pixmap, T1).
 
-
-%% Scale - Transform "matrix"
-%%  | sx  ry  tx |   | x   0   0 |    | sx*x ry*y tx |
-%%  | rx  sy  ty | * | 0   y   0 | =  | rx*x sy*y ty |
-%%  | 0   0   1  |   | 0   0   1 |    | 0    0    1  |
-%%
 scale(Pixmap, X, Y) when is_number(X), is_number(Y) ->
-    Vm = get_vm(Pixmap),
-    Sx = Vm#t2d.sx*X,
-    Rx = Vm#t2d.rx*X,
-    Ry = Vm#t2d.ry*Y,
-    Sy = Vm#t2d.sy*Y,
-    set_vm(Pixmap, Vm#t2d { sx=Sx, rx=Rx, ry=Ry, sy=Sy}).
+    T1 = epx_t2d:scale(get_vm(Pixmap), X, Y),
+    set_vm(Pixmap, T1).
 
-%% Rotate - Transform "matrix"
-%%  | sx  ry  tx |   | c  -s   0 |     | sx*c+ry*s  -sx*s+ry*c tx |
-%%  | rx  sy  ty | * | s   c   0 |  =  | rx*c+sy*s  -rx*s+sy*c ty |
-%%  | 0   0   1  |   | 0   0   1 |     | 0          0          1  |
-%%
-    
 rotate(Pixmap, Angle) ->
-    A = deg_to_rad(deg_norm(Angle)),
-    C = math:cos(A),
-    S = math:sin(A),
-    Vm = get_vm(Pixmap),
-    Sx =  Vm#t2d.sx*C + Vm#t2d.ry*S,
-    Ry = -Vm#t2d.sx*S + Vm#t2d.ry*C,
-    Rx = Vm#t2d.rx*C + Vm#t2d.sy*S,
-    Sy = -Vm#t2d.rx*S + Vm#t2d.sy*C,
-    set_vm(Pixmap, Vm#t2d { sx=Sx, rx=Rx, ry=Ry, sy=Sy}).
+    T1 = epx_t2d:rotate(get_vm(Pixmap), Angle),
+    set_vm(Pixmap, T1).
 
 %%
 %% moveto/lineto interface
 %%
 moveto(Pixmap,X0,Y0) when is_number(X0), is_number(Y0) ->
     Vm = get_vm(Pixmap),
-    X1 = t2d_xf(Vm, X0, Y0),
-    Y1 = t2d_yf(Vm, X0, Y0),
-    set_position(Pixmap, {X1,Y1}).
+    NewPosition = epx_t2d:point(Vm,X0,Y0),
+    set_position(Pixmap, NewPosition).
     
 lineto(Pixmap,X,Y) when is_number(X), is_number(Y) ->
     Vm = get_vm(Pixmap),
     {X0,Y0} = get_position(Pixmap),
-    X1 = t2d_xf(Vm, X, Y),
-    Y1 = t2d_yf(Vm, X, Y),
+    {X1,Y1} = epx_t2d:point(Vm,X,Y),
     epx:draw_line(Pixmap, trunc(X0), trunc(Y0), trunc(X1), trunc(Y1)),
     set_position(Pixmap, {X1,Y1}).
 
@@ -264,24 +159,24 @@ turnto(Pixmap,Deg) when is_number(Deg) ->
 move(Pixmap,Dx0,Dy0) when is_number(Dx0), is_number(Dy0) ->
     Vm = get_vm(Pixmap),
     {X0,Y0} = get_position(Pixmap),
-    X1 = X0 + t2d_dxf(Vm, Dx0, Dy0),
-    Y1 = Y0 + t2d_dyf(Vm, Dx0, Dy0),
-    set_position(Pixmap, {X1,Y1}).
+    {X1,Y1} = epx_t2d:delta(Vm,Dx0,Dy0),
+    set_position(Pixmap, {X0+X1,Y0+Y1}).
 
 line(Pixmap,Dx0,Dy0) when is_number(Dx0), is_number(Dy0) ->
     Vm = get_vm(Pixmap),
     {X0,Y0} = get_position(Pixmap),
-    X1 = X0 + t2d_dxf(Vm, Dx0, Dy0),
-    Y1 = Y0 + t2d_dyf(Vm, Dx0, Dy0),
-    epx:draw_line(Pixmap,trunc(X0),trunc(Y0),trunc(X1), trunc(Y1)),
-    set_position(Pixmap, {X1,Y1}).
+    {X1,Y1} = epx_t2d:delta(Vm,Dx0,Dy0),
+    X = X0 + X1,
+    Y = Y0 + Y1,
+    epx:draw_line(Pixmap,trunc(X0),trunc(Y0),trunc(X),trunc(Y)),
+    set_position(Pixmap, {X,Y}).
 
 move(Pixmap,Len) when is_number(Len) ->
-    A = deg_to_rad(get_orientation(Pixmap)),
+    A = epx_t2d:deg_to_rad(get_orientation(Pixmap)),
     move(Pixmap, math:cos(A)*Len, math:sin(A)*Len).
 
 line(Pixmap,Len) when is_number(Len) ->
-    A = deg_to_rad(get_orientation(Pixmap)),
+    A = epx_t2d:deg_to_rad(get_orientation(Pixmap)),
     line(Pixmap, math:cos(A)*Len, math:sin(A)*Len).
 
  turn(Pixmap,Deg) when is_number(Deg) ->
@@ -292,52 +187,41 @@ line(Pixmap,Len) when is_number(Len) ->
 %%
 draw_point(Pixmap, X, Y) ->
     Vm = get_vm(Pixmap),
-    Xi = t2d_x(Vm, X, Y),
-    Yi = t2d_y(Vm, X, Y),
-    epx:draw_point(Pixmap, Xi, Yi).
+    {X1,Y1} = epx_t2d:point(Vm,X,Y),
+    epx:draw_point(Pixmap, trunc(X1), trunc(Y1)).
 
 draw_line(Pixmap, X0, Y0, X1, Y1) ->
     Vm = get_vm(Pixmap),
-    Xi0 = t2d_x(Vm, X0, Y0),
-    Yi0 = t2d_y(Vm, X0, Y0),
-    Xi1 = t2d_x(Vm, X1, Y1),
-    Yi1 = t2d_y(Vm, X1, Y1),
-    epx:draw_line(Pixmap, Xi0, Yi0, Xi1, Yi1).
+    {X2,Y2} = epx_t2d:point(Vm,X0,Y0),
+    {X3,Y3} = epx_t2d:point(Vm,X1,Y1),
+    epx:draw_line(Pixmap, trunc(X2), trunc(Y2), trunc(X3), trunc(Y3)).
 
 draw_rectangle(Pixmap, X, Y, W, H) ->    
     Vm = get_vm(Pixmap),
-    Xi = t2d_x(Vm, X, Y),
-    Yi = t2d_y(Vm, X, Y),
+    {X1,Y1} = epx_t2d:point(Vm,X,Y),
     %% should really draw polygon!
-    Wi = t2d_w(Vm, W),
-    Hi = t2d_h(Vm, H),
-    epx:draw_rectangle(Pixmap,Xi,Yi,Wi,Hi).
+    {W1,H1} = epx_t2d:dimension(Vm,W,H),
+    epx:draw_rectangle(Pixmap,trunc(X1),trunc(Y1),trunc(W1),trunc(H1)).
 
 draw_ellipse(Pixmap, X, Y, A, B) ->
     Vm = get_vm(Pixmap),
-    Xi = t2d_x(Vm, X, Y),
-    Yi = t2d_y(Vm, X, Y),
+    {X1,Y1} = epx_t2d:point(Vm,X,Y),
     %% should really draw rotated ellipse!
-    Ai = t2d_w(Vm, A),
-    Bi = t2d_h(Vm, B),
-    epx:draw_ellipse(Pixmap,Xi,Yi,Ai,Bi).
+    {A1,B1} = epx_t2d:dimension(Vm,A,B),
+    epx:draw_ellipse(Pixmap,trunc(X1),trunc(Y1),trunc(A1),trunc(B1)).
 
 put_pixel(Pixmap,X,Y,Pixel) ->
     Vm = get_vm(Pixmap),
-    Xi = t2d_x(Vm, X, Y),
-    Yi = t2d_y(Vm, X, Y),
-    epx:pixmap_put_pixel(Pixmap,Xi,Yi,Pixel).
+    {X1,Y1} = epx_t2d:point(Vm,X,Y),
+    epx:pixmap_put_pixel(Pixmap,trunc(X1),trunc(Y1),Pixel).
 
 put_pixels(Pixmap, X, Y, W, H, Ps) ->
     Vm = get_vm(Pixmap),
-    Xi = t2d_x(Vm, X, Y),
-    Yi = t2d_y(Vm, X, Y),
-    %% Wi = t2d_w(Vm, W),
-    %% Hi = t2d_h(Vm, W),
-    epx:pixmap_put_pixels(Pixmap,Xi,Yi,W,H,Ps).    
+    {X1,Y1} = epx_t2d:point(Vm,X,Y),
+    %% fixme: scale etc..
+    epx:pixmap_put_pixels(Pixmap,X1,Y1,W,H,Ps).    
 
 get_pixel(Pixmap,X,Y) ->
     Vm = get_vm(Pixmap),
-    Xi = t2d_x(Vm, X, Y),
-    Yi = t2d_y(Vm, X, Y),
-    epx:pixmap_get_pixel(Pixmap,Xi,Yi).
+    {X1,Y1} = epx_t2d:point(Vm,X,Y),
+    epx:pixmap_get_pixel(Pixmap,trunc(X1),trunc(Y1)).

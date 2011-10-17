@@ -19,7 +19,6 @@ static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
 static void epx_unload(ErlNifEnv* env, void* priv_data);
 
 // Pixmaps
-
 static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc, 
 				  const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_copy(ErlNifEnv* env, int argc, 
@@ -393,6 +392,7 @@ DECL_ATOM(bytes_per_pixel);
 //DECL_ATOM(pixel_format);
 DECL_ATOM(parent);
 DECL_ATOM(clip);
+DECL_ATOM(backend);
 
 // animation_info
 //DECL_ATOM(file_name);
@@ -401,6 +401,15 @@ DECL_ATOM(count);
 //DECL_ATOM(width);
 //DECL_ATOM(height);
 //DECL_ATOM(pixel_format);
+
+// window_info
+// DECL_ATOM(width);
+// DECL_ATOM(height);
+// DECL_ATOM(backend);
+DECL_ATOM(x);
+DECL_ATOM(y);
+// DECL_ATOM(backend);
+DECL_ATOM(event_mask);
 
 // Flags
 DECL_ATOM(solid);
@@ -606,6 +615,7 @@ static epx_gc_t* def_gc = 0;
  *****************************************************************************/
 
 // Peek at queue front
+#ifdef __not_used__
 static epx_message_t* epx_queue_peek(epx_queue_t* q)
 {
     epx_qlink_t* ql;
@@ -618,6 +628,7 @@ static epx_message_t* epx_queue_peek(epx_queue_t* q)
     else
 	return 0;
 }
+#endif
 
 // Get message from queue front
 static int epx_queue_get(epx_queue_t* q, epx_message_t* m)
@@ -716,7 +727,7 @@ static void epx_queue_destroy(epx_queue_t* q)
  *   Threads
  *
  *****************************************************************************/
-
+#ifdef DEBUG
 static char* format_message(epx_message_t* m)
 {
     switch(m->type) {
@@ -735,6 +746,7 @@ static char* format_message(epx_message_t* m)
     default: return "unknown";
     }
 }
+#endif
 
 static int epx_message_send(epx_thread_t* thr, epx_thread_t* sender,
 			    epx_message_t* m)
@@ -755,6 +767,7 @@ static int epx_message_recv(epx_thread_t* thr, epx_thread_t** from,
     return 0;
 }
 
+#ifdef __not_used__
 static epx_message_t* epx_message_peek(epx_thread_t* thr, epx_thread_t** from)
 {
     epx_message_t* m;
@@ -764,6 +777,7 @@ static epx_message_t* epx_message_peek(epx_thread_t* thr, epx_thread_t** from)
     }
     return m;
 }
+#endif
 
 static epx_thread_t* epx_thread_start(void* (*func)(void* arg),
 				      void* arg, int wake, int stack_size)
@@ -1050,28 +1064,28 @@ static int get_operation(ErlNifEnv* env, const ERL_NIF_TERM term,
 			 epx_pixel_operation_t* op)
 {
     (void) env;
-         if (term == ATOM(clear)) *op = EPX_PIXEL_OP_CLEAR;
-    else if (term == ATOM(src))   *op = EPX_PIXEL_OP_SRC;
-    else if (term == ATOM(dst))   *op = EPX_PIXEL_OP_DST;
-    else if (term == ATOM(src_over))   *op = EPX_PIXEL_OP_SRC_OVER;
-    else if (term == ATOM(dst_over))   *op = EPX_PIXEL_OP_DST_OVER;
-    else if (term == ATOM(src_in))   *op = EPX_PIXEL_OP_SRC_IN;
-    else if (term == ATOM(dst_in))   *op = EPX_PIXEL_OP_DST_IN;
+         if (term == ATOM(clear))     *op = EPX_PIXEL_OP_CLEAR;
+    else if (term == ATOM(src))       *op = EPX_PIXEL_OP_SRC;
+    else if (term == ATOM(dst))       *op = EPX_PIXEL_OP_DST;
+    else if (term == ATOM(src_over))  *op = EPX_PIXEL_OP_SRC_OVER;
+    else if (term == ATOM(dst_over))  *op = EPX_PIXEL_OP_DST_OVER;
+    else if (term == ATOM(src_in))    *op = EPX_PIXEL_OP_SRC_IN;
+    else if (term == ATOM(dst_in))    *op = EPX_PIXEL_OP_DST_IN;
     else if (term == ATOM(src_out))   *op = EPX_PIXEL_OP_SRC_OUT;
     else if (term == ATOM(dst_out))   *op = EPX_PIXEL_OP_DST_OUT;
-    else if (term == ATOM(src_atop))   *op = EPX_PIXEL_OP_SRC_ATOP;
-    else if (term == ATOM(dst_atop))   *op = EPX_PIXEL_OP_DST_ATOP;
-    else if (term == ATOM(xor))   *op = EPX_PIXEL_OP_XOR;	 
-    else if (term == ATOM(copy))   *op = EPX_PIXEL_OP_COPY;	 
-    else if (term == ATOM(add))   *op = EPX_PIXEL_OP_ADD;
-    else if (term == ATOM(sub))   *op = EPX_PIXEL_OP_SUB;
-    else if (term == ATOM(src_blend))   *op = EPX_PIXEL_OP_SRC_BLEND;
-    else if (term == ATOM(dst_blend))   *op = EPX_PIXEL_OP_DST_BLEND;
+    else if (term == ATOM(src_atop))  *op = EPX_PIXEL_OP_SRC_ATOP;
+    else if (term == ATOM(dst_atop))  *op = EPX_PIXEL_OP_DST_ATOP;
+    else if (term == ATOM(xor))       *op = EPX_PIXEL_OP_XOR;	 
+    else if (term == ATOM(copy))      *op = EPX_PIXEL_OP_COPY;	 
+    else if (term == ATOM(add))       *op = EPX_PIXEL_OP_ADD;
+    else if (term == ATOM(sub))       *op = EPX_PIXEL_OP_SUB;
+    else if (term == ATOM(src_blend)) *op = EPX_PIXEL_OP_SRC_BLEND;
+    else if (term == ATOM(dst_blend)) *op = EPX_PIXEL_OP_DST_BLEND;
     else return 0;
     return 1;
 }
 
-static int get_event(ErlNifEnv* env, const ERL_NIF_TERM term,
+static int get_event_flag(ErlNifEnv* env, const ERL_NIF_TERM term,
 		     uint32_t* e)
 {
     (void) env;
@@ -1106,7 +1120,7 @@ static int get_event(ErlNifEnv* env, const ERL_NIF_TERM term,
     return 1;
 }
 
-static int get_events(ErlNifEnv* env, const ERL_NIF_TERM term,
+static int get_event_flags(ErlNifEnv* env, const ERL_NIF_TERM term,
 		      uint32_t* events)
 {
     if (enif_is_empty_list(env, term)) {
@@ -1115,7 +1129,7 @@ static int get_events(ErlNifEnv* env, const ERL_NIF_TERM term,
     }
     else if (enif_is_atom(env, term)) {
 	uint32_t e;
-	if (!get_event(env, term, &e))
+	if (!get_event_flag(env, term, &e))
 	    return 0;
 	*events = e;
 	return 1;
@@ -1127,7 +1141,7 @@ static int get_events(ErlNifEnv* env, const ERL_NIF_TERM term,
 	ERL_NIF_TERM head, tail;
 	
 	while(enif_get_list_cell(env, list, &head, &tail)) {
-	    if (!get_event(env, head, &e))
+	    if (!get_event_flag(env, head, &e))
 		return 0;
 	    es |= e;
 	    list = tail;
@@ -1138,6 +1152,68 @@ static int get_events(ErlNifEnv* env, const ERL_NIF_TERM term,
 	return 1;
     }
     return 0;
+}
+
+static ERL_NIF_TERM make_event_flags(ErlNifEnv* env, uint32_t mask)
+{
+    ERL_NIF_TERM list;
+    if (mask == 0)
+	return ATOM(none);
+    else if (mask == EPX_EVENT_ALL)
+	return ATOM(all);
+    list = enif_make_list(env, 0);
+
+    if (mask & EPX_EVENT_KEY_PRESS)
+	list = enif_make_list_cell(env, ATOM(key_press), list);
+    if (mask & EPX_EVENT_KEY_RELEASE)
+	list = enif_make_list_cell(env, ATOM(key_release), list);
+    if (mask & EPX_EVENT_POINTER_MOTION)
+	list = enif_make_list_cell(env, ATOM(motion), list);
+    if (mask & EPX_EVENT_BUTTON_PRESS)
+	list = enif_make_list_cell(env, ATOM(button_press), list);
+    if (mask & EPX_EVENT_BUTTON_RELEASE)
+	list = enif_make_list_cell(env, ATOM(button_release), list);
+    if ((mask & (EPX_EVENT_FOCUS_IN|EPX_EVENT_FOCUS_OUT)) ==
+	(EPX_EVENT_FOCUS_IN|EPX_EVENT_FOCUS_OUT)) 
+	list = enif_make_list_cell(env, ATOM(focus), list);
+    else {
+	if (mask & EPX_EVENT_FOCUS_IN)
+	    list = enif_make_list_cell(env, ATOM(focus_in), list);
+	if (mask & EPX_EVENT_FOCUS_OUT)
+	    list = enif_make_list_cell(env, ATOM(focus_out), list);
+    }
+    if ((mask & (EPX_EVENT_ENTER | EPX_EVENT_LEAVE)) ==
+	(EPX_EVENT_ENTER | EPX_EVENT_LEAVE))
+	list = enif_make_list_cell(env, ATOM(crossing), list);
+    else {
+	if (mask & EPX_EVENT_ENTER)
+	    list = enif_make_list_cell(env, ATOM(enter), list);
+	if (mask & EPX_EVENT_LEAVE)
+	    list = enif_make_list_cell(env, ATOM(leave), list);
+    }
+    if (mask & EPX_EVENT_CONFIGURE)
+	list = enif_make_list_cell(env, ATOM(configure), list);
+    if (mask & EPX_EVENT_RESIZE)
+	list = enif_make_list_cell(env, ATOM(resize), list);
+    if (mask & EPX_EVENT_BUTTON_LEFT)
+	list = enif_make_list_cell(env, ATOM(left), list);
+    if (mask & EPX_EVENT_BUTTON_MIDDLE)
+	list = enif_make_list_cell(env, ATOM(middle), list);
+    if (mask & EPX_EVENT_BUTTON_RIGHT)
+	list = enif_make_list_cell(env, ATOM(right), list);
+    if (mask & EPX_EVENT_WHEEL_UP)
+	list = enif_make_list_cell(env, ATOM(wheel_up), list);
+    if (mask & EPX_EVENT_WHEEL_DOWN)
+	list = enif_make_list_cell(env, ATOM(wheel_down), list);
+    if (mask & EPX_EVENT_WHEEL_LEFT)
+	list = enif_make_list_cell(env, ATOM(wheel_left), list);
+    if (mask & EPX_EVENT_WHEEL_RIGHT)
+	list = enif_make_list_cell(env, ATOM(wheel_right), list);
+    if (mask & EPX_EVENT_CLOSE)    
+	list = enif_make_list_cell(env, ATOM(close), list);
+    if (mask & EPX_EVENT_DESTROYED)    
+	list = enif_make_list_cell(env, ATOM(destroyed), list);
+    return list;
 }
 
 
@@ -1181,6 +1257,7 @@ static ERL_NIF_TERM make_pixel_format(ErlNifEnv* env, epx_format_t fmt)
 	return ATOM(undefined);
     return enif_make_atom(env, name);
 }
+
 
 // Parse color argument
 // Input styles:  16#AARRGGBB  (integer)
@@ -1784,6 +1861,13 @@ static ERL_NIF_TERM pixmap_info(ErlNifEnv* env, int argc,
 				enif_make_int(env, src->clip.xy.y),
 				enif_make_uint(env, src->clip.wh.width),
 				enif_make_uint(env, src->clip.wh.height));
+    }
+    else if (argv[1] == ATOM(backend)) {
+	epx_nif_backend_t* backend = (epx_nif_backend_t*) src->user;
+	if (!backend)
+	    return ATOM(undefined);
+	else
+	    return make_object(env,ATOM(epx_backend), backend);
     }
     else 
 	return enif_make_badarg(env);
@@ -3910,6 +3994,7 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
 {
     (void) argc;
     (void) argv;
+    // Fixme expose, pending, opengl, use_opengl, windows, pixmaps
     return enif_make_badarg(env);    
 }
 
@@ -3946,7 +4031,7 @@ static ERL_NIF_TERM window_create(ErlNifEnv* env, int argc,
     if (!enif_get_uint(env, argv[3], &height))
 	return enif_make_badarg(env);
     if (argc == 5) {
-	if (!get_events(env, argv[4], &events))
+	if (!get_event_flags(env, argv[4], &events))
 	    return enif_make_badarg(env);
     }
     window = epx_resource_alloc(&window_res, sizeof(epx_window_t));
@@ -3981,8 +4066,34 @@ static ERL_NIF_TERM window_info(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
-    return enif_make_badarg(env);    
+    epx_window_t* win;
+
+    if (!get_object(env, argv[0], &window_res, (void**) &win))
+	return enif_make_badarg(env);
+    if (argv[1] == ATOM(x)) {
+	return enif_make_int(env, win->x);
+    }
+    else if (argv[1] == ATOM(y)) {
+	return enif_make_uint(env, win->y);
+    }
+    else if (argv[1] == ATOM(width)) {
+	return enif_make_uint(env, win->width);
+    }
+    else if (argv[1] == ATOM(height)) {
+	return enif_make_uint(env, win->height);
+    }
+    else if (argv[1] == ATOM(backend)) {
+	epx_nif_backend_t* backend = (epx_nif_backend_t*) win->user;
+	if (!backend)
+	    return ATOM(undefined);
+	else
+	    return make_object(env,ATOM(epx_backend), backend);
+    }
+    else if (argv[1] == ATOM(event_mask)) {
+	return make_event_flags(env, win->mask);
+    }
+    else
+	return enif_make_badarg(env);    
 }
 
 static ERL_NIF_TERM window_attach(ErlNifEnv* env, int argc,
@@ -4043,7 +4154,7 @@ static ERL_NIF_TERM window_set_event_mask(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &window_res, (void**) &window))
 	return enif_make_badarg(env);
-    if (!get_events(env, argv[1], &events))
+    if (!get_event_flags(env, argv[1], &events))
 	return enif_make_badarg(env);
     epx_window_set_event_mask(window, events);
     return ATOM(ok);
@@ -4058,7 +4169,7 @@ static ERL_NIF_TERM window_enable_events(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &window_res, (void**) &window))
 	return enif_make_badarg(env);
-    if (!get_events(env, argv[1], &events))
+    if (!get_event_flags(env, argv[1], &events))
 	return enif_make_badarg(env);
     epx_window_enable_events(window, events);
     return ATOM(ok);
@@ -4073,7 +4184,7 @@ static ERL_NIF_TERM window_disable_events(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &window_res, (void**) &window))
 	return enif_make_badarg(env);
-    if (!get_events(env, argv[1], &events))
+    if (!get_event_flags(env, argv[1], &events))
 	return enif_make_badarg(env);
     epx_window_disable_events(window, events);
     return ATOM(ok);
@@ -4145,9 +4256,15 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     LOAD_ATOM(pixel_format);
     LOAD_ATOM(parent);
     LOAD_ATOM(clip);
+    LOAD_ATOM(backend);
 
     // animation_info
     LOAD_ATOM(count);
+
+    // window_info
+    LOAD_ATOM(x);
+    LOAD_ATOM(y);    
+    LOAD_ATOM(event_mask);
 
     // epx_cap_style_t
     LOAD_ATOM(none);

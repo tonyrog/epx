@@ -16,7 +16,7 @@
 -export([pixmap_create/3,pixmap_create/2]).
 -export([pixmap_copy/1]).
 -export([pixmap_sub_pixmap/5]).
--export([pixmap_info/2]).
+-export([pixmap_info/0, pixmap_info/1, pixmap_info/2]).
 -export([pixmap_set_clip/2]).
 -export([pixmap_fill/2]).
 -export([pixmap_copy_to/2]).
@@ -46,7 +46,7 @@
 -export([animation_open/1]).
 -export([animation_copy/6]).
 -export([animation_draw/6]).
--export([animation_info/2]).
+-export([animation_info/0, animation_info/1, animation_info/2]).
 
 %% Dictionary access
 -export([dict_create/0]).
@@ -66,6 +66,7 @@
 -export([gc_copy/1]).
 -export([gc_set/3]).
 -export([gc_get/2]).
+-export([gc_info/0, gc_info/1, gc_info/2]).
 
 %% Font 
 -export([font_open/1]).
@@ -73,7 +74,7 @@
 -export([font_unload/1]).
 -export([font_map/1]).
 -export([font_unmap/1]).
--export([font_info/2]).
+-export([font_info/0, font_info/1, font_info/2]).
 -export([font_draw_glyph/5]).
 -export([font_draw_string/5]).
 -export([font_draw_utf8/5]).
@@ -88,7 +89,7 @@
 -export([window_create/4]).
 -export([window_create/5]).
 -export([window_create/1]).
--export([window_info/2]).
+-export([window_info/0, window_info/1, window_info/2]).
 -export([window_close/1]).
 -export([window_adjust/2]).
 -export([window_set_event_mask/2]).
@@ -98,14 +99,15 @@
 -export([window_detach/1]).
 
 %% Utils
--export([draw_point/3]).
+-export([draw_point/3, draw_point/2]).
 -export([draw_line/5]).
--export([draw_rectangle/5]).
+-export([draw_rectangle/5, draw_rectangle/2, draw_rectangle/3]).
 -export([draw_ellipse/5]).
 -export([draw_char/4]).
 -export([draw_string/4]).
 -export([draw_utf8/4]).
 
+-import(lists, [map/2]).
 %% -define(debug, true).
 
 -ifdef(debug).
@@ -157,6 +159,27 @@ pixmap_copy(_Src) ->
 
 pixmap_sub_pixmap(_Src, _X, _Y, _Width, _Height) ->
     erlang:error(nif_not_loaded).
+
+%% pixmap_info:
+%%    width           unsigned()
+%%    height          unsigned()
+%%    bytes_per_row   unsigned()
+%%    bits_per_pixel  unsigned()
+%%    bytes_per_pixel unsigned()
+%%    pixel_format    pixel_format()
+%%    parent          epx_pixmap()
+%%    clip            epx_rect()
+%%    backend         epx_backend()
+%%
+pixmap_info() ->
+    [width, height, 
+     bytes_per_row, bits_per_pixel, bytes_per_pixel,
+     pixel_format, parent, clip, backend].
+
+
+pixmap_info(Pixmap) ->
+    map(fun(Info) -> {Info,pixmap_info(Pixmap,Info)} end,
+	pixmap_info()).
 
 pixmap_info(_Src, _Item) ->
     erlang:error(nif_not_loaded).
@@ -260,7 +283,7 @@ pixmap_draw_point(_Pixmap, _Gc, _X, _Y) ->
 
 pixmap_draw_line(_Pixmap, _Gc, _X1, _Y1, _X2, _Y2) ->
     erlang:error(nif_not_loaded).
-    
+
 pixmap_draw_rectangle(_Pixmap, _Gc, _X, _Y, _Width, _Height) ->
     erlang:error(nif_not_loaded).
 
@@ -280,7 +303,14 @@ animation_copy(_Anim, _Index, _Pixmap, _Gx,  _X, _Y) ->
 animation_draw(_Anim, _Index, _Pixmap, _Gx,  _X, _Y) ->
     erlang:error(nif_not_loaded).    
 
-animation_info(_Anum, _Key) ->
+animation_info() ->
+    [file_name, file_size, count, width, height, pixel_format].
+
+animation_info(Anim) ->
+    map(fun(Info) -> {Info,animation_info(Anim,Info)} end,
+	animation_info()).    
+
+animation_info(_Anim, _Key) ->
     erlang:error(nif_not_loaded).        
 
 %%
@@ -341,6 +371,25 @@ gc_set(_Gc, _Item, _Value) ->
 gc_get(_Gc, _Item) ->
     erlang:error(nif_not_loaded).    
 
+gc_info() ->
+    [fill_style,fill_color,fill_texture,
+     line_style,line_join_style,line_cap_style,line_width,line_texture,
+     border_style,border_join_style,border_cap_style,
+     border_color,border_texture,
+     foreground_color,
+     background_color,
+     fader_value,
+     font,
+     glyph_delta_x,glyph_delta_y,glyph_fixed_width,glyph_dot_kern].
+     
+
+gc_info(Gc) ->
+    map(fun(Info) -> {Info,gc_info(Gc,Info)} end,
+	gc_info()).        
+    
+gc_info(Gc, Item) ->
+    gc_get(Gc, Item).
+
 %% Font
 font_open(_Filename) ->
     erlang:error(nif_not_loaded).    
@@ -355,6 +404,16 @@ font_map(_Font) ->
 
 font_unmap(_Font) ->
     erlang:error(nif_not_loaded).
+
+font_info() ->
+    [file_name, file_size, foundry_name, family_name, 
+     weight, slant, width, style, spacing, pixel_format,
+     pixel_size, point_size, resolution_x, resolution_y,
+     descent, ascent ].
+     
+font_info(Font) ->
+    map(fun(Info) -> {Info,font_info(Font,Info)} end,
+	font_info()).    
 
 font_info(_Font, _Item) ->
     erlang:error(nif_not_loaded).
@@ -390,6 +449,22 @@ window_create(_X,_Y,_Width,_Height,_Mask) ->
 
 window_create(_Dict) ->
     erlang:error(nif_not_loaded).
+%%
+%% window_info(Window::epx_window(), Item) 
+%%   Item =
+%%        x        integer()
+%%      | y        integer()
+%%      | width    unsigned()
+%%      | height   unsigned()
+%%      | backend  epx_backend()
+%%      | event_mask all|none|[event_flag]
+%%    
+window_info() ->
+    [x, y, width, height, backend, event_mask].    
+    
+window_info(Window) ->
+    map(fun(Info) -> {Info,window_info(Window,Info)} end,
+	window_info()).
     
 window_info(_Window, _Item) ->
     erlang:error(nif_not_loaded).
@@ -419,11 +494,22 @@ window_detach(_Window) ->
     erlang:error(nif_not_loaded).
 
 %% UTILS
+draw_point(Pixmap,{X,Y}) ->
+    draw_point(Pixmap,X,Y).
+
+draw_point(Pixmap,Gc,{X,Y}) ->
+    pixmap_draw_point(Pixmap,Gc,X,Y);
 draw_point(Pixmap,X,Y) ->
     pixmap_draw_point(Pixmap,epx_gc:current(),X,Y).
 
 draw_line(Pixmap, X1, Y1, X2, Y2) ->
     pixmap_draw_line(Pixmap,epx_gc:current(),X1,Y1,X2,Y2).
+
+draw_rectangle(Pixmap, Gc, {X, Y, Width, Height}) ->
+    pixmap_draw_rectangle(Pixmap, Gc, X, Y, Width, Height).
+
+draw_rectangle(Pixmap, {X,Y,Width,Height}) ->
+    draw_rectangle(Pixmap, X, Y, Width, Height).
 
 draw_rectangle(Pixmap, X, Y, Width, Height) ->
     pixmap_draw_rectangle(Pixmap,epx_gc:current(), X, Y, Width, Height).

@@ -140,7 +140,7 @@
 #define EPX_EVENT_LEAVE            0x00000100
 #define EPX_EVENT_CONFIGURE        0x00000200
 #define EPX_EVENT_RESIZE           0x00000400
-// Button mask is used to filter events, only conatining the buttons
+// Button mask is used to filter events, only containing the buttons
 #define EPX_EVENT_BUTTON_MASK      0x007F0000
 #define EPX_EVENT_BUTTON_ANY       0x00000000
 #define EPX_EVENT_BUTTON_LEFT      0x00010000

@@ -14,6 +14,7 @@ MODULES = \
 	epx_exif \
 	epx_dct \
 	epx_huffman \
+	epx_t2d \
 	epx_view \
 	epx_test \
 	epx_dds_test

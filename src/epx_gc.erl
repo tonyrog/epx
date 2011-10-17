@@ -9,7 +9,6 @@
 -export([push/0, pop/0, current/0]).
 -export([draw/1]).
 
--export([items/0]).
 -export([set_item/2, set_item/3]).
 -export([set/1, set/2]).
 -export([get_item/1, get_item/2]).
@@ -243,29 +242,6 @@ get_line_texture(Gc) -> get_item(Gc, line_texture).
 
 get_font() -> get_font(current()).
 get_font(Gc) -> get_item(Gc,font).
-
-%%
-%% list of available items
-%%
-items() ->
-    [
-     background_color,
-     foreground_color,
-     fill_style,
-     fill_color,
-     fill_texture,
-     line_style,
-     line_width,
-     line_join_style,
-     line_cap_style,
-     line_texture,
-     border_style,
-     border_color,
-     border_width,
-     border_join_style,
-     border_cap_style,
-     border_texture,
-     font].
 
 %%
 %% General item functions
