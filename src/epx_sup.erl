@@ -30,10 +30,12 @@ start_link(Args) ->
 init(Args) ->
     io:format("epx_sup:init: Args=~p\n", [Args]),
     Backend = {epx_backend, {epx_backend, start_link, [Args]},
-	       permanent, 5000, worker, [epx_backend]},
+	       permanent, 5000, worker, [epx_backend_srv]},
     Font    = {epx_font, {epx_font, start_link, []},
-	       permanent, 5000, worker, [epx_font]},
+	       permanent, 5000, worker, [epx_font_srv]},
     Anim    = {epx_animation, {epx_animation, start_link, []},
-	       permanent, 5000, worker, [epx_animation]},
-    {ok,{{one_for_all,0,300}, [Backend,Font,Anim]}}.
+	       permanent, 5000, worker, [epx_animation_srv]},
+    Style   = {epx_style, {epx_style, start_link, []},
+	       permanent, 5000, worker, [epx_style_srv]},
+    {ok,{{one_for_all,0,300}, [Backend,Font,Anim,Style]}}.
 

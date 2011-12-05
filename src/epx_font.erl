@@ -28,7 +28,7 @@
 -record(state,
 	{
 	  paths=[],
-	  ftab        %% table of #efnt_info
+	  ftab        %% table of #epx_font_info{}
 	 }).
 
 %%====================================================================
@@ -192,9 +192,9 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     FTab = ets:new(?TABLE, [named_table,set,public,
-				    {keypos, #epx_font_info.file_name}]),
+			    {keypos, #epx_font_info.file_name}]),
     Path0 = filename:join([code:priv_dir(epx), "fonts"]),
-    %% We may not block or do recursive calls here
+    %% We may not block nor do recursive calls here
     self() ! refresh,
     {ok, #state{ paths=[Path0], ftab=FTab }}.
 

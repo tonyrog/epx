@@ -126,7 +126,8 @@ assumed_backend() ->
     case os:getenv("EPX_BACKEND") of
 	false ->
 	    case os:type() of
-		{unix,darwin} -> "macos";
+		{unix,darwin} ->
+		    "macos";
 		{unix,linux} -> 
 		    case os:getenv("DISPLAY") of
 			false -> "fb";
@@ -154,6 +155,7 @@ start(Prefered) ->
 	{ok,_Pid} ->
 	    epx_font:start(),
 	    epx_animation:start(),
+	    epx_style:start(),
 	    List = epx:backend_list(),
 	    Name = case lists:member(Prefered, List) of
 		       true -> Prefered;

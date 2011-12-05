@@ -13,7 +13,6 @@
 	 read/2, write/2]).
 
 -include("../include/epx_image.hrl").
-
 -include("dbg.hrl").
 
 -import(lists, [reverse/1]).

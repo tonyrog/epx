@@ -3,14 +3,14 @@
 %%% Description : XPM image processing
 %%% Created :  5 Mar 2003 by Tony Rogvall <tony@bix.hemma.se>
 
--module(ei_x_xpixmap).
+-module(epx_image_x_xpixmap).
 
--behaviour(ei).
+-behaviour(epx_image).
 -export([magic/1, mime_type/0, extensions/0,
 	 read_info/1, write_info/2,
 	 read/2, read/4, write/2]).
 
--include("ei.hrl").
+-include("../include/epx_image.hrl").
 -include("dbg.hrl").
 
 -export([scan_xpm/1]).
@@ -46,7 +46,7 @@ read_info(Fd) ->
 			    [{string,Fmt}|_] = reverse(Ts),
 			    {ok,[Width,Height,_NColors,_CharPerPixel],_Rest} = 
 				io_lib:fread("~d ~d ~d ~d",Fmt),
-			    {ok,#ei_image {
+			    {ok,#epx_image {
 			       type   = ?MODULE,
 			       width  = Width,
 			       height = Height,
@@ -68,63 +68,58 @@ write_info(_Fd, _IMG) ->
     ok.
 
 
-read(Fd, IMG, RowFun, St0) ->
+read(Fd, IMG) ->
     case scan_xpm(Fd) of
 	{ok,Ts} ->
 	    case parse_xpm(Ts) of
 		{ok,Strings} ->
-		    tr_rows(IMG,Strings,RowFun, St0);
+		    tr_rows(IMG,Strings);
 		Error -> Error
 	    end;
 	Error -> Error
     end.
     
-read(Fd,IMG) ->
-    read(Fd, IMG, 
-	 fun(_, Row, Ri, St) -> 
-		 ?dbg("xpm: read row ~p\n", [Ri]),
-		 [{Ri,Row}|St] end, 
-	 []).
-
 write(_Fd,_IMG) ->
     ok.
 
-tr_rows(IMG,[Fmt|Data],RowFun,St) ->
+tr_rows(IMG,[Fmt|Data]) ->
+    %% fixme: handle x_spot and y_spot
     {ok,[Width,Height,NColors,CharPerPixel],_Rest} = 
 	io_lib:fread("~d ~d ~d ~d",Fmt),
-    {Colors,Data1} = tr_colors(Data,NColors,[],CharPerPixel),
-    ColorMap = color_tab(Colors),
-    IMG1 = IMG#ei_image { palette = ColorMap },
-    PIX0 = #ei_pixmap { height = Height,
-			 width = Width,
-			 format = IMG1#ei_image.format,
-			 palette = ColorMap },
-    case tr_pixels(Data1,Colors,PIX0,0,Height,RowFun,St) of
-	{ok, PIX1} ->
-	    {ok, IMG1#ei_image { pixmaps = [ PIX1]}};
+    {ColorDict,Data1} = tr_colors(Data,NColors,dict:new(),CharPerPixel),
+    %% fixme handle paletted pixmaps ?
+    Pix0 = epx:pixmap_create(Width,Height,rgba),
+    case tr_pixels(Data1,ColorDict,CharPerPixel,Pix0,0,Width,Height) of
+	{ok, Pix1} ->
+	    {ok, IMG#epx_image { pixmaps = [ Pix1 ] }};
 	Error  ->
 	    Error
     end.
 
-tr_pixels([Line|Ls],Colors,PIX,Ri,NRows,RowFun,St0) when Ri =/= NRows ->
-    Row = tr_line(Line, [], Colors),
-    St1 = RowFun(PIX,Row,Ri,St0),
-    tr_pixels(Ls, Colors, PIX, Ri+1, NRows, RowFun, St1);
-tr_pixels([],_Colors,PIX,NRows,NRows,_RowFun,St0) ->
-    {ok, PIX#ei_pixmap { pixels = St0 }};
-tr_pixels(_, _Colors, _IMG, _, _, _RowFun, _St0) ->
+tr_pixels([Line|Ls],ColorDict,Cpp,Pix,Y,Width,Height) when Y =/= Height ->
+    tr_line(Line,Pix,0,Y,ColorDict,Cpp),
+    tr_pixels(Ls,ColorDict,Cpp,Pix,Y+1,Width,Height);
+tr_pixels([],_ColorDict,_Cpp,Pix,Height,Width,Height) ->
+    {ok, Pix};
+tr_pixels(_,_ColorDict,_Cpp,_Pix,_Y,_Width,_Height) ->
     {error, bad_data}.
-    
 
-color_tab([{_, " c #"++Hex} | Cs]) ->
-    Color = hex_to_integer(Hex),
-    R = (Color bsr 16) band 16#ff,
-    G = (Color bsr 8) band 16#ff,
-    B = (Color bsr 0) band 16#ff,
-    [ {R,G,B} | color_tab(Cs)];
-color_tab([{_, " c "++Name} | Cs]) ->
-    [ Name | color_tab(Cs)];
-color_tab([]) -> [].
+tr_line([],Pix,_X,_Y,_ColorDict,_Cpp) ->
+    Pix;
+tr_line(Line,Pix,X,Y,ColorDict,Cpp) ->
+    {Chars,Line1} = lists:split(Cpp, Line),
+    Kvs = dict:fetch(Chars, ColorDict),
+    case lists:keysearch(c, 1, Kvs) of
+	{value,{_,none}} ->
+	    tr_line(Line1,Pix,X+1,Y,ColorDict,Cpp);
+	{value,{_,Color}} ->
+	    epx:put_pixel(Pix,X,Y,Color),
+	    tr_line(Line1,Pix,X+1,Y,ColorDict,Cpp);	    
+	false ->
+	    io:format("c color not defined in ~p\n", [Kvs]),
+	    tr_line(Line1,Pix,X+1,Y,ColorDict,Cpp)
+    end.
+
 
 hex_to_integer(Cs) ->
     hex_to_integer(Cs, 0).
@@ -137,32 +132,44 @@ hex_to_integer([C|Cs], N) when C >= $A, C =< $F ->
     hex_to_integer(Cs, (N bsl 4) + ((C - $A)+10));
 hex_to_integer([], N)  -> N.
     
-    
-%%
-%% Translate a line into color index binary line
-%%
 
-tr_line([], Acc, _Colors) ->
-    list_to_binary(reverse(Acc));
-tr_line(Line, Acc, Colors) ->
-    {Line1,Index} = tr_pixel(Colors, Line, 1),
-    tr_line(Line1, [Index|Acc], Colors).
+tr_colors(Data, 0, Dict, _Cpp) ->
+    {Dict, Data};
+tr_colors([Color|Cs], N, Dict, Cpp) ->
+    {Chars,Color1} = lists:split(Cpp, Color),
+    Kvs = string:tokens(Color1, " "),
+    Dict1 = dict:store(Chars, Kvs, Dict),
+    tr_colors(Cs, N-1, Dict1, Cpp).
 
-tr_pixel([{Chars,_}|Cs], Line, I) ->
-    case lists:prefix(Chars,Line) of
-	true -> {lists:nthtail(length(Chars),Line), I};
-	false -> tr_pixel(Cs, Line, I+1)
-    end.
+tr_kv_spec(["c",Color|Kvs]) ->
+    [tr_color(c,Color) | tr_kv_spec(Kvs)];
+tr_kv_spec(["m",Color|Kvs]) ->
+    [tr_color(m,Color) | tr_kv_spec(Kvs)];
+tr_kv_spec(["g4",Color|Kvs]) ->
+    [tr_color(g4,Color) | tr_kv_spec(Kvs)];
+tr_kv_spec(["g",Color|Kvs]) ->
+    [tr_color(g,Color) | tr_kv_spec(Kvs)];
+tr_kv_spec(["s",Name|Kvs]) ->
+    [tr_color(s,Name) | tr_kv_spec(Kvs)];
+tr_lv_sepc([]) ->
+    [].
 
-tr_colors(Data, 0, Acc, _Cpp) ->
-    {reverse(Acc), Data};
-tr_colors([Color|Cs], N, Acc, Cpp) ->
-    {Chars,Spec} = get_color(Color,[],Cpp),
-    tr_colors(Cs, N-1, [{Chars,Spec}|Acc], Cpp).
-
-get_color(Cs, Acc, 0) -> {reverse(Acc), Cs};
-get_color([C|Cs],Acc,N) -> get_color(Cs,[C|Acc],N-1).
-
+tr_color(s, Name) ->
+    {s, Name};
+tr_color(Key, "#"++Hex) ->
+    Color = erlang:list_to_integer(Hex, 16),
+    R = (Color bsr 16) band 16#ff,
+    G = (Color bsr 8) band 16#ff,
+    B = (Color bsr 0) band 16#ff,
+    {Key, {R,G,B}};
+tr_color(Key, "%"++Hex) ->
+    Color = erlang:list_to_integer(Hex, 16),
+    H = (Color bsr 16) band 16#ff,
+    S = (Color bsr 8) band 16#ff,
+    V = (Color bsr 0) band 16#ff,
+    {Key, epx_color:hsv_to_rgb(H,S,V)};
+tr_color(Key, Name) ->
+    {Key, epx_color:from_name(Name)}.
 
 %% parse the xpm file 
 parse_xpm([{id,"static"},{id,"char"},'*',{id,_Name},'[', ']','=', '{' | Ts]) ->

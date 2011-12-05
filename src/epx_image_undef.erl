@@ -3,14 +3,14 @@
 %%% Description : Undefined format catch module
 %%% Created :  5 Mar 2003 by Tony Rogvall <tony@bix.hemma.se>
 
--module(ei_undef).
+-module(epx_image_undef).
 
--behaviour(ei).
+-behaviour(epx_image).
 -export([magic/1, mime_type/0, extensions/0,
 	 read_info/1, write_info/2,
 	 read/2, read/4, write/2]).
 
--include("ei.hrl").
+-include("../include/epx_image.hrl").
 
 magic(_) -> false.
 

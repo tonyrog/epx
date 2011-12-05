@@ -6,12 +6,14 @@
 
 -record(epx_point, { x, y }).
 -record(epx_rect,  {  x, y, w, h }).
+-record(epx_event, {  win, data }).
 
 -record(epx_backend, { id, data }).
 -record(epx_window,  { id, data }).
 -record(epx_pixmap, { id, data }).
 -record(epx_font, { id, data }).
 -record(epx_gc, { id, data }).
+-record(epx_animation, { id, data }).
 
 -record(epx_font_info,
 	{
