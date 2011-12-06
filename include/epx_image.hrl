@@ -9,18 +9,23 @@
 -define(IMAGE_GIF,       epx_image_gif).
 -define(IMAGE_PNG,       epx_image_png).
 -define(IMAGE_BMP,       epx_image_bmp).
--define(IMAGE_X_XPIXMAP, epx_image_x_xpixmap).
+-define(IMAGE_XPM,       epx_image_xpm).
 -define(IMAGE_UNDEF,     epx_image_undef).
 -define(VIDEO_MPEG,      epx_image_mpeg).
 
--define(IMAGE_TYPES, [?IMAGE_JPEG,?IMAGE_PNG]).
+-define(IMAGE_TYPES, 
+	[?IMAGE_JPEG,
+	 ?IMAGE_PNG,
+	 ?IMAGE_BMP,
+	 ?IMAGE_XPM]).
+
 
 %% -define(IMAGE_TYPES, [?IMAGE_JPEG,
 %% 		      ?IMAGE_TIFF,
 %%                       ?IMAGE_GIF,
 %%                       ?IMAGE_PNG,
 %%                       ?IMAGE_BMP,
-%%                       ?IMAGE_X_XPIXMAP,
+%%                       ?IMAGE_XPM,
 %%                       ?VIDEO_MPEG]).
 
 -record(epx_image,

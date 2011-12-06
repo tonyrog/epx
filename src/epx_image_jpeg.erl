@@ -79,9 +79,6 @@ write_info(_Fd, _IMG) ->
 read(_Fd,IMG) ->
     {ok,IMG}.
 
-read(_Fd,IMG,_RowFun,_St0) ->
-    {ok,IMG}.
-
 write(_Fd,_IMG) ->
     ok.
 

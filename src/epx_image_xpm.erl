@@ -3,12 +3,12 @@
 %%% Description : XPM image processing
 %%% Created :  5 Mar 2003 by Tony Rogvall <tony@bix.hemma.se>
 
--module(epx_image_x_xpixmap).
+-module(epx_image_xpm).
 
 -behaviour(epx_image).
 -export([magic/1, mime_type/0, extensions/0,
 	 read_info/1, write_info/2,
-	 read/2, read/4, write/2]).
+	 read/2, write/2]).
 
 -include("../include/epx_image.hrl").
 -include("dbg.hrl").
@@ -99,7 +99,7 @@ tr_rows(IMG,[Fmt|Data]) ->
 tr_pixels([Line|Ls],ColorDict,Cpp,Pix,Y,Width,Height) when Y =/= Height ->
     tr_line(Line,Pix,0,Y,ColorDict,Cpp),
     tr_pixels(Ls,ColorDict,Cpp,Pix,Y+1,Width,Height);
-tr_pixels([],_ColorDict,_Cpp,Pix,Height,Width,Height) ->
+tr_pixels([],_ColorDict,_Cpp,Pix,_Height,_Width,_Height) ->
     {ok, Pix};
 tr_pixels(_,_ColorDict,_Cpp,_Pix,_Y,_Width,_Height) ->
     {error, bad_data}.
@@ -111,34 +111,22 @@ tr_line(Line,Pix,X,Y,ColorDict,Cpp) ->
     Kvs = dict:fetch(Chars, ColorDict),
     case lists:keysearch(c, 1, Kvs) of
 	{value,{_,none}} ->
+	    epx:pixmap_put_pixel(Pix,X,Y,{0,0,0,0}),
 	    tr_line(Line1,Pix,X+1,Y,ColorDict,Cpp);
 	{value,{_,Color}} ->
-	    epx:put_pixel(Pix,X,Y,Color),
+	    epx:pixmap_put_pixel(Pix,X,Y,Color),
 	    tr_line(Line1,Pix,X+1,Y,ColorDict,Cpp);	    
 	false ->
 	    io:format("c color not defined in ~p\n", [Kvs]),
 	    tr_line(Line1,Pix,X+1,Y,ColorDict,Cpp)
     end.
 
-
-hex_to_integer(Cs) ->
-    hex_to_integer(Cs, 0).
-
-hex_to_integer([C|Cs], N) when C >= $0, C =< $9 ->
-    hex_to_integer(Cs, (N bsl 4) + (C - $0));
-hex_to_integer([C|Cs], N) when C >= $a, C =< $f ->
-    hex_to_integer(Cs, (N bsl 4) + ((C - $a)+10));
-hex_to_integer([C|Cs], N) when C >= $A, C =< $F ->
-    hex_to_integer(Cs, (N bsl 4) + ((C - $A)+10));
-hex_to_integer([], N)  -> N.
-    
-
 tr_colors(Data, 0, Dict, _Cpp) ->
     {Dict, Data};
 tr_colors([Color|Cs], N, Dict, Cpp) ->
     {Chars,Color1} = lists:split(Cpp, Color),
-    Kvs = string:tokens(Color1, " "),
-    Dict1 = dict:store(Chars, Kvs, Dict),
+    Kvs = string:tokens(Color1, " \t"),
+    Dict1 = dict:store(Chars, tr_kv_spec(Kvs), Dict),
     tr_colors(Cs, N-1, Dict1, Cpp).
 
 tr_kv_spec(["c",Color|Kvs]) ->
@@ -151,11 +139,13 @@ tr_kv_spec(["g",Color|Kvs]) ->
     [tr_color(g,Color) | tr_kv_spec(Kvs)];
 tr_kv_spec(["s",Name|Kvs]) ->
     [tr_color(s,Name) | tr_kv_spec(Kvs)];
-tr_lv_sepc([]) ->
+tr_kv_spec([]) ->
     [].
 
 tr_color(s, Name) ->
     {s, Name};
+tr_color(Key, none) ->
+    {Key, none};
 tr_color(Key, "#"++Hex) ->
     Color = erlang:list_to_integer(Hex, 16),
     R = (Color bsr 16) band 16#ff,
