@@ -49,8 +49,12 @@ static struct {
     { "gray16",  EPX_FORMAT_L16 },
     { "a8",      EPX_FORMAT_A8 },
     { "alpha8",  EPX_FORMAT_A8 },
+    { "r8",      EPX_FORMAT_R8 },
+    { "g8",      EPX_FORMAT_G8 },
+    { "b8",      EPX_FORMAT_B8 },
     { "gray8",   EPX_FORMAT_L8 },
     { "efnt2",   EPX_FORMAT_EFNT2 },
+    { "a8l8",    EPX_FORMAT_A8L8 },
     { 0, 0 } 
 };
 

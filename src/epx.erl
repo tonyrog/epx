@@ -88,9 +88,7 @@
 %% Window
 -export([window_create/4]).
 -export([window_create/5]).
--export([window_create/1]).
 -export([window_info/0, window_info/1, window_info/2]).
--export([window_close/1]).
 -export([window_adjust/2]).
 -export([window_set_event_mask/2]).
 -export([window_enable_events/2]).
@@ -115,6 +113,61 @@
 -else.
 -define(VARIANT, "release").
 -endif.
+
+-include("../include/epx.hrl").
+
+-export_type([epx_backend/0,
+	      epx_window/0,
+	      epx_pixmap/0,
+	      epx_font/0, 
+	      epx_gc/0, 
+	      epx_dict/0,
+	      epx_animation/0]).
+
+-export_type([epx_rect/0, 
+	      epx_pixel_format/0,
+	      epx_window_event_flag/0,
+	      epx_window_event_flags/0,
+	      epx_pixmap_info_key/0,
+	      epx_window_info_key/0]).
+
+-opaque epx_backend()   ::  #epx_backend{} | undefined.
+-opaque epx_window()    ::  #epx_window{}  | undefined.
+-opaque epx_pixmap()    ::  #epx_pixmap{}  | undefined.
+-opaque epx_font()      ::  #epx_font{}  | undefined.
+-opaque epx_gc()        ::  #epx_gc{}  | undefined.
+-opaque epx_dict()      ::  #epx_dict{}  | undefined.
+-opaque epx_animation() ::  #epx_animation{}  | undefined.
+-type epx_rect() :: { integer(), integer(), 
+		      non_neg_integer(), non_neg_integer() }.
+
+-type epx_pixel_format() ::
+	%% FIXME fill with more formats
+	argb | a8r8g8b8 | 
+	rgba | r8g8b8a8 |
+	abgr | a8b8g8r8 | 
+	bgra | b8g8r8a8 |
+	rgb  | r8g8b8 |
+	bgr  | b8g8r8 |
+	'565' | r5g6b5 | '565BE' | r5g6b5BE |
+	'565LE' | r5g6b5LE |
+	'1555' | a1r5g5b |
+	gray8a8 | gray16 |
+	a8 | alpha8 | gray8 |
+	efnt2.
+
+-type epx_window_event_flag() :: 
+	key_press | key_release | motion |
+	button_press | button_release | focus_in | focus_out |
+	focos | enter | leave | configure | resize | crossing |
+	button | left | middle | right | wheel | wheel_up | wheel_down |
+	wheel_left | wheel_right | close | destroyed | all | none.
+
+-type epx_window_event_flags() :: epx_window_event_flag() | 
+				 [epx_window_event_flag()].
+
+-type void() :: 'ok'.
+
 
 init() ->
     Nif = filename:join([code:lib_dir(epx),"lib",?VARIANT,"epx_nif"]),
@@ -142,7 +195,7 @@ assumed_backend() ->
     
 %%
 %% This is a simple version of the start function
-%% For a more robust what use application:start(exp)
+%% For a more robust version use application:start(epx)
 %%
 start() ->
     Backend = assumed_backend(),
@@ -167,17 +220,28 @@ start(Prefered) ->
 	    epx_backend:create(Name, [])
     end.
 
-%%
-%% Pixmap
-%%
+-spec pixmap_create(Width::non_neg_integer(), Height::non_neg_integer()) ->
+			   epx_pixmap().
+
 pixmap_create(Width,Height) ->
     pixmap_create(Width,Height,argb).
+
+-spec pixmap_create(Width::non_neg_integer(), Height::non_neg_integer(),
+		    Format::epx_pixel_format()) ->
+			   epx_pixmap().
 
 pixmap_create(_Width,_Height,_Format) ->
     erlang:error(nif_not_loaded).
 
+-spec pixmap_copy(Src::epx_pixmap()) -> epx_pixmap().
+
 pixmap_copy(_Src) ->
     erlang:error(nif_not_loaded).
+
+-spec pixmap_sub_pixmap(Src::epx_pixmap(),
+			X::integer(), Y::integer(),
+			Width::non_neg_integer(), Height::non_neg_integer()) ->
+			       epx_pixmap().
 
 pixmap_sub_pixmap(_Src, _X, _Y, _Width, _Height) ->
     erlang:error(nif_not_loaded).
@@ -193,17 +257,39 @@ pixmap_sub_pixmap(_Src, _X, _Y, _Width, _Height) ->
 %%    clip            epx_rect()
 %%    backend         epx_backend()
 %%
+-type epx_pixmap_info_key() ::
+	'width' | 'height' |
+	'bytes_per_row' | 'bits_per_pixel' | 'bytes_per_pixel' |
+	'pixel_format' | 'parent' | 'clip' | 'backend'.
+
+-type epx_pixmap_info() ::
+	{ 'width', non_neg_integer() } |
+	{ 'height', non_neg_integer() } |
+	{ 'bytes_per_row', non_neg_integer() } |
+	{ 'bits_per_pixel', non_neg_integer() } |
+	{ 'bytes_per_pixel', non_neg_integer() } |
+	{ 'pixel_format', epx_pixel_format() } |
+	{ 'parent',  epx_pixmap() } |
+	{ 'clip',    epx_rect() } | 
+	{ 'backend', epx_backend() }.
+
+-spec pixmap_info() -> [epx_pixmap_info()].
+			 
 pixmap_info() ->
     [width, height, 
      bytes_per_row, bits_per_pixel, bytes_per_pixel,
      pixel_format, parent, clip, backend].
 
-
+-spec pixmap_info(Pixmap::epx_pixmap()) -> [epx_pixmap_info()].
+			 
 pixmap_info(Pixmap) ->
     map(fun(Info) -> {Info,pixmap_info(Pixmap,Info)} end,
 	pixmap_info()).
 
-pixmap_info(_Src, _Item) ->
+-spec pixmap_info(Pixmap::epx_pixmap(),Key::epx_pixmap_info_key()) ->
+			 term().
+
+pixmap_info(_Pixmap, _Key) ->
     erlang:error(nif_not_loaded).
 
 pixmap_set_clip(_Pixmap, _Rect) ->
@@ -463,14 +549,21 @@ backend_adjust(_Backend, _Dict) ->
     erlang:error(nif_not_loaded).
 
 %% Window
+-spec window_create(X::integer(), Y::integer(),
+		    Width::non_neg_integer(),Height::non_neg_integer()) ->
+			   epx_window().
+		    
 window_create(_X,_Y,_Width,_Height) ->
     erlang:error(nif_not_loaded).
+
+-spec window_create(X::integer(), Y::integer(),
+		    Width::non_neg_integer(),Height::non_neg_integer(),
+		    Flags::epx_window_event_flags()) ->
+			   epx_window().
 
 window_create(_X,_Y,_Width,_Height,_Mask) ->
     erlang:error(nif_not_loaded).
 
-window_create(_Dict) ->
-    erlang:error(nif_not_loaded).
 %%
 %% window_info(Window::epx_window(), Item) 
 %%   Item =
@@ -480,29 +573,57 @@ window_create(_Dict) ->
 %%      | height   unsigned()
 %%      | backend  epx_backend()
 %%      | event_mask all|none|[event_flag]
-%%    
+%%
+-type epx_window_info_key() ::
+	'x' | 'y' | 'width' | 'height' | 'backend' | 'event_mask'.
+
+-type epx_window_info() ::
+	{ 'x', integer() } |
+	{ 'y', integer() } |
+	{ 'width', non_neg_integer() } |
+	{ 'height', non_neg_integer() } |
+	{ 'backend', non_neg_integer() } |
+	{ 'event_mask', epx_window_event_flags() }.
+
+-spec window_info() -> [epx_window_info_key()].
+
 window_info() ->
     [x, y, width, height, backend, event_mask].    
-    
+
+-spec window_info(Window::epx_window()) ->    
+			 [epx_window_info()].
+
 window_info(Window) ->
     map(fun(Info) -> {Info,window_info(Window,Info)} end,
 	window_info()).
-    
+
+-spec window_info(Window::epx_window(),Item::epx_window_info_key()) ->
+			 term().
+
 window_info(_Window, _Item) ->
     erlang:error(nif_not_loaded).
-    
-window_close(_Window) ->
-    erlang:error(nif_not_loaded).
-    
+
 window_adjust(_Window, _Dict) ->
     erlang:error(nif_not_loaded).
+
+-spec window_set_event_mask(Window::epx_window(), 
+			    Events::epx_window_event_flags()) ->
+				   void().
     
 window_set_event_mask(_Window, _Events) ->
     erlang:error(nif_not_loaded).
     
+-spec window_enable_events(Window::epx_window(), 
+			   Events::epx_window_event_flags()) ->
+				  void().
+
 window_enable_events(_Window, _Events) ->
     erlang:error(nif_not_loaded).
-    
+
+-spec window_disable_events(Window::epx_window(), 
+			    Events::epx_window_event_flags()) ->
+				   void().
+
 window_disable_events(_Window, _Events) ->
     erlang:error(nif_not_loaded).
 

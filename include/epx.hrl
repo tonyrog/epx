@@ -13,6 +13,7 @@
 -record(epx_pixmap, { id, data }).
 -record(epx_font, { id, data }).
 -record(epx_gc, { id, data }).
+-record(epx_dict, { id, data }).
 -record(epx_animation, { id, data }).
 
 -record(epx_font_info,
