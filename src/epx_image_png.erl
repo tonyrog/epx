@@ -230,7 +230,7 @@ plte(<<>>) -> [].
 
 %% IMPLEMENT This:
 write_info(_Fd, _IMG) ->
-    ok.
+    erlang:error(not_implemented).
 
 
 read(Fd, IMG) ->
@@ -378,7 +378,8 @@ paethPredictor(A,B,C) ->
 	    
         
 write(_Fd, _IMG) ->
-    ok.
+    erlang:error(not_implemented).
+
 
 read_image(Fd, Acc, Palette, Z) ->
     case read_chunk_hdr(Fd) of

@@ -20,11 +20,9 @@ MODULES = \
 	epx_dct \
 	epx_huffman \
 	epx_t2d \
-	epx_view \
-	epx_test \
-	epx_dds_test
+	epx_view
 
-
+# FIXME SOON!
 #	epx_image_gif \
 #	epx_image_tiff \
 
