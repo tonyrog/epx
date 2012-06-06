@@ -1,9 +1,25 @@
+/***************************************************************************
+ *
+ * Copyright (C) 2007 - 2012, Rogvall Invest AB, <tony@rogvall.se>
+ *
+ * This software is licensed as described in the file COPYRIGHT, which
+ * you should have received as part of this distribution. The terms
+ * are also available at http://www.rogvall.se/docs/copyright.txt.
+ *
+ * You may opt to use, copy, modify, merge, publish, distribute and/or sell
+ * copies of the Software, and permit persons to whom the Software is
+ * furnished to do so, under the terms of the COPYRIGHT file.
+ *
+ * This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
+ * KIND, either express or implied.
+ *
+ ***************************************************************************/
 /*
- * EPIC Bitmap functions
+ * EPX Bitmap functions
  *
  */
 #include <math.h>
-#include "epic.h"
+#include "epix.h"
 
 #define BYTE_OFFSET(ofs)        ((unsigned) (ofs) >> 3)
 #define BIT_OFFSET(ofs)         ((ofs) & 7)
@@ -667,10 +683,10 @@ int ebitmap_draw_rectangle(EBitmap* bmp,
     int x1 = x0+width-1;
     int y1 = y0+height-1;
     
-    ebitmap_draw_line(bmp,x0,y0,x1,y0,EPIC_LINE_STYLE_NFIRST,bit);
-    ebitmap_draw_line(bmp,x1,y0,x1,y1,EPIC_LINE_STYLE_NFIRST,bit);
-    ebitmap_draw_line(bmp,x1,y1,x0,y1,EPIC_LINE_STYLE_NFIRST,bit);
-    ebitmap_draw_line(bmp,x0,y1,x0,y0,EPIC_LINE_STYLE_NFIRST,bit);
+    ebitmap_draw_line(bmp,x0,y0,x1,y0,EPX_LINE_STYLE_NFIRST,bit);
+    ebitmap_draw_line(bmp,x1,y0,x1,y1,EPX_LINE_STYLE_NFIRST,bit);
+    ebitmap_draw_line(bmp,x1,y1,x0,y1,EPX_LINE_STYLE_NFIRST,bit);
+    ebitmap_draw_line(bmp,x0,y1,x0,y0,EPX_LINE_STYLE_NFIRST,bit);
     return 0;
 }
 
@@ -1021,10 +1037,10 @@ static int ellipse(EBitmap* bmp, int x0, int y0,
 		EBitmapPutBit(bmp,x0,y0-y,bit);
 	    }
 	    else if (y == 0)
-		ebitmap_draw_line(bmp,x0-x,y0,x0+x,y0,EPIC_LINE_STYLE_NFIRST,bit);
+		ebitmap_draw_line(bmp,x0-x,y0,x0+x,y0,EPX_LINE_STYLE_NFIRST,bit);
 	    else {
-		ebitmap_draw_line(bmp,x0-x,y0+y,x0+x,y0+y,EPIC_LINE_STYLE_NFIRST,bit);
-		ebitmap_draw_line(bmp,x0-x,y0-y,x0+x,y0-y,EPIC_LINE_STYLE_NFIRST,bit);
+		ebitmap_draw_line(bmp,x0-x,y0+y,x0+x,y0+y,EPX_LINE_STYLE_NFIRST,bit);
+		ebitmap_draw_line(bmp,x0-x,y0-y,x0+x,y0-y,EPX_LINE_STYLE_NFIRST,bit);
 	    }
 	}
 	else {
