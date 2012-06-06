@@ -24,10 +24,12 @@
 -behaviour(application).
 -export([start/2,stop/1]).
 
+-include("../include/epx.hrl").
+
 %% start
 start(_Type, _StartArgs) ->
-    {ok,Args} = application:get_env(arguments),
-    io:format("epx_app: Args=~p\n", [Args]),
+    Args = application:get_all_env(epx),
+    ?epx_debug("Args=~p", [Args]),
     epx_sup:start_link(Args).
 
 %% stop FIXME

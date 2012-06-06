@@ -25,8 +25,9 @@
 -on_load(init/0).
 
 %%
--export([start/0, start/1]).
-
+-export([start/0]).
+-export([old_start/0, old_start/1]).
+-export([assumed_backend/0]).
 %% Pixmap access
 -export([pixmap_create/3,pixmap_create/2]).
 -export([pixmap_copy/1]).
@@ -186,7 +187,7 @@
 
 init() ->
     Nif = filename:join([code:lib_dir(epx),"lib",?VARIANT,"epx_nif"]),
-    io:format("Loading: ~s\n", [Nif]),
+    %% io:format("Loading: ~s\n", [Nif]),
     erlang:load_nif(Nif, 0).
 
 %% select 
@@ -213,10 +214,16 @@ assumed_backend() ->
 %% For a more robust version use application:start(epx)
 %%
 start() ->
-    Backend = assumed_backend(),
-    start(Backend).
+    application:load(epx), %% make sure command line env is loaded
+    %% erlang:display({'epx:start args', application:get_all_env(epx)}),
+    application:start(epx).
+    
 
-start(Prefered) ->
+old_start() ->
+    Backend = assumed_backend(),
+    old_start(Backend).
+
+old_start(Prefered) ->
     case epx_backend:start() of
 	{error,{already_started,_Pid}} ->
 	    ok;

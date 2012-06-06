@@ -25,8 +25,8 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, start/0]).
--export([add_path/1, match/1, i/0]).
+-export([start_link/0, start/0, stop/0]).
+-export([add_path/1, refresh/0, match/1, i/0]).
 
 -export([dimension/2]).
 -export([info/1, info/2]).
@@ -161,7 +161,6 @@ match_fi(FI, MA) ->
 	    true
     end.
     
-
 i() ->
     io:format("~15s ~5s ~8s ~15s ~4s ~s\n",
 	      ["Name", "Size", "Weight", "Slant", "Res", "File"]),
@@ -193,6 +192,12 @@ start() ->
 
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+
+stop() ->
+    gen_server:call(?SERVER, stop).
+
+refresh() ->
+    gen_server:cast(?SERVER, refresh).
 
 %%====================================================================
 %% gen_server callbacks
@@ -246,6 +251,8 @@ handle_call(_Request, _From, State) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
+handle_cast(refresh, State) ->
+    {noreply, refresh_(State)};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -256,12 +263,7 @@ handle_cast(_Msg, State) ->
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 handle_info(refresh, State) ->
-    %% FIXME: clean away fonts not found any more
-    lists:foreach(
-      fun(Path) ->
-	      load_efnt_path(Path, State#state.ftab)
-      end, State#state.paths),
-    {noreply, State};
+    {noreply, refresh_(State)};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -285,6 +287,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
+
+%% FIXME: clean away fonts not found any more (and not break code)
+refresh_(State) ->
+    lists:foreach(
+      fun(Path) ->
+	      load_efnt_path(Path, State#state.ftab)
+      end, State#state.paths),
+    State.
 
 load_efnt_path(Path, FTab) ->
     case file:list_dir(Path) of

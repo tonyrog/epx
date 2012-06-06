@@ -53,4 +53,15 @@
 	  ascent
 	 }).
 
+
+-define(epx_info(F,A), error_logger:info_msg(io_lib:format((F),(A)))).
+-define(epx_warning(F,A), error_logger:warning_msg(io_lib:format((F),(A)))).
+-define(epx_error(F,A), error_logger:error_msg(io_lib:format((F),(A)))).
+-define(epx_debug(F,A),
+	case get(debug) of
+	    true ->
+		error_logger:info_msg(io_lib:format((F),(A)));
+	    _ -> 
+		ok
+	end).
 -endif.

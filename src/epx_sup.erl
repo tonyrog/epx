@@ -29,6 +29,7 @@
 %% supervisor callbacks
 -export([init/1]).
 
+-include("../include/epx.hrl").
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
@@ -44,7 +45,8 @@ start_link(Args) ->
 %%----------------------------------------------------------------------
 %%----------------------------------------------------------------------
 init(Args) ->
-    io:format("epx_sup:init: Args=~p\n", [Args]),
+    put(debug, proplists:get_bool(debug, Args)),
+    ?epx_debug("starting ~p", [Args]),    
     Backend = {epx_backend, {epx_backend, start_link, [Args]},
 	       permanent, 5000, worker, [epx_backend_srv]},
     Font    = {epx_font, {epx_font, start_link, []},

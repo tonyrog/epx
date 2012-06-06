@@ -37,6 +37,8 @@
 -define(SERVER,  epx_backend_srv).
 -define(TABLE,   epx_backend_table).
 
+-include("../include/epx.hrl").
+
 -record(state,
 	{
 	  next_id = 1
@@ -96,10 +98,26 @@ start_link(Args) ->
 %%--------------------------------------------------------------------
 
 init(Args) ->
-    io:format("epx_backend: starting args=~p\n", [Args]),
+    put(debug, proplists:get_bool(debug, Args)),
+    ?epx_debug("starting ~p", [Args]),
     ets:new(?TABLE, [set, named_table, protected]),
-    %% maybe create the default backend here?
-    {ok, #state{}}.
+    Dict = epx:dict_from_list(Args),
+    BeName = try epx:dict_get(Dict, backend) of
+		 Be -> Be
+	      catch
+		  error:_ ->
+		      epx:assumed_backend()
+	      end,
+    try epx:backend_open(BeName, epx:dict_from_list(Args)) of
+	Backend ->
+	    ets:insert(?TABLE, {1, Backend}),
+	    ets:insert(?TABLE, {default, Backend}),
+	    {ok, #state { next_id = 2 }}
+    catch
+	error:Error ->
+	    ?epx_info("backend_open no default backed, failed ~p", [Error]),
+	    {ok, #state {}}
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -127,7 +145,8 @@ handle_call({create,Name,Opts}, _From, State) ->
 	    end,
 	    {reply, {ok,ID}, State#state { next_id = ID+1 }}
     catch
-	error:_ ->
+	error:Error ->
+	    ?epx_warning("backed create failed ~p", [Error]),
 	    {reply, {error,einval}, State}
     end;
 handle_call({set_default,ID}, _From, State) ->
