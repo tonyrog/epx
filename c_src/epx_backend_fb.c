@@ -16,7 +16,9 @@
 #include <errno.h>
 #include <unistd.h>
 #include <string.h>
+#ifdef HAVE_MTTR
 #include <asm/mtrr.h>
+#endif
 #include <strings.h>
 
 typedef u_int8_t  u8;
@@ -344,6 +346,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     FbBackend* be;
     char* string_param;
     int   int_param;
+    int   r;
 
     if ((be = (FbBackend*) malloc(sizeof(FbBackend))) == NULL)
 	return NULL;
@@ -360,6 +363,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     be->via_support = 0;
     be->via_primary   = None_Device;
     be->via_secondary = None_Device;
+    be->mtrr_fd = -1;
 
     if (epx_dict_lookup_string(param, "framebuffer_device", &string_param, NULL) == -1) {
 	EPX_DBGFMT("mssing framebuffer_device paramter. Defaulting to /dev/fb%d", 
@@ -401,9 +405,12 @@ epx_backend_t* fb_init(epx_dict_t* param)
     fb_dump_vinfo("Retrieved values.", &be->ovinfo);
     
 
-    write(2, cursoroff_str, strlen(cursoroff_str));
-    write(2, blankoff_str, strlen(blankoff_str));
-
+    r = write(2, cursoroff_str, strlen(cursoroff_str));
+    if (r < 0)
+	r = write(2, blankoff_str, strlen(blankoff_str));
+    if (r < 0) {
+	EPX_DBGFMT("write failed: [%s]", strerror(errno));
+    }
 
     be->vinfo  = be->ovinfo;
     be->vinfo.bits_per_pixel = EPX_PIXEL_SIZE(EPX_FORMAT_ARGB)*8; // Default
@@ -843,7 +850,6 @@ static int fb_finish(epx_backend_t* backend)
     close(be->fb_fd);
     if (be->mtrr_fd != -1)
 	close(be->mtrr_fd);
-
     free(be);
     return 0;
 }
@@ -944,10 +950,8 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     unsigned char alpha_first;
     unsigned char rgb; /* color order RGB or BGR? */
     unsigned int  pt;  /* pixel type for screen */
-    struct mtrr_sentry sentry;
     FbBackend* be = (FbBackend*) backend;
     FbWindow*  nwin;
-    
 
 /*    DBG("fb_win_attach(): winwow[%p]",  ewin); */
 
@@ -1000,6 +1004,7 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     }
 
     /* Setup MTRR */
+#ifdef HAVE_MTRR
     if ((be->mtrr_fd = open("/proc/mtrr", O_WRONLY, 0)) == -1) 
     {
 	if (errno == ENOENT) {
@@ -1008,17 +1013,20 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	    EPX_DBGFMT("Error opening /proc/mtrr: [%s], Disabled.", strerror(errno));
 	}
     }
-
+    else {
+	struct mtrr_sentry sentry;
     
-    sentry.base = be->finfo.smem_start;
-    sentry.size = 0x2000000;
-    sentry.type = MTRR_TYPE_WRCOMB;
+	sentry.base = be->finfo.smem_start;
+	sentry.size = 0x2000000;
+	sentry.type = MTRR_TYPE_WRCOMB;
       
-    if ( ioctl(be->mtrr_fd, MTRRIOC_ADD_ENTRY, &sentry) == -1 ) {
-	EPX_DBGFMT("MTRRIOC_ADD_ENTRY: [%s] Disabled", strerror(errno));
-	close(be->mtrr_fd);
-	be->mtrr_fd = -1;
+	if ( ioctl(be->mtrr_fd, MTRRIOC_ADD_ENTRY, &sentry) == -1 ) {
+	    EPX_DBGFMT("MTRRIOC_ADD_ENTRY: [%s] Disabled", strerror(errno));
+	    close(be->mtrr_fd);
+	    be->mtrr_fd = -1;
+	}
     }
+#endif
 
     //
     // Pan to the beginning of things.

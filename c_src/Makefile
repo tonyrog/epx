@@ -26,6 +26,7 @@ SSE       = No
 SSE2      = No
 SSE3      = No
 SSE4      = No
+NEON      = No
 
 OBJDIR=../obj
 LIBDIR=../lib
@@ -48,15 +49,18 @@ endif
 
 CFG_CFLAGS=-I$(EPX_DIR)/include
 
-ifeq ($(TARGET), arm-elf)
-OSNAME = Linux
-CC = arm-elf-gcc
-endif
-
 ifeq ($(OSNAME), Linux)
+OSNAME = Linux
 LINUX = Yes
-FB    = Yes
-X11   = Yes
+ifeq ($(TARGET_SYS),)
+FB  = Yes
+X11 = Yes
+CFLAGS += -DHAVE_MTTR
+else
+FB  = Yes
+CC = $(TARGET_SYS)-gcc
+NEON = Yes
+endif
 LD_SHARED	:= $(CC) -shared
 DLL_LIBS=
 endif
@@ -74,7 +78,10 @@ endif
 ifeq ($(WITH_X11), 1)
 X11 = Yes
 GLX = Yes
-endif 
+endif
+
+
+ifeq ($(TARGET_SYS),)
 
 ifeq ($(MACHINE), "Power Macintosh")
 ALTIVEC   = Yes
@@ -94,6 +101,9 @@ SSE       = No
 SSE2      = Yes
 SSE3      = No
 endif
+
+endif
+
 
 BE_OBJS     =  epx_backend_none.o
 BE_LD_FLAGS = 
