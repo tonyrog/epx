@@ -3,24 +3,26 @@ MODULES = \
 	epx \
 	epx_gc \
 	epx_rect \
+	epx_color \
 	epx_app \
 	epx_sup \
 	epx_font \
 	epx_animation \
+	epx_style \
 	epx_backend \
 	epx_image \
+	epx_image_undef \
 	epx_image_png \
 	epx_image_jpeg \
 	epx_image_bmp \
+	epx_image_xpm \
 	epx_exif \
 	epx_dct \
 	epx_huffman \
 	epx_t2d \
-	epx_view \
-	epx_test \
-	epx_dds_test
+	epx_view
 
-
+# FIXME SOON!
 #	epx_image_gif \
 #	epx_image_tiff \
 

@@ -1,5 +1,20 @@
+%%%---- BEGIN COPYRIGHT --------------------------------------------------------
+%%%
+%%% Copyright (C) 2007 - 2012, Rogvall Invest AB, <tony@rogvall.se>
+%%%
+%%% This software is licensed as described in the file COPYRIGHT, which
+%%% you should have received as part of this distribution. The terms
+%%% are also available at http://www.rogvall.se/docs/copyright.txt.
+%%%
+%%% You may opt to use, copy, modify, merge, publish, distribute and/or sell
+%%% copies of the Software, and permit persons to whom the Software is
+%%% furnished to do so, under the terms of the COPYRIGHT file.
+%%%
+%%% This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
+%%% KIND, either express or implied.
+%%%
+%%%---- END COPYRIGHT ----------------------------------------------------------
 %%% @author Tony Rogvall <tony@rogvall.se>
-%%% @copyright (C) 2010, Tony Rogvall
 %%% @doc
 %%%    EPX font server / font draw api
 %%% @end
@@ -10,8 +25,8 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, start/0]).
--export([add_path/1, match/1, i/0]).
+-export([start_link/0, start/0, stop/0]).
+-export([add_path/1, refresh/0, match/1, i/0]).
 
 -export([dimension/2]).
 -export([info/1, info/2]).
@@ -28,7 +43,7 @@
 -record(state,
 	{
 	  paths=[],
-	  ftab        %% table of #efnt_info
+	  ftab        %% table of #epx_font_info{}
 	 }).
 
 %%====================================================================
@@ -146,7 +161,6 @@ match_fi(FI, MA) ->
 	    true
     end.
     
-
 i() ->
     io:format("~15s ~5s ~8s ~15s ~4s ~s\n",
 	      ["Name", "Size", "Weight", "Slant", "Res", "File"]),
@@ -179,6 +193,12 @@ start() ->
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+stop() ->
+    gen_server:call(?SERVER, stop).
+
+refresh() ->
+    gen_server:cast(?SERVER, refresh).
+
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -192,9 +212,9 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     FTab = ets:new(?TABLE, [named_table,set,public,
-				    {keypos, #epx_font_info.file_name}]),
+			    {keypos, #epx_font_info.file_name}]),
     Path0 = filename:join([code:priv_dir(epx), "fonts"]),
-    %% We may not block or do recursive calls here
+    %% We may not block nor do recursive calls here
     self() ! refresh,
     {ok, #state{ paths=[Path0], ftab=FTab }}.
 
@@ -231,6 +251,8 @@ handle_call(_Request, _From, State) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
+handle_cast(refresh, State) ->
+    {noreply, refresh_(State)};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -241,12 +263,7 @@ handle_cast(_Msg, State) ->
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 handle_info(refresh, State) ->
-    %% FIXME: clean away fonts not found any more
-    lists:foreach(
-      fun(Path) ->
-	      load_efnt_path(Path, State#state.ftab)
-      end, State#state.paths),
-    {noreply, State};
+    {noreply, refresh_(State)};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -270,6 +287,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
+
+%% FIXME: clean away fonts not found any more (and not break code)
+refresh_(State) ->
+    lists:foreach(
+      fun(Path) ->
+	      load_efnt_path(Path, State#state.ftab)
+      end, State#state.paths),
+    State.
 
 load_efnt_path(Path, FTab) ->
     case file:list_dir(Path) of

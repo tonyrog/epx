@@ -16,17 +16,17 @@
 %%%---- END COPYRIGHT ----------------------------------------------------------
 %%% @author Tony Rogvall <tony@rogvall.se>
 %%% @doc
-%%%    EPX animation server
+%%%    EPX style server
 %%% @end
 %%% Created : 15 Oct 2011 by Tony Rogvall <tony@rogvall.se>
 
--module(epx_animation).
+-module(epx_style).
 
 -behaviour(gen_server).
 
 %% API
 -export([start_link/0, start/0]).
--export([add_path/1, open/1, close/1]).
+-export([new/1, add/2, delete/1, get/1, set/3]).
 -export([i/0]).
 
 %% gen_server callbacks
@@ -34,46 +34,49 @@
 	 terminate/2, code_change/3]).
 
 -include("../include/epx.hrl").
--include_lib("kernel/include/file.hrl").
 
--define(SERVER, epx_animation_srv).
--define(TABLE,  epx_animation_table).
+-define(SERVER, epx_style_srv).
+-define(TABLE,  epx_style_table).
 
 -record(state,
 	{
-	  paths=[],
-	  tab        %% table of {Name,Animation}
+	  tab        %% table of {atom(),#epx_gc{}}
 	 }).
 
 %%====================================================================
 %% API
 %%====================================================================
 
-add_path(Path) ->
-    gen_server:call(?SERVER, {add_path,Path}).
+new(Name) ->
+    gen_server:call(?SERVER, {new, Name}).
 
-open(Name) ->
-    gen_server:call(?SERVER, {open, Name}).
-close(Name) ->
-    gen_server:call(?SERVER, {close, Name}).
-    
+add(Name,Gc) ->
+    gen_server:call(?SERVER, {add, Name, Gc}).
+
+delete(Name) ->
+    gen_server:call(?SERVER, {delete, Name}).
+
+get(Name) ->
+    gen_server:call(?SERVER, {get,Name}).
+
+set(Name,Attr,Value) ->
+    gen_server:call(?SERVER, {set,Name,Attr,Value}).
+
 
 i() ->
-    io:format("~30s ~6s ~6s ~6s ~15s\n",
-	      ["Name", "Width", "Height", "Count", "Format"]),
+    io:format("~10s ~10s ~10s\n",
+	      ["Name", "BGColor", "FGColor"]),
     i(ets:first(?TABLE)).
 
 i(Key) ->
     case ets:lookup(?TABLE, Key) of
 	[] ->
 	    ok;
-	[{_Key,Anim}] ->	   
-	    io:format("~30s ~6w ~6w ~6w ~15s\n",
+	[{_Key,Gc}] ->
+	    io:format("~10s ~10w ~10w\n",
 		      [ Key,
-			epx:animation_info(Anim, width),
-			epx:animation_info(Anim, height),
-			epx:animation_info(Anim, count),
-			epx:animation_info(Anim, pixel_format)]),
+			epx:gc_info(Gc, background_color),
+			epx:gc_info(Gc, foreground_color)]),
 	    i(ets:next(?TABLE, Key))
     end.
 
@@ -101,9 +104,8 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     Tab = ets:new(?TABLE, [named_table,set,public]),
-    {ok,Cwd} = file:get_cwd(),
     %% always search in driectory we started from and current directory
-    {ok, #state{ paths=[Cwd,"."], tab=Tab }}.
+    {ok, #state{ tab=Tab } }.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -114,31 +116,50 @@ init([]) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
-handle_call({open,Name}, _From, State) ->
-    {reply, load_animation(Name, State), State};
-handle_call({close,Name}, _From, State) ->
-    ets:delete(?TABLE, Name),
-    {reply, ok, State};
-handle_call({add_path,Path}, _From, State) ->
-    case lists:member(Path, State#state.paths) of
-	true -> 
-	    {reply, ok, State};
-	false ->
-	    case file:read_file_info(Path) of
-		Err={error,_} ->
-		    {reply, Err, State};
-		{ok,Info} ->
-		    if Info#file_info.type == directory ->
-			    Ps = State#state.paths,
-			    {reply, ok, State#state { paths=[Path|Ps]}};
-		       true ->
-			    {reply, {error,enotdir}, State}
-		    end
-	    end
+handle_call({get,Name}, _From, State) when is_atom(Name) ->
+    case ets:lookup(State#state.tab, Name) of
+	[{_,Gc}] ->
+	    {reply,Gc,State};
+	[] ->
+	    {reply,undefined,State}
     end;
+handle_call({set,Name,Attr,Value}, _From, State) when is_atom(Name), 
+						      is_atom(Attr) ->
+    case ets:lookup(State#state.tab, Name) of
+	[{_,Gc}] ->
+	    try epx:gc_set(Gc,Attr,Value) of
+		_ ->
+		    {reply,ok,State}
+	    catch
+		error:Err ->
+		    {reply,{error,Err},State}
+	    end;
+	[] ->
+	    {reply,{error,enoent},State}
+    end;
+handle_call({new,Name}, _From, State) when is_atom(Name) ->
+    case ets:lookup(State#state.tab, Name) of
+	[] ->
+	    Gc = epx:gc_create(),
+	    ets:insert(State#state.tab, {Name,Gc}),
+	    {reply, ok, State};
+	[{_,_}] ->
+	    {reply, ok, State}
+    end;
+handle_call({add,Name,Gc}, _From, State) when is_atom(Name),
+					      is_record(Gc,epx_gc) ->
+    case ets:lookup(State#state.tab, Name) of
+	[] ->
+	    ets:insert(State#state.tab, {Name,Gc}),
+	    {reply, ok, State};
+	[_] ->
+	    {reply,{error,ealready},State}
+    end;
+handle_call({delete,Name}, _From, State) when is_atom(Name) ->
+    ets:delete(State#state.tab, Name),
+    {reply, ok, State};    
 handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+    {reply, {error,bad_call}, State}.
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State) -> {noreply, State} |
@@ -178,40 +199,3 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-
-load_animation(Name, State) ->
-    case ets:lookup(State#state.tab, Name) of
-	[{_,Anim}] ->
-	    {ok,Anim};
-	[] ->
-	    case try_load_animation(Name, State#state.paths) of
-		{ok,Anim} ->
-		    ets:insert(State#state.tab, {Name,Anim}),
-		    {ok,Anim};
-		Error ->
-		    Error
-	    end
-    end.
-
-try_load_animation(_Name, []) ->
-    {error, enoent};
-try_load_animation(Name, [Path|Paths]) ->
-    FileName = filename:join(Path,Name),
-    io:format("try open ~s\n", [FileName]),
-    case file:read_file_info(FileName) of
-	{error,_} ->
-	    try_load_animation(Name, Paths);
-	{ok,Info} ->
-	    if Info#file_info.type == regular ->
-		    
-		    try epx:animation_open(FileName) of
-			Anim ->
-			    {ok,Anim}
-		    catch
-			error:_ ->
-			    try_load_animation(Name, Paths)
-		    end;
-	       true ->
-		    try_load_animation(Name, Paths)
-	    end
-    end.

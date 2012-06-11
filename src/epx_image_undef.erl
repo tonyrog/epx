@@ -1,16 +1,33 @@
-%%% File    : ei_undef.erl
-%%% Author  : Tony Rogvall <tony@bix.hemma.se>
-%%% Description : Undefined format catch module
+%%%---- BEGIN COPYRIGHT --------------------------------------------------------
+%%%
+%%% Copyright (C) 2007 - 2012, Rogvall Invest AB, <tony@rogvall.se>
+%%%
+%%% This software is licensed as described in the file COPYRIGHT, which
+%%% you should have received as part of this distribution. The terms
+%%% are also available at http://www.rogvall.se/docs/copyright.txt.
+%%%
+%%% You may opt to use, copy, modify, merge, publish, distribute and/or sell
+%%% copies of the Software, and permit persons to whom the Software is
+%%% furnished to do so, under the terms of the COPYRIGHT file.
+%%%
+%%% This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
+%%% KIND, either express or implied.
+%%%
+%%%---- END COPYRIGHT ----------------------------------------------------------
+%%% @author Tony Rogvall <tony@rogvall.se>
+%%% @doc
+%%%   Undefined format catch module
+%%% @end
 %%% Created :  5 Mar 2003 by Tony Rogvall <tony@bix.hemma.se>
 
--module(ei_undef).
+-module(epx_image_undef).
 
--behaviour(ei).
+-behaviour(epx_image).
 -export([magic/1, mime_type/0, extensions/0,
 	 read_info/1, write_info/2,
 	 read/2, read/4, write/2]).
 
--include("ei.hrl").
+-include("../include/epx_image.hrl").
 
 magic(_) -> false.
 

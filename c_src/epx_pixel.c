@@ -1,3 +1,19 @@
+/***************************************************************************
+ *
+ * Copyright (C) 2007 - 2012, Rogvall Invest AB, <tony@rogvall.se>
+ *
+ * This software is licensed as described in the file COPYRIGHT, which
+ * you should have received as part of this distribution. The terms
+ * are also available at http://www.rogvall.se/docs/copyright.txt.
+ *
+ * You may opt to use, copy, modify, merge, publish, distribute and/or sell
+ * copies of the Software, and permit persons to whom the Software is
+ * furnished to do so, under the terms of the COPYRIGHT file.
+ *
+ * This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
+ * KIND, either express or implied.
+ *
+ ***************************************************************************/
 //
 // Pixel pack/unpack functions
 //
@@ -49,8 +65,12 @@ static struct {
     { "gray16",  EPX_FORMAT_L16 },
     { "a8",      EPX_FORMAT_A8 },
     { "alpha8",  EPX_FORMAT_A8 },
+    { "r8",      EPX_FORMAT_R8 },
+    { "g8",      EPX_FORMAT_G8 },
+    { "b8",      EPX_FORMAT_B8 },
     { "gray8",   EPX_FORMAT_L8 },
     { "efnt2",   EPX_FORMAT_EFNT2 },
+    { "a8l8",    EPX_FORMAT_A8L8 },
     { 0, 0 } 
 };
 

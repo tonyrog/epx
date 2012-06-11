@@ -1,6 +1,23 @@
-%%% File    : epx_image_jpg.erl
-%%% Author  : Tony Rogvall <tony@bix.hemma.se>
-%%% Description : JPG image processing (Exif/JPG files)
+%%%---- BEGIN COPYRIGHT --------------------------------------------------------
+%%%
+%%% Copyright (C) 2007 - 2012, Rogvall Invest AB, <tony@rogvall.se>
+%%%
+%%% This software is licensed as described in the file COPYRIGHT, which
+%%% you should have received as part of this distribution. The terms
+%%% are also available at http://www.rogvall.se/docs/copyright.txt.
+%%%
+%%% You may opt to use, copy, modify, merge, publish, distribute and/or sell
+%%% copies of the Software, and permit persons to whom the Software is
+%%% furnished to do so, under the terms of the COPYRIGHT file.
+%%%
+%%% This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
+%%% KIND, either express or implied.
+%%%
+%%%---- END COPYRIGHT ----------------------------------------------------------
+%%% @author Tony Rogvall <tony@rogvall.se>
+%%% @doc
+%%%   JPG image processing (Exif/JPG files)
+%%% @end
 %%% Created :  5 Mar 2003 by Tony Rogvall <tony@bix.hemma.se>
 
 -module(epx_image_jpeg).
@@ -77,9 +94,6 @@ write_info(_Fd, _IMG) ->
 
 
 read(_Fd,IMG) ->
-    {ok,IMG}.
-
-read(_Fd,IMG,_RowFun,_St0) ->
     {ok,IMG}.
 
 write(_Fd,_IMG) ->
@@ -202,7 +216,7 @@ component_vh(Comps, IMG) ->
     component_vh(Comps, IMG, 0, 0).
 
 component_vh([{Format,_DC,_AC}|Cs], IMG, H, V) ->
-    io:format("component_vh: ~p\n", [{component,Format}]),
+    %% io:format("component_vh: ~p\n", [{component,Format}]),
     {_Q,H0,V0} = epx_image:attribute(IMG, {component,Format}, undefined),
     component_vh(Cs, IMG, erlang:max(H,H0), erlang:max(V,V0));
 component_vh([], _IMG, H, V) ->
@@ -281,7 +295,7 @@ init_sos(<<N,Bin/binary>>, Ei) ->
 read_sos(JFd, SOS, Ei) ->
     Dcs0 = lists:duplicate(length(SOS#sos.def), 0),
     {JFd1,Data,_Dcs1,_N} = read_mcu_h(JFd,SOS#sos.h,Dcs0,0,SOS,[]),
-    io:format("Convert to RGB\n",[]),
+    %% io:format("Convert to RGB\n",[]),
     Width = Ei#epx_image.width,
     Height = Ei#epx_image.height,
     Format = r8g8b8,
@@ -536,7 +550,7 @@ jfd_decode_bits_(<<1:1,Bits/bits>>, {_,R}, Ds, JFd) ->
 jfd_decode_bits_(<<>>, H, Ds, JFd) when is_tuple(H) ->
     JFd1 = jfd_load_bits(JFd#jfd{bits=(<<>>)},8),
     if bit_size(JFd1#jfd.bits) == 0 ->
-	    io:format("~s => (<<>>)\n", [reverse(Ds)]),
+	    %% io:format("~s => (<<>>)\n", [reverse(Ds)]),
 	    erlang:error({error, not_a_code});
        true ->
 	    jfd_decode_bits_(JFd1#jfd.bits, H, Ds, JFd1)
@@ -544,8 +558,8 @@ jfd_decode_bits_(<<>>, H, Ds, JFd) when is_tuple(H) ->
 jfd_decode_bits_(Bits, Code, _Ds, JFd) when is_integer(Code) ->
     %% io:format("~s => ~w\n", [reverse(_Ds), Code]),
     {JFd#jfd {bits=Bits }, Code};
-jfd_decode_bits_(Bits, Code, Ds, _JFd) ->
-    io:format("~s => ~w (~w)\n", [reverse(Ds), Code, Bits]),
+jfd_decode_bits_(_Bits, _Code, _Ds, _JFd) ->
+    %% io:format("~s => ~w (~w)\n", [reverse(_Ds), _Code, _Bits]),
     erlang:error({error, not_a_code}).
 
 %% Byte align the the bit stream (ditch the bits)
@@ -641,7 +655,7 @@ decode_dht(<<_:3,AC:1,Ti:4,Bin/binary>>, IMG) ->
        true ->
 	    ?dbg("DHT: AC table=~p\n", [Ti])
     end,
-    emit_dht(DHT),
+    %% emit_dht(DHT),
     IMG1 = epx_image:set_attribute(IMG, {dht,AC,Ti}, DHT),
     decode_dht(Bin1, IMG1);
 decode_dht(<<>>, IMG) ->
@@ -660,7 +674,7 @@ decode_dqt(<<>>, IMG) ->
 
 decode_dqt(_Len, Ti, 0, Bits, Acc, IMG) ->
     DQT = reverse(Acc),
-    ?dbg("DQT: Table ~w\n", [Ti]), emit_8x8(DQT),
+    %% ?dbg("DQT: Table ~w\n", [Ti]), emit_8x8(DQT),
     IMG1 = epx_image:set_attribute(IMG, {dqt,Ti}, DQT),
     decode_dqt(Bits, IMG1);
 decode_dqt(Len, Ti, I, Bits, Acc, IMG) ->
@@ -1103,7 +1117,6 @@ emit_8x8(DQT, Fmt) ->
     L1 = lists:map(fun(E) -> io_lib:format(Fmt, [E]) end, DQT),
     En = lists:max(lists:map(fun(F) -> iolist_size(F) end, L1)),
     Fmt2 = "~"++integer_to_list(En)++"s",
-    
     io:format("[", []), emit_es(L1,Fmt2,0), io:format("]\n", []).
 
 emit_es([E],Fmt,_) ->

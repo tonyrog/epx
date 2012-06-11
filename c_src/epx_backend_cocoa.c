@@ -1,3 +1,19 @@
+/***************************************************************************
+ *
+ * Copyright (C) 2007 - 2012, Rogvall Invest AB, <tony@rogvall.se>
+ *
+ * This software is licensed as described in the file COPYRIGHT, which
+ * you should have received as part of this distribution. The terms
+ * are also available at http://www.rogvall.se/docs/copyright.txt.
+ *
+ * You may opt to use, copy, modify, merge, publish, distribute and/or sell
+ * copies of the Software, and permit persons to whom the Software is
+ * furnished to do so, under the terms of the COPYRIGHT file.
+ *
+ * This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
+ * KIND, either express or implied.
+ *
+ ***************************************************************************/
 /*
  *  Mac Os X display driver
  *
@@ -289,8 +305,8 @@ void* cocoa_event_thread(void* arg)
     CocoaBackend* be = (CocoaBackend*) arg;
     OSStatus err;
     EventTypeSpec appEventList[] =
-	{ { 'EPIC',  kEpicEventNew},
-	  { 'EPIC',  kEpicEventDel},
+	{ { 'EEPX',  kEpicEventNew},
+	  { 'EEPX',  kEpicEventDel},
 	  { kEventClassCommand, kEventProcessCommand } };
     // EventRef theEvent;
     // EventTargetRef theTarget;
@@ -704,9 +720,9 @@ static int cocoa_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     cwin->winBounds.size.width  = ewin->width;
 
     EPX_DBGFMT("cocoa_win_attach: cwin=%p", cwin);
-    MacCreateEvent(nil, 'EPIC',  kEpicEventNew, GetCurrentEventTime(),
+    MacCreateEvent(nil, 'EEPX',  kEpicEventNew, GetCurrentEventTime(),
 		   kEventAttributeNone, &newEvent);
-    SetEventParameter(newEvent, 'EPIC', 'CWIN', sizeof(CocoaWindow*), &cwin);
+    SetEventParameter(newEvent, 'EEPX', 'CWIN', sizeof(CocoaWindow*), &cwin);
     PostEventToQueue(GetMainEventQueue(), newEvent, kEventPriorityHigh);
     ReleaseEvent(newEvent);
     EPX_DBGFMT("cocoa_win_attach: post done");
@@ -731,9 +747,9 @@ static int cocoa_win_detach(epx_backend_t* backend, epx_window_t* ewin)
 	ewin->opaque = NULL;
 	ewin->backend = NULL;
 
-	MacCreateEvent(nil, 'EPIC',  kEpicEventDel, GetCurrentEventTime(),
+	MacCreateEvent(nil, 'EEPX',  kEpicEventDel, GetCurrentEventTime(),
 		       kEventAttributeNone, &delEvent);
-	SetEventParameter(delEvent, 'EPIC', 'CWIN', 
+	SetEventParameter(delEvent, 'EEPX', 'CWIN', 
 			  sizeof(CocoaWindow*), &cwin);
 	PostEventToQueue(GetMainEventQueue(), delEvent, kEventPriorityHigh);
 	ReleaseEvent(delEvent);
@@ -756,9 +772,9 @@ static pascal OSStatus EPicAppEventHandler(
 
     dbg_print_event("EPicAppEventHandler", inEvent);
 
-    if (eventClass == 'EPIC') {
+    if (eventClass == 'EEPX') {
 	CocoaWindow* cwin;
-	GetEventParameter( inEvent, 'EPIC', 'CWIN', 
+	GetEventParameter( inEvent, 'EEPX', 'CWIN', 
 			   NULL, sizeof(CocoaWindow*), NULL, &cwin);
 	EPX_DBGFMT("EPicAppEventHandler:cwin = %p", cwin);
 	if (cwin == NULL)

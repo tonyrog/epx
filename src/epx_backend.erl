@@ -1,6 +1,21 @@
+%%%---- BEGIN COPYRIGHT --------------------------------------------------------
+%%%
+%%% Copyright (C) 2007 - 2012, Rogvall Invest AB, <tony@rogvall.se>
+%%%
+%%% This software is licensed as described in the file COPYRIGHT, which
+%%% you should have received as part of this distribution. The terms
+%%% are also available at http://www.rogvall.se/docs/copyright.txt.
+%%%
+%%% You may opt to use, copy, modify, merge, publish, distribute and/or sell
+%%% copies of the Software, and permit persons to whom the Software is
+%%% furnished to do so, under the terms of the COPYRIGHT file.
+%%%
+%%% This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
+%%% KIND, either express or implied.
+%%%
+%%%---- END COPYRIGHT ----------------------------------------------------------
 %%%-------------------------------------------------------------------
 %%% @author Tony Rogvall <tony@rogvall.se>
-%%% @copyright (C) 2010, Tony Rogvall
 %%% @doc
 %%%    Keep track on EPX backend
 %%% @end
@@ -19,8 +34,10 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--define(SERVER,  ?MODULE).
+-define(SERVER,  epx_backend_srv).
 -define(TABLE,   epx_backend_table).
+
+-include("../include/epx.hrl").
 
 -record(state,
 	{
@@ -81,10 +98,26 @@ start_link(Args) ->
 %%--------------------------------------------------------------------
 
 init(Args) ->
-    io:format("epx_backend: starting args=~p\n", [Args]),
+    put(debug, proplists:get_bool(debug, Args)),
+    ?epx_debug("starting ~p", [Args]),
     ets:new(?TABLE, [set, named_table, protected]),
-    %% maybe create the default backend here?
-    {ok, #state{}}.
+    Dict = epx:dict_from_list(Args),
+    BeName = try epx:dict_get(Dict, backend) of
+		 Be -> Be
+	      catch
+		  error:_ ->
+		      epx:assumed_backend()
+	      end,
+    try epx:backend_open(BeName, epx:dict_from_list(Args)) of
+	Backend ->
+	    ets:insert(?TABLE, {1, Backend}),
+	    ets:insert(?TABLE, {default, Backend}),
+	    {ok, #state { next_id = 2 }}
+    catch
+	error:Error ->
+	    ?epx_info("backend_open no default backed, failed ~p", [Error]),
+	    {ok, #state {}}
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -112,7 +145,8 @@ handle_call({create,Name,Opts}, _From, State) ->
 	    end,
 	    {reply, {ok,ID}, State#state { next_id = ID+1 }}
     catch
-	error:_ ->
+	error:Error ->
+	    ?epx_warning("backed create failed ~p", [Error]),
 	    {reply, {error,einval}, State}
     end;
 handle_call({set_default,ID}, _From, State) ->
