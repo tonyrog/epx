@@ -28,13 +28,14 @@
 
 /*
  * Layout
- *       Format:4          (RGB4/RGB5/..)
- *       BGR:1             (Pixels stored in BGR)
- *       Alpha:1           (Use alpha)
- *       AlphaFirst:1      (Or Skip First if Alplha=0)
- *       LittleEndian:1    (Pixels stored in little endian)
- *       Unused:2
- *       BitsPerPixel:6    (+1)
+ *       << Format:4,          %% (RGB4/RGB5/..)
+ *          _:2,               %% Reserbed
+ *          BGR:1,             %% Pixels stored in BGR
+ *          AlphaFirst:1,      %% Or Skip First if Alplha=0
+ *          Alpha:1,           %% Use alpha
+ *          LittleEndian:1     %% Pixels stored in little endian
+ *          BitsPerPixel:6     %% (+1) => [1..64]
+ *        >>
  */
 #define EPX_F_Bgr         0x0200
 #define EPX_F_Alpha       0x0100
@@ -112,7 +113,10 @@
 #define EPX_FORMAT_A1R5G5B5 EPX_BE_FMT(EPX_FMT_RGB5,0,1,1,16)
 #define EPX_FORMAT_R5G5B5X1 EPX_BE_FMT(EPX_FMT_RGB5,0,0,0,16)
 #define EPX_FORMAT_X1R5G5B5 EPX_BE_FMT(EPX_FMT_RGB5,0,0,1,16)
-#define EPX_FORMAT_R5G6B5   EPX_BE_FMT(EPX_FMT_RGB565,0,0,0,16)
+#define EPX_FORMAT_R5G6B5_BE EPX_BE_FMT(EPX_FMT_RGB565,0,0,0,16)
+#define EPX_FORMAT_B5G6R5_BE EPX_BE_FMT(EPX_FMT_RGB565,1,0,0,16)
+#define EPX_FORMAT_R5G6B5_LE EPX_LE_FMT(EPX_FMT_RGB565,0,0,0,16)
+#define EPX_FORMAT_B5G6R5_LE EPX_LE_FMT(EPX_FMT_RGB565,1,0,0,16)
 #define EPX_FORMAT_L8A8     EPX_BE_FMT(EPX_FMT_GRAY,0,1,0,16)
 #define EPX_FORMAT_A8L8     EPX_BE_FMT(EPX_FMT_GRAY,0,1,1,16)
 #define EPX_FORMAT_L16      EPX_BE_FMT(EPX_FMT_GRAY,0,0,0,16)
@@ -146,8 +150,9 @@
 #define EPX_FORMAT_ALPHA  EPX_FORMAT_A8
 #define EPX_FORMAT_232    EPX_FORMAT_R2G3B2
 
-#define EPX_FORMAT_565_LE EPX_LE_FMT(EPX_FMT_RGB565,0,0,0,16)
-#define EPX_FORMAT_565_BE EPX_FORMAT_R5G6B5
+#define EPX_FORMAT_565    EPX_FORMAT_R5G6B5_BE
+#define EPX_FORMAT_565_LE EPX_FORMAT_R5G6B5_LE
+#define EPX_FORMAT_565_BE EPX_FORMAT_R5G6B5_BE
 
 #define EPX_FORMAT_RGB    EPX_FORMAT_R8G8B8
 #define EPX_FORMAT_BGR    EPX_FORMAT_B8G8R8

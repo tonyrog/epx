@@ -26,6 +26,8 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
 #include <linux/fb.h>
 #include <linux/vt.h>
 #include <linux/kd.h>
@@ -41,6 +43,12 @@ typedef u_int8_t  u8;
 typedef u_int16_t u16;
 typedef u_int32_t u32;
 
+// HACK
+#undef EPX_DBGFMT
+#define EPX_DBGFMT(...)							\
+    do {								\
+	epx_emit_error(__FILE__, __LINE__, __VA_ARGS__);		\
+    } while(0)
 
 #include "via_ioctl.h"   /* SPECIAL VIA ONLY */
 #include "via_tv.h"   /* SPECIAL VIA ONLY */
@@ -290,19 +298,37 @@ static void fb_mod_vinfo(epx_dict_t *param, struct fb_var_screeninfo *vinfo)
 {
     int   int_param;
     unsigned int  uint_param;
+    char* string_param;
 
     if (epx_dict_lookup_integer(param, "width", &int_param) != -1) {
-	vinfo->xres = int_param;
+	vinfo->xres         = int_param;
 	vinfo->xres_virtual = int_param;
+    }
+
+    if (epx_dict_lookup_integer(param, "virt_width", &int_param) != -1) {
+	if(int_param >= (int)vinfo->xres)
+	    vinfo->xres_virtual = int_param;
     }
 
     if (epx_dict_lookup_integer(param, "height", &int_param) != -1) {
 	vinfo->yres = int_param;
 	vinfo->yres_virtual = int_param;
     }
+    if (epx_dict_lookup_integer(param, "virt_height", &int_param) != -1) {
+	if (int_param >= (int)vinfo->yres)
+	    vinfo->yres_virtual = int_param;
+    }
 
-    if (epx_dict_lookup_integer(param,  "pixel_type", &int_param) != -1) {
-	vinfo->bits_per_pixel = EPX_PIXEL_SIZE(int_param)*8;
+    // either pixel_format (string) or pixel_type (old, int)
+    if (epx_dict_lookup_string(param,"pixel_format",&string_param,NULL) != -1) {
+	epx_format_t fmt = epx_pixel_format_from_name(string_param);
+	if (fmt != EPX_FORMAT_INVALID)
+	    vinfo->bits_per_pixel = EPX_PIXEL_SIZE(fmt)*8;
+    }
+    else {
+	if (epx_dict_lookup_integer(param,  "pixel_type", &int_param) != -1) {
+	    vinfo->bits_per_pixel = EPX_PIXEL_SIZE(int_param)*8;
+	}
     }
 
     if (epx_dict_lookup_integer(param, "pixclock", &int_param) != -1 &&
@@ -731,12 +757,29 @@ static int viafb_adjust(int fd, epx_dict_t *param)
     if (epx_dict_lookup_integer(param, "refresh", &int_param) != -1) via_info.first_dev_refresh = int_param;
     if (epx_dict_lookup_integer(param, "refresh2", &int_param) != -1) via_info.second_dev_refresh = int_param;
 
-    // pixel type / bits per pixel
-    if (epx_dict_lookup_integer(param,  "pixel_type", &int_param) != -1)
-	via_info.first_dev_bpp = EPX_PIXEL_SIZE(int_param)*8;
+    // either pixel_format (string) or pixel_type (old, int)
+    if (epx_dict_lookup_string(param,"pixel_format",&string_param,NULL) != -1) {
+	epx_format_t fmt = epx_pixel_format_from_name(string_param);
+	if (fmt != EPX_FORMAT_INVALID)
+	    via_info.first_dev_bpp = EPX_PIXEL_SIZE(fmt)*8;
+    }
+    else {
+	if (epx_dict_lookup_integer(param,  "pixel_type", &int_param) != -1) {
+	    via_info.first_dev_bpp = EPX_PIXEL_SIZE(int_param)*8;
+	}
+    }
 
-    if (epx_dict_lookup_integer(param,  "pixel_type2", &int_param) != -1)
-	via_info.second_dev_bpp = EPX_PIXEL_SIZE(int_param)*8;
+    // either pixel_format (string) or pixel_type (old, int)
+    if (epx_dict_lookup_string(param,"pixel_format2",&string_param,NULL)!=-1) {
+	epx_format_t fmt = epx_pixel_format_from_name(string_param);
+	if (fmt != EPX_FORMAT_INVALID)
+	    via_info.second_dev_bpp = EPX_PIXEL_SIZE(fmt)*8;
+    }
+    else {
+	if (epx_dict_lookup_integer(param,  "pixel_type2", &int_param) != -1) {
+	    via_info.second_dev_bpp = EPX_PIXEL_SIZE(int_param)*8;
+	}
+    }
 
     //
     // Tv position time. 
@@ -817,6 +860,11 @@ static int fb_adjust(epx_backend_t *backend, epx_dict_t* param)
 	be->vinfo.blue.offset = 0;
 	be->vinfo.blue.length = 8;
 	be->vinfo.blue.msb_right = 0;
+
+	if (be->finfo.line_length / be->vinfo.xres_virtual == 4) {
+	    be->vinfo.transp.length = 8;
+	    be->vinfo.transp.offset = 24;
+	}
     }
 	
     fb_dump_vinfo("Retrieved values.", &be->vinfo);
@@ -962,10 +1010,9 @@ static int fb_win_swap(epx_backend_t* backend, epx_window_t* ewin)
 
 static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 {
-    unsigned char alpha;
-    unsigned char alpha_first;
-    unsigned char rgb; /* color order RGB or BGR? */
-    unsigned int  pt;  /* pixel type for screen */
+    int rl, gl, bl, al;
+    int ro, go, bo, ao;
+    epx_format_t pt;
     FbBackend* be = (FbBackend*) backend;
     FbWindow*  nwin;
 
@@ -1091,61 +1138,62 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     else
       be->screen[1].data = NULL;
 
+    rl = be->vinfo.red.length;
+    ro = be->vinfo.red.offset;
+    gl = be->vinfo.green.length;
+    go = be->vinfo.green.offset;
+    bl = be->vinfo.blue.length;
+    bo = be->vinfo.blue.offset;
+    al = be->vinfo.transp.length;
+    ao = be->vinfo.transp.offset;
+
+    printf("epx_fb: bpp=%d,red(%d,%d),green(%d,%d),blue(%d,%d),alpha(%d,%d)\r\n",
+	   be->vinfo.bits_per_pixel,rl,ro,gl,go,bl,bo,al,ao);
+
+    pt = 0;
+    // FIXME: Buggy reversed condition ! do not know why
+    if (!(bo > go)) pt |= EPX_F_Bgr;         // BGR else RGB 
+    if (al > 0)  pt |= EPX_F_Alpha;          // Alpha available
+    if ((al>0)&&(ao>ro)) pt |= EPX_F_AFirst; // Alpha first
+    pt |= ((be->vinfo.bits_per_pixel-1) & EPX_M_Size);  // pixel size
+    if (be->vinfo.grayscale)
+	pt |= (EPX_FMT_GRAY<<12);
+    else if ((rl==gl) && (gl==bl)) {
+	switch(rl) {
+	case 4: pt |= (EPX_FMT_RGB4<<12); break;
+	case 5: pt |= (EPX_FMT_RGB5<<12); break;
+	case 8: pt |= (EPX_FMT_RGB8<<12); break;
+	case 10: pt |= (EPX_FMT_RGB10<<12); break;
+	case 12: pt |= (EPX_FMT_RGB12<<12); break;
+	case 16: pt |= (EPX_FMT_RGB16<<12); break;
+	default: break;
+	}
+    }
+    else if ((rl==3)&&(gl==3)&&(bl==2)) 
+	pt |= (EPX_FMT_RGB332<<12);	
+    else if ((rl==2)&&(gl==3)&&(bl==2)) 
+	pt |= (EPX_FMT_RGB232<<12);
+    else if ((rl==5)&&(gl==6)&&(bl==5)) 
+	pt |= (EPX_FMT_RGB565<<12);
+    else if (rl && !gl && !bl)
+	pt |= (EPX_FMT_RED<<12);
+    else if (!rl && gl && !bl)
+	pt |= (EPX_FMT_GREEN<<12);
+    else if (!rl && !gl && bl)
+	pt |= (EPX_FMT_BLUE<<12);
+    else
+	pt = EPX_FORMAT_INVALID;
     
-    /* We'll just do a limited pixel format support for now. */
- 
-
-    /* Do we have alpha? */
-    if (be->finfo.line_length / be->vinfo.xres_virtual == 4)
-	alpha = 1;
-    else
-	alpha = 0;
-
-    /* Is alpha at the beginning or at the end */
-    /* FIXME: Take transp.msb_right into account. */
-    if (alpha && be->vinfo.transp.offset > be->vinfo.red.offset && be->vinfo.transp.length != 0)
-	alpha_first = 1;
-    else 
-	alpha_first = 0;
-
-    /* Check if we have BGR or RGB */
-    if (be->vinfo.green.offset > be->vinfo.red.offset)
-	rgb = 1;
-    else
-	rgb = 0;
-
-    if (alpha) {
-      if (rgb) {
-	if (alpha_first) {
-	  pt = EPX_FORMAT_ARGB;
-	  printf("epx_fb: ARGB\n");
-	}
+    {
+	char* pt_name = epx_pixel_format_to_name(pt);
+	if (pt_name != NULL)
+	    printf("epx_fb: pixel format = %s\r\n", pt_name);
 	else {
-	  pt = EPX_FORMAT_RGBA;
-	  printf("epx_fb: RGBA\n");
+	    printf("epx_fb: pixel format %d = unknown\r\n", pt);
+	    pt = EPX_FORMAT_RGB; // guess
 	}
-      }
-      else {
-	if (alpha_first) {
-	  pt = EPX_FORMAT_ABGR;
-	  printf("epx_fb: ABGR\n");
-	}
-	else {
-	  pt = EPX_FORMAT_BGRA;
-	  printf("epx_fb: BGRA\n");
-	}
-      }
     }
-    else {
-      if (rgb) {
-	pt = EPX_FORMAT_RGB;
-	printf("epx_fb: RGB\n");
-      }
-      else {
-	pt = EPX_FORMAT_BGR;
-	printf("epx_fb: BGR\n");
-      }   
-    }
+
     be->screen[0].pixel_format = pt;
     be->screen[1].pixel_format = pt;
 

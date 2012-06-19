@@ -49,14 +49,17 @@ static struct {
     { "bgr",      EPX_FORMAT_BGR  },  
     { "b8g8r8",   EPX_FORMAT_BGR  },
 
-    { "565",      EPX_FORMAT_565_BE },
-    { "r5g6b5",   EPX_FORMAT_565_BE },
+    { "565",      EPX_FORMAT_R5G6B5_BE },
+    { "r5g6b5",   EPX_FORMAT_R5G6B5_BE },
+    { "565BE",    EPX_FORMAT_R5G6B5_BE },
+    { "r5g6b5BE", EPX_FORMAT_R5G6B5_BE },
 
-    { "565BE",    EPX_FORMAT_565_BE },
-    { "r5g6b5BE", EPX_FORMAT_565_BE },
+    { "565LE",    EPX_FORMAT_R5G6B5_LE },
+    { "r5g6b5LE", EPX_FORMAT_R5G6B5_LE }, 
 
-    { "565LE",    EPX_FORMAT_565_LE },
-    { "r5g6b5LE", EPX_FORMAT_565_LE }, 
+    { "b5g6r5",     EPX_FORMAT_B5G6R5_BE },
+    { "b5g6r5BE",   EPX_FORMAT_B5G6R5_BE },
+    { "b5g6r5LE",   EPX_FORMAT_B5G6R5_LE },
 
     { "1555",     EPX_FORMAT_A1R5G5B5 },
     { "a1r5g5b",  EPX_FORMAT_A1R5G5B5 },
@@ -465,6 +468,31 @@ epx_pixel_t epx_unpack_r5g6b5_le(uint8_t* src)
     return p;
 }
 
+
+epx_pixel_t epx_unpack_b5g6r5_be(uint8_t* src)
+{
+    epx_pixel_t p;
+    uint16_t v = src[0]<<8 | src[1];
+    /* shift and scale to range [0-255] */
+    p.b=(v >> 8) & 0xf8;
+    p.g=(v >> 3) & 0xfc;
+    p.r=(v & 0x1f) << 3;
+    p.a=255;
+    return p;
+}
+
+epx_pixel_t epx_unpack_b5g6r5_le(uint8_t* src)
+{
+    epx_pixel_t p;
+    uint16_t v = src[1]<<8 | src[0];
+    /* shift and scale to range [0-255] */
+    p.b=(v >> 8) & 0xf8;
+    p.g=(v >> 3) & 0xfc;
+    p.r=(v & 0x1f) << 3;
+    p.a=255;
+    return p;
+}
+
 epx_pixel_t epx_unpack_l8(uint8_t* src)
 {
     epx_pixel_t p;
@@ -505,8 +533,10 @@ epx_pixel_unpack_t epx_pixel_unpack_func(epx_format_t fmt)
     case EPX_FORMAT_R5G5B5X1: return epx_unpack_r5g5b5x1;
     case EPX_FORMAT_A1R5G5B5: return epx_unpack_a1r5g5b5;
     case EPX_FORMAT_X1R5G5B5: return epx_unpack_x1r5g5b5;
-    case EPX_FORMAT_565_BE:   return epx_unpack_r5g6b5_be;
-    case EPX_FORMAT_565_LE:   return epx_unpack_r5g6b5_le;
+    case EPX_FORMAT_R5G6B5_BE: return epx_unpack_r5g6b5_be;
+    case EPX_FORMAT_R5G6B5_LE: return epx_unpack_r5g6b5_le;
+    case EPX_FORMAT_B5G6R5_BE: return epx_unpack_b5g6r5_be;
+    case EPX_FORMAT_B5G6R5_LE: return epx_unpack_b5g6r5_le;
     case EPX_FORMAT_A8L8:     return epx_unpack_a8l8;
     default:
 	EPX_DBGFMT("epx_pixel_unpack_func: undefined func: %x", fmt);
@@ -625,6 +655,21 @@ void epx_pack_r5g6b5_le(epx_pixel_t p, uint8_t* dst)
     dst[1] = (v >> 8);
 }
 
+
+void epx_pack_b5g6r5_be(epx_pixel_t p, uint8_t* dst)
+{
+    uint16_t v = ((p.b>>3) << 11) | ((p.g>>2) << 5)  | ((p.r>>3));
+    dst[0] = (v >> 8);
+    dst[1] = v & 0xff;
+}
+
+void epx_pack_b5g6r5_le(epx_pixel_t p, uint8_t* dst)
+{
+    uint16_t v = ((p.b>>3) << 11) | ((p.g>>2) << 5)  | ((p.r>>3));
+    dst[0] = v & 0xff;
+    dst[1] = (v >> 8);
+}
+
 void epx_pack_a8y8u8v8(epx_pixel_t p, uint8_t* dst)
 {
     epx_pixel_yuv_t yuv = epx_pixel_rgb2yuv(p);
@@ -666,8 +711,10 @@ epx_pixel_pack_t epx_pixel_pack_func(epx_format_t fmt)
     case EPX_FORMAT_R5G5B5X1: return epx_pack_r5g5b5x1;
     case EPX_FORMAT_A1R5G5B5: return epx_pack_a1r5g5b5;
     case EPX_FORMAT_X1R5G5B5: return epx_pack_x1r5g5b5;
-    case EPX_FORMAT_565_BE:   return epx_pack_r5g6b5_be;
-    case EPX_FORMAT_565_LE:   return epx_pack_r5g6b5_le;
+    case EPX_FORMAT_R5G6B5_BE:   return epx_pack_r5g6b5_be;
+    case EPX_FORMAT_R5G6B5_LE:   return epx_pack_r5g6b5_le;
+    case EPX_FORMAT_B5G6R5_BE:   return epx_pack_b5g6r5_be;
+    case EPX_FORMAT_B5G6R5_LE:   return epx_pack_b5g6r5_le;
     case EPX_FORMAT_A8L8:     return epx_pack_a8l8;
     default:
 	EPX_DBGFMT("epx_pixel_pack_func: undefined func: %x", fmt);
