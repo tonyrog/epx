@@ -27,7 +27,6 @@
 %%
 -export([start/0]).
 -export([old_start/0, old_start/1]).
--export([assumed_backend/0]).
 %% Pixmap access
 -export([pixmap_create/3,pixmap_create/2]).
 -export([pixmap_copy/1]).
@@ -147,6 +146,12 @@
 	      epx_pixmap_info_key/0,
 	      epx_window_info_key/0]).
 
+-type unsigned() :: non_neg_integer().
+-type float01() :: float().  %% 0.0 .. 1.0  way can we not write this?
+%% 0.8 fixpoint type or float in 0.0..1.0
+-type fix8() :: byte() | float01(). 
+-type void() :: 'ok'.
+
 -opaque epx_backend()   ::  #epx_backend{} | undefined.
 -opaque epx_window()    ::  #epx_window{}  | undefined.
 -opaque epx_pixmap()    ::  #epx_pixmap{}  | undefined.
@@ -154,8 +159,22 @@
 -opaque epx_gc()        ::  #epx_gc{}  | undefined.
 -opaque epx_dict()      ::  #epx_dict{}  | undefined.
 -opaque epx_animation() ::  #epx_animation{}  | undefined.
--type epx_rect() :: { integer(), integer(), 
-		      non_neg_integer(), non_neg_integer() }.
+-type epx_rect() :: { integer(), integer(), unsigned(), unsigned() }.
+
+-type epx_color3() :: {R::byte(),G::byte(),B::byte()}.
+-type epx_color4() :: {A::byte(),R::byte(),G::byte(),B::byte()}.
+-type epx_color_name() :: atom().  %% x11 color names
+
+-type epx_color() :: epx_color3() | 
+		     epx_color4() | 
+		     epx_color_name() |
+		     unsigned().
+
+-type epx_flag() :: solid | blend | sum | aalias | 
+		    textured | nfirst | nlast | none.
+-type epx_flags() :: [epx_flag()] | unsigned().
+
+
 
 -type epx_pixel_format() ::
 	%% FIXME fill with more formats
@@ -168,59 +187,45 @@
 	'565' | r5g6b5 | '565BE' | r5g6b5BE |
 	'565LE' | r5g6b5LE |
 	'1555' | a1r5g5b |
-	gray8a8 | gray16 |
-	a8 | alpha8 | gray8 |
+	gray8a8 | 
+	gray16 |
+	a8 | 
+	alpha8 | 
+	gray8 |
 	efnt2.
 
 -type epx_window_event_flag() :: 
-	key_press | key_release | motion |
-	button_press | button_release | focus_in | focus_out |
-	focos | enter | leave | configure | resize | crossing |
+	key_press | 
+	key_release | 
+	motion |
+	button_press | button_release | 
+	focus_in | focus_out |
+	focos | enter | leave | 
+	configure | resize | crossing |
 	button | left | middle | right | wheel | wheel_up | wheel_down |
 	wheel_left | wheel_right | close | destroyed | all | none.
 
 -type epx_window_event_flags() :: epx_window_event_flag() | 
 				 [epx_window_event_flag()].
 
--type void() :: 'ok'.
 
 
 init() ->
     Nif = filename:join([code:lib_dir(epx),"lib",?VARIANT,"epx_nif"]),
     %% io:format("Loading: ~s\n", [Nif]),
     erlang:load_nif(Nif, 0).
-
-%% select 
-assumed_backend() ->
-    case os:getenv("EPX_BACKEND") of
-	false ->
-	    case os:type() of
-		{unix,darwin} ->
-		    "macos";
-		{unix,linux} -> 
-		    case os:getenv("DISPLAY") of
-			false -> "fb";
-			_ -> "x11"
-		    end;
-		{unix,_} -> "x11";
-		_ -> "none"
-	    end;
-	Backend ->
-	    Backend
-    end.
     
 %%
 %% This is a simple version of the start function
 %% For a more robust version use application:start(epx)
 %%
 start() ->
-    application:load(epx), %% make sure command line env is loaded
-    %% erlang:display({'epx:start args', application:get_all_env(epx)}),
-    application:start(epx).
+    application:load(?MODULE), %% make sure command line env is loaded
+    application:start(?MODULE).
     
 
 old_start() ->
-    Backend = assumed_backend(),
+    Backend = epx_backend:assumed_backend(),
     old_start(Backend).
 
 old_start(Prefered) ->
@@ -242,12 +247,17 @@ old_start(Prefered) ->
 	    epx_backend:create(Name, [])
     end.
 
+%% @doc
+%%   Create a pixmap of size WidthxHeight using the pixel format 'argb'
+%% @end
 -spec pixmap_create(Width::non_neg_integer(), Height::non_neg_integer()) ->
 			   epx_pixmap().
-
 pixmap_create(Width,Height) ->
     pixmap_create(Width,Height,argb).
 
+%% @doc
+%%   Create a pixmap of size WidthxHeight with the giiven pixel format
+%% @end
 -spec pixmap_create(Width::non_neg_integer(), Height::non_neg_integer(),
 		    Format::epx_pixel_format()) ->
 			   epx_pixmap().
@@ -255,46 +265,55 @@ pixmap_create(Width,Height) ->
 pixmap_create(_Width,_Height,_Format) ->
     erlang:error(nif_not_loaded).
 
+%% @doc
+%%   Create a new pixmap with all pixels from Src
+%% @end
 -spec pixmap_copy(Src::epx_pixmap()) -> epx_pixmap().
 
 pixmap_copy(_Src) ->
     erlang:error(nif_not_loaded).
 
+
+%% @doc
+%%   Create a sub-pixmap from Src refering to pixels in the
+%%   rectangluar area (X,Y,Width,Height). The sub-pixmap share
+%%   all pixels with the Src pixmap is is not SMP protected,
+%%   if multiple writers are used keep cachline distance to the
+%%   neighbouring pixels to be safe.
+%% @end
 -spec pixmap_sub_pixmap(Src::epx_pixmap(),
 			X::integer(), Y::integer(),
-			Width::non_neg_integer(), Height::non_neg_integer()) ->
+			Width::unsigned(), Height::unsigned()) ->
 			       epx_pixmap().
 
 pixmap_sub_pixmap(_Src, _X, _Y, _Width, _Height) ->
     erlang:error(nif_not_loaded).
 
-%% pixmap_info:
-%%    width           unsigned()
-%%    height          unsigned()
-%%    bytes_per_row   unsigned()
-%%    bits_per_pixel  unsigned()
-%%    bytes_per_pixel unsigned()
-%%    pixel_format    pixel_format()
-%%    parent          epx_pixmap()
-%%    clip            epx_rect()
-%%    backend         epx_backend()
-%%
 -type epx_pixmap_info_key() ::
-	'width' | 'height' |
-	'bytes_per_row' | 'bits_per_pixel' | 'bytes_per_pixel' |
-	'pixel_format' | 'parent' | 'clip' | 'backend'.
+	'width' | 
+	'height' |
+	'bytes_per_row' | 
+	'bits_per_pixel' |
+	'bytes_per_pixel' |
+	'pixel_format' | 
+	'parent' |
+	'clip' | 
+	'backend'.
 
 -type epx_pixmap_info() ::
-	{ 'width', non_neg_integer() } |
-	{ 'height', non_neg_integer() } |
-	{ 'bytes_per_row', non_neg_integer() } |
-	{ 'bits_per_pixel', non_neg_integer() } |
-	{ 'bytes_per_pixel', non_neg_integer() } |
+	{ 'width', unsigned() } |
+	{ 'height', unsigned() } |
+	{ 'bytes_per_row', unsigned() } |
+	{ 'bits_per_pixel', unsigned() } |
+	{ 'bytes_per_pixel', unsigned() } |
 	{ 'pixel_format', epx_pixel_format() } |
 	{ 'parent',  epx_pixmap() } |
 	{ 'clip',    epx_rect() } | 
 	{ 'backend', epx_backend() }.
 
+%% @doc
+%%   Return available pixmap information elements
+%% @end
 -spec pixmap_info() -> [epx_pixmap_info()].
 			 
 pixmap_info() ->
@@ -302,66 +321,208 @@ pixmap_info() ->
      bytes_per_row, bits_per_pixel, bytes_per_pixel,
      pixel_format, parent, clip, backend].
 
+%% @doc
+%%   Get all available pixmap information
+%% @end
 -spec pixmap_info(Pixmap::epx_pixmap()) -> [epx_pixmap_info()].
 			 
 pixmap_info(Pixmap) ->
     map(fun(Info) -> {Info,pixmap_info(Pixmap,Info)} end,
 	pixmap_info()).
 
+%% @doc
+%%   Get specific pixmap information
+%% @end
 -spec pixmap_info(Pixmap::epx_pixmap(),Key::epx_pixmap_info_key()) ->
 			 term().
 
 pixmap_info(_Pixmap, _Key) ->
     erlang:error(nif_not_loaded).
 
+%% @doc
+%%   Set the clipping Rectangle, pixels drawn outside the clipping 
+%%   rectangle are ignored.
+%% @end
+-spec pixmap_set_clip(Pixmap::epx_pixmap(), Rect::epx_rect()) -> void().
+
 pixmap_set_clip(_Pixmap, _Rect) ->
     erlang:error(nif_not_loaded).
 
-pixmap_fill(_Pixmap, _Color) ->
+%% @doc
+%%   Fill the rectangle Dst with Color
+%% @end
+-spec pixmap_fill(Dst::epx_pixmap(), Color::epx_color()) -> void().
+
+pixmap_fill(_Dst, _Color) ->
     erlang:error(nif_not_loaded).
+
+%% @doc
+%%   Copy pixles from `Src' pixmap to `Dst' pixmap, ignoring clip rectangle
+%% @end
+-spec pixmap_copy_to(Src::epx_pixmap(),Dst::epx_pixmap()) -> void().
     
 pixmap_copy_to(_Src, _Dst) ->
     erlang:error(nif_not_loaded).
 
+%% @doc
+%%  Inline, flip pixmap vertically, that is swap top and bottom rows
+%% @end
+-spec pixmap_flip(Pixmap::epx_pixmap()) -> void().
+
 pixmap_flip(_Pixmap) ->
     erlang:error(nif_not_loaded).
-    
+
+%% @doc
+%%  Scale `Src' pixmap to size (`Width' and `Height') and put the result 
+%%  in the `Dst' pixmap.
+%% @end 
+-spec pixmap_scale(Src::epx_pixmap(),Dst::epx_pixmap(),
+		   Width::unsigned(), Height::unsigned()) -> void().
 pixmap_scale(_Src, _Dst, _Width, _Height) ->
     erlang:error(nif_not_loaded).    
 
+%% @doc
+%%   Read the pixel value at position (`X',`Y') in pixmap `Src', return
+%%   a pixel in {A,R,G,B} form or {255,0,0,0} (black) if position is
+%%   outside the pixmap.
+%% @end
+-spec pixmap_get_pixel(Src::epx_pixmap(), X::integer(), Y::integer()) ->
+			      epx_color4().
 pixmap_get_pixel(_Pixmap,_X,_Y) ->    
     erlang:error(nif_not_loaded).    
-
-pixmap_get_pixels(_Pixmap,_X,_Y,_W,_H) ->    
+%% @doc
+%%  Read the pixels in the rectangle given by (`X',`Y',`Width',`Height') 
+%%  return the pixels data in a "native" form as a binary.
+%% @end
+-spec pixmap_get_pixels(Src::epx_pixmap(), X::integer(), Y::integer(),
+			Width::unsigned(), Height::unsigned()) ->
+			       binary().
+pixmap_get_pixels(_Pixmap,_X,_Y,_W,_H) ->
     erlang:error(nif_not_loaded).
 
-pixmap_put_pixel(Pixmap,X,Y,Value) ->
-    pixmap_put_pixel(Pixmap,X,Y,0,Value).
+%% @doc
+%%  Write the pixel value to position (`X',`Y') in the pixmap `Dst'
+%% @end
+-spec pixmap_put_pixel(Dst::epx_pixmap(), X::integer(), Y::integer(),
+		       Value::epx_color()) -> void().
+pixmap_put_pixel(Dst,X,Y,Value) ->
+    pixmap_put_pixel(Dst,X,Y,0,Value).
 
-pixmap_put_pixel(_Pixmap,_X,_Y,_Flags,_Value) ->
+%% @doc
+%%  Write the pixel value to position (`X',`Y') in the pixmap `Dst'
+%%  using the flags in `Flags'.
+%% @end
+-spec pixmap_put_pixel(Dst::epx_pixmap(), X::integer(), Y::integer(),
+		       Flags::epx_flags(),Value::epx_color()) -> void().
+pixmap_put_pixel(_Dst,_X,_Y,_Flags,_Value) ->
     erlang:error(nif_not_loaded).
 
-pixmap_put_pixels(Pixmap,X,Y,Width,Height,Format,Data) ->
-    pixmap_put_pixels(Pixmap,X,Y,Width,Height,Format,Data,[]).
+%% @doc
+%%  Write the raw pixels in Data described by Format, into
+%%  the rectangular area given by (`X',`Y',`Width',`Height') in the
+%%  pixmap `Dst'.
+%% @end
+-spec pixmap_put_pixels(Dst::epx_pixmap(),X::integer(),Y::integer(),
+			Width::unsigned(),Height::unsigned(),
+			Format::epx_pixel_format(), Data::iolist()) ->
+			       void().
+			
+pixmap_put_pixels(Dst,X,Y,Width,Height,Format,Data) ->
+    pixmap_put_pixels(Dst,X,Y,Width,Height,Format,Data,[]).
 
-pixmap_put_pixels(_Pixmap,_X,_Y,_Width,_Height,_Format,_Data,_Flags) ->
+%% @doc
+%%  Write the raw pixels in Data described by Format, into
+%%  the rectangular area given by (`X',`Y',`Width',`Height') using
+%%  the flags in `Flags' in the pixmap 'Dst'.
+%% @end
+-spec pixmap_put_pixels(Dst::epx_pixmap(),X::integer(),Y::integer(),
+			Width::unsigned(),Height::unsigned(),
+			Format::epx_pixel_format(), Data::iolist(),
+			Flags::epx_flags()) ->
+			       void().
+pixmap_put_pixels(_Dst,_X,_Y,_Width,_Height,_Format,_Data,_Flags) ->
     erlang:error(nif_not_loaded).
+
+%% @doc
+%%  Copy pixels from the area (`XSrc',`YSrc',`Width',`Height') in `Src' pixmap
+%%  to the area (`XDst',`YDst',`Width',`Height') in the `Dst' pixmap. The pixels
+%%  are clipped according to the `Dst' clip rectangle.
+%% @end
+
+-spec pixmap_copy_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+		       XSrc::integer(),YSrc::integer(),
+		       XDst::integer(),YDst::integer(),		       
+		       Width::unsigned(),Height::unsigned()) ->
+			      void().
 
 pixmap_copy_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height) ->
     pixmap_copy_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height,[]).
 
+%% @doc
+%%  Copy pixels from the area (`XSrc',`YSrc',`Width',`Height') in `Src' pixmap
+%%  to the area (`XDst',`YDst',`Width',`Height') in the `Dst' pixmap. The pixels
+%%  are clipped according to the `Dst' clip rectangle. The pixels in
+%%  `Src' are mixed with `Dst' according to the flags in `Flags'.
+%% @end
+
+-spec pixmap_copy_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+		       XSrc::integer(),YSrc::integer(),
+		       XDst::integer(),YDst::integer(),
+		       Width::unsigned(),Height::unsigned(),
+		       Flags::epx_flags()) -> void().
+
 pixmap_copy_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
     erlang:error(nif_not_loaded).
 
+%% @doc
+%%   Blend `Src' rectangle (`XSrc',`YSrc',`Width',`Height') with 
+%%   `Dst' rectangle (`XDst',`YDst',`Width',`Height') using a fixed
+%%   alpha value of `Alpha'. If `Alpha' is 1.0 it means `Src' pixels only and
+%%   an `Alpha' of 0.0 means using `Dst' pixels only.<br/>
+%%   The blending formula used is: (`Alpha'*(`Src'-`Dst')+(`Dst' bsl 8)) bsr 8.
+%% @end
+
+-spec pixmap_alpha_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			Alpha::fix8(),
+			XSrc::integer(),YSrc::integer(),
+			XDst::integer(),YDst::integer(),
+			Width::unsigned(),Height::unsigned()) -> void().    
+
 pixmap_alpha_area(_Src,_Dst,_Alpha,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     erlang:error(nif_not_loaded).
-    
+
+%% @doc
+%%  Blend `Src' rectangle (`XSrc',`YSrc',`Width',`Heght') to `Dst'
+%%  rectangle (`XDst',`YDst',`Width',`Height') fade using Fade
+%%  as a blending scale factor.
+%% @end
+-spec pixmap_fade_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+		       Fade::fix8(),
+		       XSrc::integer(),YSrc::integer(),
+		       XDst::integer(),YDst::integer(),
+		       Width::unsigned(),Height::unsigned()) -> void().    
 pixmap_fade_area(_Src,_Dst,_Fade,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     erlang:error(nif_not_loaded).
+
+%% @doc
+%%  Shadow `Src' rectangle (`XSrc',`YSrc',`Width',`Heght') to
+%%  `Dst' rectangle (`XDst',`YDst',`Width',`Height').
+%%  This function will blend the pixels from source with
+%%  the luminance value as alpha.
+%% @end
+-spec pixmap_shadow_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			 XSrc::integer(),YSrc::integer(),
+			 XDst::integer(),YDst::integer(),
+			 Width::unsigned(),Height::unsigned()) -> void().
 
 pixmap_shadow_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height) ->
     pixmap_shadow_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height,[]).
 
+-spec pixmap_shadow_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			 XSrc::integer(),YSrc::integer(),
+			 XDst::integer(),YDst::integer(),
+			 Width::unsigned(),Height::unsigned(),
+			 Flags::epx_flags()) -> void().
 pixmap_shadow_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
     erlang:error(nif_not_loaded).
 
@@ -602,9 +763,9 @@ window_create(_X,_Y,_Width,_Height,_Mask) ->
 -type epx_window_info() ::
 	{ 'x', integer() } |
 	{ 'y', integer() } |
-	{ 'width', non_neg_integer() } |
-	{ 'height', non_neg_integer() } |
-	{ 'backend', non_neg_integer() } |
+	{ 'width', unsigned() } |
+	{ 'height', unsigned() } |
+	{ 'backend', epx_backend() } |
 	{ 'event_mask', epx_window_event_flags() }.
 
 -spec window_info() -> [epx_window_info_key()].

@@ -1005,7 +1005,7 @@ static int get_flag(ErlNifEnv* env, const ERL_NIF_TERM term,
     else if (term == ATOM(blend))    *flags = EPX_FLAG_BLEND;
     else if (term == ATOM(sum))      *flags = EPX_FLAG_SUM;
     else if (term == ATOM(aalias))   *flags = EPX_FLAG_AALIAS;
-    else if (term == ATOM(textured)) *flags = EPX_FLAG_TEXTURED;	
+    else if (term == ATOM(textured)) *flags = EPX_FLAG_TEXTURED;
     else if (term == ATOM(nfirst))   *flags = EPX_FLAG_NFIRST;
     else if (term == ATOM(nlast))    *flags = EPX_FLAG_NLAST;
     else if (term == ATOM(none))     *flags = EPX_FLAG_NONE;

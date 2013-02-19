@@ -38,8 +38,8 @@
 #endif
 
 
-#define kEpicEventNew 1
-#define kEpicEventDel 2
+#define kEpxEventNew 1
+#define kEpxEventDel 2
 
 typedef struct {
     epx_backend_t b;
@@ -118,19 +118,19 @@ static epx_callbacks_t cocoa_callbacks =
 static pthread_t cocoa_thr;
 static pthread_mutex_t cocoa_lock;
 
-static pascal OSStatus EPicAppEventHandler(
+static pascal OSStatus EPxAppEventHandler(
     EventHandlerCallRef	inHandlerCallRef,
     EventRef		inEvent,
     void*		inUserData);
 
-static pascal OSStatus EPicWindowEventHandler(
+static pascal OSStatus EPxWindowEventHandler(
     EventHandlerCallRef	inHandlerCallRef,
     EventRef		inEvent,
     void*		inUserData);
 //----------------------------------------------------------------------------
-DEFINE_ONE_SHOT_HANDLER_GETTER( EPicWindowEventHandler )
+DEFINE_ONE_SHOT_HANDLER_GETTER( EPxWindowEventHandler )
 
-DEFINE_ONE_SHOT_HANDLER_GETTER( EPicAppEventHandler )
+DEFINE_ONE_SHOT_HANDLER_GETTER( EPxAppEventHandler )
 
 //----------------------------------------------------------------------------
 
@@ -305,8 +305,8 @@ void* cocoa_event_thread(void* arg)
     CocoaBackend* be = (CocoaBackend*) arg;
     OSStatus err;
     EventTypeSpec appEventList[] =
-	{ { 'EEPX',  kEpicEventNew},
-	  { 'EEPX',  kEpicEventDel},
+	{ { 'EEPX',  kEpxEventNew},
+	  { 'EEPX',  kEpxEventDel},
 	  { kEventClassCommand, kEventProcessCommand } };
     // EventRef theEvent;
     // EventTargetRef theTarget;
@@ -325,15 +325,15 @@ void* cocoa_event_thread(void* arg)
 	SetFrontProcess(&psn);
     }
 
-    InitCursor();
-    SetEventMask( everyEvent ) ;
-    SetThemeCursor(kThemeArrowCursor);
+    // InitCursor();
+    // SetEventMask( everyEvent ) ;
+    // SetThemeCursor(kThemeArrowCursor);
 
-    CreateStandardWindowMenu(0, &be->menu);
-    InsertMenu(be->menu, 0);
-    DrawMenuBar();
+    // CreateStandardWindowMenu(0, &be->menu);
+    // InsertMenu(be->menu, 0);
+    // DrawMenuBar();
 
-    err = InstallApplicationEventHandler( GetEPicAppEventHandlerUPP(),
+    err = InstallApplicationEventHandler( GetEPxAppEventHandlerUPP(),
 					  GetEventTypeCount( appEventList ), 
 					  appEventList, be, NULL );
 
@@ -372,7 +372,7 @@ epx_backend_t* cocoa_init(epx_dict_t* param)
 #endif
 
     pipe(cocoa_pipe);
-    be->b.event = (EPX_HANDLE_T) cocoa_pipe[0];
+    be->b.event = (EPX_HANDLE_T) (long) cocoa_pipe[0];
     be->ofd     = cocoa_pipe[1];
     pthread_mutex_init(&cocoa_lock, NULL);
     pthread_mutex_lock(&cocoa_lock);  // Lock until thread is initialised
@@ -720,7 +720,7 @@ static int cocoa_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     cwin->winBounds.size.width  = ewin->width;
 
     EPX_DBGFMT("cocoa_win_attach: cwin=%p", cwin);
-    MacCreateEvent(nil, 'EEPX',  kEpicEventNew, GetCurrentEventTime(),
+    MacCreateEvent(nil, 'EEPX',  kEpxEventNew, GetCurrentEventTime(),
 		   kEventAttributeNone, &newEvent);
     SetEventParameter(newEvent, 'EEPX', 'CWIN', sizeof(CocoaWindow*), &cwin);
     PostEventToQueue(GetMainEventQueue(), newEvent, kEventPriorityHigh);
@@ -747,7 +747,7 @@ static int cocoa_win_detach(epx_backend_t* backend, epx_window_t* ewin)
 	ewin->opaque = NULL;
 	ewin->backend = NULL;
 
-	MacCreateEvent(nil, 'EEPX',  kEpicEventDel, GetCurrentEventTime(),
+	MacCreateEvent(nil, 'EEPX',  kEpxEventDel, GetCurrentEventTime(),
 		       kEventAttributeNone, &delEvent);
 	SetEventParameter(delEvent, 'EEPX', 'CWIN', 
 			  sizeof(CocoaWindow*), &cwin);
@@ -758,7 +758,7 @@ static int cocoa_win_detach(epx_backend_t* backend, epx_window_t* ewin)
 }
 
 
-static pascal OSStatus EPicAppEventHandler(
+static pascal OSStatus EPxAppEventHandler(
     EventHandlerCallRef nextHandler, 
     EventRef		inEvent,
     void*		inUserData )
@@ -770,16 +770,16 @@ static pascal OSStatus EPicAppEventHandler(
     UInt32	 eventKind = GetEventKind(inEvent);
     CocoaBackend* be = (CocoaBackend*) inUserData;
 
-    dbg_print_event("EPicAppEventHandler", inEvent);
+    dbg_print_event("EPxAppEventHandler", inEvent);
 
     if (eventClass == 'EEPX') {
 	CocoaWindow* cwin;
 	GetEventParameter( inEvent, 'EEPX', 'CWIN', 
 			   NULL, sizeof(CocoaWindow*), NULL, &cwin);
-	EPX_DBGFMT("EPicAppEventHandler:cwin = %p", cwin);
+	EPX_DBGFMT("EPxAppEventHandler:cwin = %p", cwin);
 	if (cwin == NULL)
 	    return eventNotHandledErr;
-	if (eventKind == kEpicEventNew) {
+	if (eventKind == kEpxEventNew) {
 	    static const EventTypeSpec    kWindowEvents[] =
 		{
   		    { kEventClassCommand,  kEventCommandProcess },
@@ -806,14 +806,14 @@ static pascal OSStatus EPicAppEventHandler(
 			   backing:NSBackingStoreBuffered
 			   defer:NO];
 	    if (!cwin->winNS) {
-		EPX_DBGFMT("EPicAppEventHandler: could not create window %d\n",
+		EPX_DBGFMT("EPxAppEventHandler: could not create window %d\n",
 			(int) err);
 		cwin->winErr = paramErr;  // error code?
 		cwin->winIsSetup = 1;
 		return err;
 	    }
 
-	    [cwin->winNS setTitle:@"Epic"];
+	    [cwin->winNS setTitle:@"Epx"];
 
 	    // SetWRefCon(cwin->winRef, (long) cwin); // link to CocoaWindow
 	    [cwin->winNS display];
@@ -825,14 +825,14 @@ static pascal OSStatus EPicAppEventHandler(
 
 
 	    if ((err = InstallStandardEventHandler(GetWindowEventTarget(cwin->winRef))) != noErr) {
-		EPX_DBGFMT("EPicAppEventHandler: could not install standard event handler %d\n",
+		EPX_DBGFMT("EPxAppEventHandler: could not install standard event handler %d\n",
 			(int) err);
 		cwin->winErr = err;
 		cwin->winIsSetup = 1;
 		return err;
 	    }
 	    err = InstallWindowEventHandler(cwin->winRef,
-					    GetEPicWindowEventHandlerUPP(),
+					    GetEPxWindowEventHandlerUPP(),
 					    GetEventTypeCount( kWindowEvents ), 
 					    kWindowEvents,
 					    cwin, NULL );
@@ -851,7 +851,7 @@ static pascal OSStatus EPicAppEventHandler(
 	    cwin->winIsSetup = 1;
 	    result = noErr;
 	}
-	else if (eventKind == kEpicEventDel) {
+	else if (eventKind == kEpxEventDel) {
 #ifdef HAVE_OPENGL
 	    if (cwin->aglContext)
 		cocoa_gl_cleanup(cwin);
@@ -895,7 +895,7 @@ static int FilterEvent(epx_event_t* e)
 }
 
 
-static pascal OSStatus EPicWindowEventHandler( 
+static pascal OSStatus EPxWindowEventHandler( 
     EventHandlerCallRef nextHandler, 
     EventRef inEvent, 
     void* inRefcon )
@@ -918,7 +918,7 @@ static pascal OSStatus EPicWindowEventHandler(
     ewin = cwin->ewin;
     be   = ewin ? (CocoaBackend*)ewin->backend : NULL;
     
-    dbg_print_event("EPicWindowEventHandler", inEvent);
+    dbg_print_event("EPxWindowEventHandler", inEvent);
 
     e.window = ewin;
 

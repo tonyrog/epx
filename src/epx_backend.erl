@@ -29,6 +29,7 @@
 -export([start/0]).
 -export([start_link/0, start_link/1]).
 -export([default/0, backend/1, create/2, set_default/1]).
+-export([assumed_backend/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -68,7 +69,7 @@ set_default(ID) ->
 %% @doc
 %% Starts the server
 %%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @spec start() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 start() ->
@@ -76,6 +77,13 @@ start() ->
 start(Args) ->
     gen_server:start({local, ?SERVER}, ?MODULE, Args, []).
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Starts the server
+%%
+%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @end
+%%--------------------------------------------------------------------
 start_link() ->
     start_link([]).
 start_link(Args) ->
@@ -106,7 +114,7 @@ init(Args) ->
 		 Be -> Be
 	      catch
 		  error:_ ->
-		      epx:assumed_backend()
+		      assumed_backend()
 	      end,
     try epx:backend_open(BeName, epx:dict_from_list(Args)) of
 	Backend ->
@@ -214,3 +222,22 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% select 
+assumed_backend() ->
+    case os:getenv("EPX_BACKEND") of
+	false ->
+	    case os:type() of
+		{unix,darwin} ->
+		    "macos";
+		{unix,linux} -> 
+		    case os:getenv("DISPLAY") of
+			false -> "fb";
+			_ -> "x11"
+		    end;
+		{unix,_} -> "x11";
+		_ -> "none"
+	    end;
+	Backend ->
+	    Backend
+    end.

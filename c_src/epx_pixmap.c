@@ -892,7 +892,8 @@ void epx_shadow_row(uint8_t* src, epx_format_t src_pt,
     }
 }
 
-// FIXME: swap area/row
+// FIXME: let area function be the main and row be a variant of the area
+// Maybe kick the row variants out ?
 void epx_shadow_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 		     uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 		     unsigned int width, unsigned int height, epx_flags_t flags)
