@@ -541,15 +541,30 @@ pixmap_filter_area(_Src,_Dst,_Filter,
 		   _XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
     erlang:error(nif_not_loaded).
 
-pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
-		   Width,Height) ->
-    pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
-		       Width,Height,[]).
+%% @doc
+%%    Rotate the `Src' pixels in rectangle (`XSrc',`YSrc',`Width',`Height')
+%%    around the point (`XCSrc',`YCSrc') with an of `Angle' radians.
+%%    The result is placed in the pixmap `Dst' at center poistion 
+%%    (`XCDest',`YCDest'). The pixels are blended according to `Flags'
+%% @end
+
+-spec pixmap_rotate_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			 Angle::float(),
+			 XSrc::integer(),YSrc::integer(),
+			 XCSrc::integer(),YCSrc::integer(),
+			 XCDst::integer(),YCDst::integer(),
+			 Width::unsigned(),Height::unsigned(),
+			 Flags::epx_flags()) -> void().
 
 pixmap_rotate_area(_Src,_Dst,_Angle,
 		   _XSrc,_YSrc,_XCSrc,_YCSrc,_XCDst,_YCDst,
 		   _Width,_Height,_Flags) ->
     erlang:error(nif_not_loaded).
+
+pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
+		   Width,Height) ->
+    pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
+		       Width,Height,[]).
 
 pixmap_operation_area(_Src,_Dst,_Op,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     erlang:error(nif_not_loaded).
