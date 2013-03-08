@@ -37,9 +37,9 @@ extern epx_backend_t* fb_init(epx_dict_t* param);
 extern epx_backend_t* carbon_init(epx_dict_t* param);
 #endif
 
-#if defined(MAC_OS_X)
-extern epx_backend_t* cocoa_init(epx_dict_t* param);
-#endif
+// #if defined(MAC_OS_X)
+// extern epx_backend_t* cocoa_init(epx_dict_t* param);
+// #endif
 
 
 #if defined(WIN32)
@@ -59,9 +59,9 @@ static struct _backend_item {
     {"macos", (backend_init_t) carbon_init},
 #endif
 
-#if defined(MAC_OS_X)
-    {"cocoa", (backend_init_t) cocoa_init},
-#endif
+// #if defined(MAC_OS_X)
+//    {"cocoa", (backend_init_t) cocoa_init},
+//#endif
 
 
 #ifdef WIN32

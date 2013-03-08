@@ -444,7 +444,7 @@ static inline epx_pixel_t epx_pixel_atop(epx_pixel_t a, epx_pixel_t b)
 static inline epx_pixel_t epx_pixel_xor(epx_pixel_t a, epx_pixel_t b)
 {
     epx_pixel_t r;
-    r.a = (((a.a + b.b) << 8) - 2*a.a*b.b) >> 8;
+    r.a = (((a.a + b.a) << 8) - 2*a.a*b.a) >> 8;
     r.r = epx_xor(a.a, a.r, b.a, b.r);
     r.g = epx_xor(a.a, a.g, b.a, b.g);
     r.b = epx_xor(a.a, a.b, b.a, b.b);

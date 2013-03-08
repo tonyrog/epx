@@ -196,21 +196,13 @@ extern void epx_copy_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 			  uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 			  int width, int height);
 
-extern void epx_copy_row(uint8_t* src, epx_format_t src_pt,
-			 uint8_t* dst, epx_format_t dst_pt,
-			 int width);
-
 extern void epx_fill_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt, 
 			  epx_pixel_t fill,
 			  int width, int height);
 
-extern void epx_fill_row(uint8_t* dst,int dst_pt,epx_pixel_t fill,int width);
-
 extern void epx_fill_area_blend(uint8_t* dst, int dst_wb, epx_format_t dst_pt, 
 				epx_pixel_t p,
 				int width, int height);
-extern void epx_fill_row_blend(uint8_t* dst, epx_format_t dst_pt, 
-			       epx_pixel_t p, int width);
 
 extern void epx_shade_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt, 
 			   int width, int height, 
@@ -221,36 +213,21 @@ extern void epx_blend_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 			   uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 			   unsigned int width, 
 			   unsigned int height);
-extern void epx_blend_row(uint8_t* src, epx_format_t src_pt,
-			  uint8_t* dst, epx_format_t dst_pt,
-			  unsigned int width);
 
 extern void epx_sum_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 			 uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 			 unsigned int width, 
 			 unsigned int height);
-extern void epx_sum_row(uint8_t* src, epx_format_t src_pt,
-			uint8_t* dst, epx_format_t dst_pt,
-			unsigned int width);
 
 extern void epx_alpha_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 			   uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 			   uint8_t alpha, 
 			   unsigned int width, unsigned int height);
-extern void epx_alpha_row(uint8_t* src, epx_format_t src_pt,
-			  uint8_t* dst, epx_format_t dst_pt,
-			  uint8_t a, int width);
+
 extern void epx_fade_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 			  uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 			  uint8_t fade, 
 			  unsigned int width, unsigned int height);
-extern void epx_fade_row(uint8_t* src, epx_format_t src_pt,
-			 uint8_t* dst, epx_format_t dst_pt,
-			 uint8_t fade, unsigned int width);
-
-extern void epx_shadow_row(uint8_t* src, epx_format_t src_pt,
-			   uint8_t* dst, epx_format_t dst_pt,
-			   unsigned int width, epx_flags_t flags);
 
 extern void epx_shadow_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 			    uint8_t* dst, int dst_wb, epx_format_t dst_pt,
@@ -263,20 +240,82 @@ extern void epx_add_color_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 			       unsigned int width, unsigned int height,
 			       epx_flags_t flags);
 
-extern void epx_add_color_row(uint8_t* src, epx_format_t src_pt,
-			      uint8_t* dst, epx_format_t dst_pt,
-			      uint8_t fade, epx_pixel_t color,
-			      unsigned int width,epx_flags_t flags);
-
 extern void epx_binop_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 			   uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 			   epx_pixel_binary_op_t binop,
 			   unsigned int width, 
 			   unsigned int height);
 
+// inline 'row' version of area functions 
+static inline void epx_copy_row(uint8_t* src, epx_format_t src_pt,
+				uint8_t* dst, epx_format_t dst_pt,
+				int width)
+{
+    epx_copy_area(src, 0, src_pt, dst, 0, dst_pt, width, 1);
+}
+
+static inline void epx_fill_row(uint8_t* dst,int dst_pt,
+				 epx_pixel_t fill, int width)
+{
+    epx_fill_area(dst, 0, dst_pt, fill, width, 1);
+}
+
+static inline void epx_fill_row_blend(uint8_t* dst, epx_format_t dst_pt,
+				      epx_pixel_t p, int width)
+{
+    epx_fill_area_blend(dst, 0, dst_pt, p, width, 1);
+}
+
+static inline void epx_blend_row(uint8_t* src, epx_format_t src_pt,
+				 uint8_t* dst, epx_format_t dst_pt,
+				 unsigned int width)
+{
+    epx_blend_area(src, 0, src_pt, dst, 0, dst_pt, width, 1);
+}
+
+static inline void epx_sum_row(uint8_t* src, epx_format_t src_pt,
+			       uint8_t* dst, epx_format_t dst_pt,
+			       unsigned int width)
+{
+    epx_sum_area(src, 0, src_pt, dst, 0, dst_pt, width, 1);
+}
+
+static inline void epx_alpha_row(uint8_t* src, epx_format_t src_pt,
+				 uint8_t* dst, epx_format_t dst_pt,
+				 uint8_t a, int width)
+{
+    epx_alpha_area(src, 0, src_pt, dst, 0, dst_pt, a, width, 1);
+}
+
+static inline void epx_fade_row(uint8_t* src, epx_format_t src_pt,
+				uint8_t* dst, epx_format_t dst_pt,
+				uint8_t fade, unsigned int width)
+{
+    if (fade == ALPHA_FACTOR_0)
+	return;
+    else if (fade == ALPHA_FACTOR_1)
+	epx_blend_area(src, 0, src_pt, dst, 0, dst_pt, width, 1);
+    else
+	epx_fade_area(src, 0, src_pt, dst, 0, dst_pt, fade, width, 1);
+}
+
+static inline void epx_shadow_row(uint8_t* src, epx_format_t src_pt,
+		    uint8_t* dst, epx_format_t dst_pt,
+		    unsigned int width, epx_flags_t flags)
+{
+    epx_shadow_area(src, 0, src_pt, dst, 0, dst_pt, width, 1, flags);
+}
+
+
+static inline void epx_add_color_row(uint8_t* src, epx_format_t src_pt,
+				     uint8_t* dst, epx_format_t dst_pt,
+				     uint8_t fade, epx_pixel_t color,
+				     unsigned int width,
+				     epx_flags_t flags)
+{
+    epx_add_color_area(src, 0, src_pt, dst, 0, dst_pt, 
+		       fade, color, width, 1, flags);
+}
+
+
 #endif
-
-
-
-
-

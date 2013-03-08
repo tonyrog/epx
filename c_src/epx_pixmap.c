@@ -173,6 +173,8 @@ static void epx_swap_8(uint8_t* ptr1, uint8_t* ptr2, size_t n)
     }
 }
 
+// not yet
+#if 0 
 static void epx_move_area(uint8_t* src, int src_dx, int src_dy,
 			  epx_format_t src_pt,
 			  uint8_t* dst, int dst_dx, int dst_dy,
@@ -196,7 +198,7 @@ static void epx_move_area(uint8_t* src, int src_dx, int src_dy,
 	dst += dst_dy;
     }
 }
-
+#endif
 
 
 // copy pixel area 
@@ -272,14 +274,6 @@ void epx_copy_area(uint8_t* src, int src_wb, epx_format_t src_pt,
     }
 }
 
-void epx_copy_row(uint8_t* src, epx_format_t src_pt,
-		  uint8_t* dst, epx_format_t dst_pt,
-		  int width)
-{
-    epx_copy_area(src, 0, src_pt, dst, 0, dst_pt, width, 1);
-}
-
-
 /* fill pixel area (FIXME acceleration) */
 void epx_fill_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 		   epx_pixel_t fill,
@@ -319,11 +313,6 @@ void epx_fill_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt,
     default: 
 	break;
     }
-}
-
-void epx_fill_row(uint8_t* dst,int dst_pt,epx_pixel_t fill,int width)
-{
-    epx_fill_area(dst, 0, dst_pt, fill, width, 1);
 }
 
 //
@@ -383,12 +372,6 @@ void epx_fill_area_blend(uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 	}
 	break;
     }
-}
-
-void epx_fill_row_blend(uint8_t* dst, epx_format_t dst_pt,epx_pixel_t p,
-			int width)
-{
-    epx_fill_area_blend(dst, 0, dst_pt, p, width, 1);
 }
 
 /*! Experimental */
@@ -509,14 +492,6 @@ void epx_blend_area(uint8_t* src, int src_wb, epx_format_t src_pt,
     }
 }
 
-void epx_blend_row(uint8_t* src, epx_format_t src_pt,
-		   uint8_t* dst, epx_format_t dst_pt,
-		   unsigned int width)
-{
-    epx_blend_area(src, 0, src_pt, dst, 0, dst_pt, width, 1);
-}
-
-
 void epx_sum_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 		  uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 		  unsigned int width, 
@@ -555,15 +530,6 @@ void epx_sum_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 	dst += dst_wb;
     }
 }
-
-void epx_sum_row(uint8_t* src, epx_format_t src_pt,
-		 uint8_t* dst, epx_format_t dst_pt,
-		 unsigned int width)
-{
-    epx_sum_area(src, 0, src_pt, dst, 0, dst_pt, width, 1);
-}
-
-
 
 void epx_alpha_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 		    uint8_t* dst, int dst_wb, epx_format_t dst_pt,
@@ -652,13 +618,6 @@ generic_area:
 	src += src_wb;
 	dst += dst_wb;
     }
-}
-
-void epx_alpha_row(uint8_t* src, epx_format_t src_pt,
-		   uint8_t* dst, epx_format_t dst_pt,
-		   uint8_t a, int width)
-{
-    epx_alpha_area(src, 0, src_pt, dst, 0, dst_pt, a, width, 1);
 }
 
 
@@ -825,23 +784,10 @@ generic_area:
     }
 }
 
-void epx_fade_row(uint8_t* src, epx_format_t src_pt,
-		  uint8_t* dst, epx_format_t dst_pt,
-		  uint8_t fade, unsigned int width)
-{
-    if (fade == ALPHA_FACTOR_0)
-	return;
-    else if (fade == ALPHA_FACTOR_1)
-	epx_blend_area(src, 0, src_pt, dst, 0, dst_pt, width, 1);
-    else
-	epx_fade_area(src, 0, src_pt, dst, 0, dst_pt, fade, width, 1);
-}
 
-
-
-void epx_shadow_row(uint8_t* src, epx_format_t src_pt,
-		    uint8_t* dst, epx_format_t dst_pt,
-		    unsigned int width, epx_flags_t flags)
+void epx_shadow_area(uint8_t* src, int src_wb, epx_format_t src_pt,
+		     uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+		     unsigned int width, unsigned int height, epx_flags_t flags)
 {
     unsigned int src_psz;
     unsigned int dst_psz;
@@ -856,54 +802,58 @@ void epx_shadow_row(uint8_t* src, epx_format_t src_pt,
     pack_dst   = epx_pixel_pack_func(dst_pt);
 
     if (!(flags & EPX_FLAG_BLEND)) {
-	while(width--) {
-	    epx_pixel_t s = unpack_src(src);
-	    epx_pixel_t d = unpack_dst(dst);
-	    uint8_t g = epx_pixel_luminance(s);
-	    d = epx_pixel_shadow(g, d);
-	    pack_dst(d, dst);
-	    src += src_psz;
-	    dst += dst_psz;
+	while(height--) {
+	    uint8_t* dst1 = dst;
+	    uint8_t* src1 = src;
+	    unsigned int width1 = width;
+	    
+	    while(width1--) {
+		epx_pixel_t s = unpack_src(src1);
+		epx_pixel_t d = unpack_dst(dst1);
+		uint8_t g = epx_pixel_luminance(s);
+		d = epx_pixel_shadow(g, d);
+		pack_dst(d, dst1);
+		src1 += src_psz;
+		dst1 += dst_psz;
+	    }
+	    src += src_wb;
+	    dst += dst_wb;
 	}
     }
     else {
-	while(width--) {
-	    epx_pixel_t s = unpack_src(src);
-	    uint8_t g;
-	    if (s.a == EPX_ALPHA_OPAQUE) {
-		epx_pixel_t d = unpack_dst(dst);
-		g = epx_pixel_luminance(s);
-		d = epx_pixel_shadow(g, d);
-		pack_dst(d, dst);
+	while(height--) {
+	    uint8_t* dst1 = dst;
+	    uint8_t* src1 = src;
+	    unsigned int width1 = width;
+	    
+	    while(width1--) {
+		epx_pixel_t s = unpack_src(src1);
+		uint8_t g;
+		if (s.a == EPX_ALPHA_OPAQUE) {
+		    epx_pixel_t d = unpack_dst(dst1);
+		    g = epx_pixel_luminance(s);
+		    d = epx_pixel_shadow(g, d);
+		    pack_dst(d, dst1);
+		}
+		else if (s.a == EPX_ALPHA_TRANSPARENT) {
+		    ;
+		}
+		else {
+		    epx_pixel_t d = unpack_dst(dst1);
+		    d = epx_pixel_blend(s.a, s, d);
+		    g = epx_pixel_luminance(d);
+		    d = epx_pixel_shadow(g, d);
+		    pack_dst(d, dst1);
+		}
+		src1 += src_psz;
+		dst1 += dst_psz;
 	    }
-	    else if (s.a == EPX_ALPHA_TRANSPARENT) {
-		;
-	    }
-	    else {
-		epx_pixel_t d = unpack_dst(dst);
-		d = epx_pixel_blend(s.a, s, d);
-		g = epx_pixel_luminance(d);
-		d = epx_pixel_shadow(g, d);
-		pack_dst(d, dst);
-	    }
-	    src += src_psz;
-	    dst += dst_psz;
+	    src += src_wb;
+	    dst += dst_wb;
 	}
     }
 }
 
-// FIXME: let area function be the main and row be a variant of the area
-// Maybe kick the row variants out ?
-void epx_shadow_area(uint8_t* src, int src_wb, epx_format_t src_pt,
-		     uint8_t* dst, int dst_wb, epx_format_t dst_pt,
-		     unsigned int width, unsigned int height, epx_flags_t flags)
-{
-    while(height--) {
-	epx_shadow_row(src, src_pt, dst, dst_pt, width, flags);
-	src += src_wb;
-	dst += dst_wb;	
-    }
-}
 
  /*
   *  Add color (saturate) to each pixel in src and interpret the
@@ -924,12 +874,13 @@ void epx_add_color_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 
     if (fader == ALPHA_FACTOR_0)
 	return;
-    if ((fader == ALPHA_FACTOR_1) && (color.px == 0) &&
+    if ((fader == ALPHA_FACTOR_1) && (color.px == 0) && 
 	(src_pt != EPX_FORMAT_A8)) {  // FIXME!!!
 	if (flags&EPX_FLAG_BLEND)
 	    epx_blend_area(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
 	else
 	    epx_copy_area(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
+	return;
     }
 
     if ((flags&EPX_FLAG_BLEND) == 0) // only blend sofar
@@ -1042,15 +993,6 @@ generic_area:
     }
 }
 
-void epx_add_color_row(uint8_t* src, epx_format_t src_pt,
-		       uint8_t* dst, epx_format_t dst_pt,
-		       uint8_t fade, epx_pixel_t color,
-		       unsigned int width,
-		       epx_flags_t flags)
-{
-    epx_add_color_area(src, 0, src_pt, dst, 0, dst_pt, 
-		       fade, color, width, 1, flags);
-}
 
 #define EPX_AVG_MAX_N 128
 /* special filter N_1 average N pixels */

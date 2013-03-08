@@ -133,7 +133,7 @@ endif
 ifeq ($(MAC_OS_X),Yes)
 	DFLAGS += -DMAC_OS_X
 	CFLAGS += -ObjC
-	BE_OBJS += epx_backend_cocoa.o
+#	BE_OBJS += epx_backend_cocoa.o
 	BE_OBJS += epx_backend_macos.o
 	BE_LD_FLAGS += -framework Carbon -framework CoreFoundation -framework Foundation -framework AppKit
 	CFG_LDFLAGS += -framework Carbon -framework CoreFoundation -framework Foundation -framework AppKit
