@@ -240,10 +240,3 @@ read_pixels(Fd, Pixmap, I, BytesPerRow, Width, Format) ->
 	Error ->
 	    Error
     end.
-
-
-
-
-
-
-    

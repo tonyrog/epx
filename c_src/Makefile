@@ -95,12 +95,21 @@ SSE2      = Yes
 SSE3      = No
 endif
 
+ifeq ($(MACHINE), x86_64)
+MMX       = Yes
+SSE       = No
+SSE2      = Yes
+SSE3      = Yes
+endif
+
 ifeq ($(MACHINE), i686)
 MMX       = Yes
 SSE       = No
 SSE2      = Yes
 SSE3      = No
 endif
+
+
 
 endif
 

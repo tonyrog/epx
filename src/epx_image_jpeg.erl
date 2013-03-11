@@ -291,7 +291,6 @@ init_sos(<<N,Bin/binary>>, Ei) ->
     ?dbg("SOS=",[]), ?dbg_emit_record(sos, SOS),
     SOS.
     
-    
 read_sos(JFd, SOS, Ei) ->
     Dcs0 = lists:duplicate(length(SOS#sos.def), 0),
     {JFd1,Data,_Dcs1,_N} = read_mcu_h(JFd,SOS#sos.h,Dcs0,0,SOS,[]),

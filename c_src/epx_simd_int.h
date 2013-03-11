@@ -24,7 +24,7 @@
 #include "epx_pixel.h"
 #include "epx_pixmap.h"
 
-#if defined(__MMX_) || defined(__SSE2__)
+#if defined(__MMX__) || defined(__SSE2__)
 
 static inline void epx_simd_copy_x86(const uint8_t* src, uint8_t* dst, size_t n)
 {
@@ -36,7 +36,7 @@ static inline void epx_simd_copy_x86(const uint8_t* src, uint8_t* dst, size_t n)
         : "memory");
 }
 
-static inline void epx_simd_fill_8_x86(const uint8_t* dst, uint8_t v, size_t n)
+static inline void epx_simd_fill_8_x86(uint8_t* dst, uint8_t v, size_t n)
 {
     int d0, d1;
     __asm__ __volatile__(
@@ -48,7 +48,7 @@ static inline void epx_simd_fill_8_x86(const uint8_t* dst, uint8_t v, size_t n)
 
 static inline void epx_simd_fill_32_x86(uint32_t* dst, uint32_t v, size_t n)
 {
-    int d0, d1;
+    unsigned long d0, d1;
     __asm__ __volatile__(
         "cld; rep; stosl"
 	: "=&c"(d0), "=&D"(d1)
@@ -73,7 +73,7 @@ static inline void epx_alpha_row_argb32(uint8_t* src, uint8_t* dst,
 					uint8_t a, int width)
 {
     while(width--) {
-	// dst[0]=src[0]; // eblend(a,src[0],dst[0]);
+	// alpha channel = dst
 	dst[1]=epx_blend(a,src[1],dst[1]);
 	dst[2]=epx_blend(a,src[2],dst[2]);
 	dst[3]=epx_blend(a,src[3],dst[3]);
@@ -89,7 +89,7 @@ static inline void epx_alpha_row_rgba32(uint8_t* src, uint8_t* dst,
 	dst[0]=epx_blend(a,src[0],dst[0]);
 	dst[1]=epx_blend(a,src[1],dst[1]);
 	dst[2]=epx_blend(a,src[2],dst[2]);
-	// dst[3]=src[3]; // epx_blend(a,src[3],dst[3]);
+	// alpha channel = dst
 	src += 4;
 	dst += 4;
     }
@@ -108,13 +108,13 @@ static inline void epx_alpha_row_rgb24(uint8_t* src, uint8_t* dst,
     }
 }
 
-/* Formats: argb/ABGR */
+/* Formats: argb/abgr */
 static inline void epx_fade_row_argb32(uint8_t* src,uint8_t* dst,
 				       uint8_t af, int width)
 {
     while(width--) {
 	uint8_t a = (src[0]*af >> 8);
-	dst[0]=epx_blend(a,src[0],dst[0]); // NEW
+	dst[0]=epx_blend(a,src[0],dst[0]);
 	dst[1]=epx_blend(a,src[1],dst[1]);
 	dst[2]=epx_blend(a,src[2],dst[2]);
 	dst[3]=epx_blend(a,src[3],dst[3]);
@@ -132,17 +132,18 @@ static inline void epx_fade_row_rgba32(uint8_t* src,uint8_t* dst,
 	dst[0]=epx_blend(a,src[0],dst[0]);
 	dst[1]=epx_blend(a,src[1],dst[1]);
 	dst[2]=epx_blend(a,src[2],dst[2]);
+	dst[3]=epx_blend(a,src[3],dst[3]);
 	src += 4;
 	dst += 4;
     }
 }
 
-/* blend argb/ABGR */
+/* blend argb/abgr */
 static inline void epx_blend_row_argb32(uint8_t* src,uint8_t* dst,int width)
 {
     while(width--) {
 	uint8_t a = src[0];
-	dst[0]=epx_blend(a,src[0],dst[0]); // NEW
+	dst[0]=epx_blend(a,src[0],dst[0]);
 	dst[1]=epx_blend(a,src[1],dst[1]);
 	dst[2]=epx_blend(a,src[2],dst[2]);
 	dst[3]=epx_blend(a,src[3],dst[3]);
@@ -159,7 +160,7 @@ static inline void epx_blend_row_rgba32(uint8_t* src,uint8_t* dst,int width)
 	dst[0]=epx_blend(a,src[0],dst[0]);
 	dst[1]=epx_blend(a,src[1],dst[1]);
 	dst[2]=epx_blend(a,src[2],dst[2]);
-	dst[3]=epx_blend(a,src[3],dst[3]); // NEW
+	dst[3]=epx_blend(a,src[3],dst[3]);
 	src += 4;
 	dst += 4;
     }
@@ -180,7 +181,7 @@ static inline void epx_fill_row_blend_argb32(uint8_t* dst, int width,
 					     uint8_t r,uint8_t g, uint8_t b)
 {
     while(width--) {
-	dst[0]=epx_blend(a,a,dst[0]);  // NEW
+	dst[0]=epx_blend(a,a,dst[0]);
 	dst[1]=epx_blend(a,r,dst[1]);
 	dst[2]=epx_blend(a,g,dst[2]);
 	dst[3]=epx_blend(a,b,dst[3]);
@@ -199,7 +200,7 @@ static inline void epx_fill_row_blend_rgba32(uint8_t* dst, int width,
 	dst[0]=epx_blend(a,r,dst[0]);
 	dst[1]=epx_blend(a,g,dst[1]);
 	dst[2]=epx_blend(a,b,dst[2]);
-	dst[3]=epx_blend(a,a,dst[3]);  // NEW
+	dst[3]=epx_blend(a,a,dst[3]);
 	dst += 4;
     }
 }
@@ -238,25 +239,6 @@ static inline void epx_add_blend_row_rgba32(uint8_t* src, uint8_t* dst,
     }
 }
 
-/* Add color & blend rgba/bgra when source is a8 */
-static inline void epx_add_blend_row_a8_rgba32(uint8_t* src, uint8_t* dst,
-					       uint8_t af, epx_pixel_t color,
-					       unsigned int width)
-{
-    while(width--) {
-	uint8_t a;
-	a = epx_add(src[0], color.a);
-	a = ((a * af) >> 8);
-	dst[0]=epx_blend(a,color.r,dst[0]);
-	dst[1]=epx_blend(a,color.g,dst[1]);
-	dst[2]=epx_blend(a,color.b,dst[2]);
-	dst[3]=epx_blend(a,a,dst[3]);
-	src += 1;
-	dst += 4;
-    }
-}
-
-
 /* Add color & blend argb/ABGR (if color is swapped correct) */
 static inline void epx_add_blend_row_argb32(uint8_t* src, uint8_t* dst,
 					    uint8_t af, epx_pixel_t color,
@@ -277,6 +259,26 @@ static inline void epx_add_blend_row_argb32(uint8_t* src, uint8_t* dst,
 	dst += 4;
     }
 }
+
+/* Add color & blend rgba/bgra when source is a8 */
+static inline void epx_add_blend_row_a8_rgba32(uint8_t* src, uint8_t* dst,
+					       uint8_t af, epx_pixel_t color,
+					       unsigned int width)
+{
+    while(width--) {
+	uint8_t a;
+	a = epx_add(src[0], color.a);
+	a = ((a * af) >> 8);
+	dst[0]=epx_blend(a,color.r,dst[0]);
+	dst[1]=epx_blend(a,color.g,dst[1]);
+	dst[2]=epx_blend(a,color.b,dst[2]);
+	dst[3]=epx_blend(a,a,dst[3]);
+	src += 1;
+	dst += 4;
+    }
+}
+
+
 
 /* Add color & blend argb/ABGR when source is a8 */
 static inline void epx_add_blend_row_a8_argb32(uint8_t* src, uint8_t* dst,

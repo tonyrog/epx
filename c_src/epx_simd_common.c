@@ -361,7 +361,7 @@ void SIMD_FUNCTION(alpha_area_argb32)
 		width1 -= EPX_SIMD_VECTOR_SIZE/4;
 	    }
 	    if (width1)
-		epx_alpha_row_argb32(src1, dst1,a,width1);
+		epx_alpha_row_argb32(src1,dst1,a,width1);
 	    src += src_wb;
 	    dst += dst_wb;
 	}

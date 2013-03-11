@@ -27,6 +27,8 @@
 %%
 -export([start/0]).
 -export([old_start/0, old_start/1]).
+%% simd 
+-export([simd_info/1,simd_set/1]).
 %% Pixmap access
 -export([pixmap_create/3,pixmap_create/2]).
 -export([pixmap_copy/1]).
@@ -247,6 +249,12 @@ old_start(Prefered) ->
 	    epx_backend:create(Name, [])
     end.
 
+simd_info(_Info) ->
+    erlang:error(nif_not_loaded).
+
+simd_set(_Accel) ->
+    erlang:error(nif_not_loaded).
+    
 %% @doc
 %%   Create a pixmap of size WidthxHeight using the pixel format 'argb'
 %% @end

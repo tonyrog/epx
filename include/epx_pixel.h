@@ -322,8 +322,8 @@ static inline uint8_t epx_blend(uint8_t a, uint8_t s, uint8_t d)
 
 static inline uint8_t epx_add(uint8_t a, uint8_t b)
 {
-    uint16_t s = a+b;
-    if (s > 255) return 255; // saturate
+    uint8_t s = a+b;
+    if (s < a)   return 255; // saturate
     return s;
 }
 
@@ -343,7 +343,7 @@ static inline uint8_t epx_multiply(uint8_t a, uint8_t b)
 // epx_shadow(a,d) == epx_blend(a,0,d)
 static inline uint8_t epx_shadow(uint8_t a, uint8_t d)
 {
-    return ((d<<8) - a*d)>>8;
+    return ((d<<8) - a*d) >> 8;
 }
 
 // epx_scale(a,s) == epx_blend(a,s,0)
@@ -455,14 +455,13 @@ static inline epx_pixel_t epx_pixel_fade(uint8_t fade, epx_pixel_t a, epx_pixel_
 {
     epx_pixel_t r;
     uint8_t s = (a.a*fade >> 8);
-    r.a=epx_blend(s,0,b.a); // NEW
+    r.a=epx_blend(s,0,b.a);
     r.r=epx_blend(s,0,b.r);
     r.g=epx_blend(s,0,b.g);
     r.b=epx_blend(s,0,b.b);
     return r;
 }
 
-// simple blend 
 static inline epx_pixel_t epx_pixel_blend(uint8_t a, epx_pixel_t s, epx_pixel_t d)
 {
     epx_pixel_t p;

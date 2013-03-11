@@ -47,7 +47,6 @@ forward_8x8(A) ->
 inverse_8x8(F) ->
     inverse_8x8_1(F).
 
-
 %%
 %% Calculate the FDCT over A 8x8 (as 64 element list)
 %%

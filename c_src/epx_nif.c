@@ -275,9 +275,17 @@ static ERL_NIF_TERM window_enable_events(ErlNifEnv* env, int argc,
 static ERL_NIF_TERM window_disable_events(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[]);
 
+static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
+			      const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM simd_set(ErlNifEnv* env, int argc,
+			     const ERL_NIF_TERM argv[]);
 
 ErlNifFunc epx_funcs[] =
 {
+    // Simd interface
+    { "simd_info",     1,  simd_info },
+    { "simd_set",      1,  simd_set  },
+
     // Pixmap interface
     { "pixmap_create", 3, pixmap_create },
     { "pixmap_copy",   1, pixmap_copy },
@@ -398,6 +406,19 @@ DECL_ATOM(epx_gc);
 DECL_ATOM(epx_font);
 DECL_ATOM(epx_animation);
 
+// simd
+DECL_ATOM(emu);
+DECL_ATOM(altivec);
+DECL_ATOM(mmx);
+DECL_ATOM(sse2);
+DECL_ATOM(neon);
+DECL_ATOM(auto);
+DECL_ATOM(accel);
+DECL_ATOM(functions);
+DECL_ATOM(cpu_features);
+DECL_ATOM(cpu_vendor_name);
+DECL_ATOM(cpu_serial_number);
+DECL_ATOM(cpu_cache_line_size);
 
 // pixmap_info
 DECL_ATOM(width);
@@ -620,6 +641,41 @@ DECL_ATOM(add);
 DECL_ATOM(sub);
 DECL_ATOM(src_blend);
 DECL_ATOM(dst_blend);
+
+// Pixel formats (subset)
+DECL_ATOM(argb);
+DECL_ATOM(a8r8g8b8);
+DECL_ATOM(rgba);
+DECL_ATOM(r8g8b8a8);
+DECL_ATOM(abgr);
+DECL_ATOM(a8b8g8r8);
+DECL_ATOM(bgra);
+DECL_ATOM(b8g8r8a8);
+DECL_ATOM(rgb);
+DECL_ATOM(r8g8b8);
+DECL_ATOM(bgr);
+DECL_ATOM(b8g8r8);
+DECL_ATOM(565);
+DECL_ATOM(r5g6b5);
+DECL_ATOM(565BE);
+DECL_ATOM(r5g6b5BE);
+DECL_ATOM(565LE);
+DECL_ATOM(r5g6b5LE);
+DECL_ATOM(b5g6r5);
+DECL_ATOM(b5g6r5BE);
+DECL_ATOM(b5g6r5LE);
+DECL_ATOM(1555);
+DECL_ATOM(a1r5g5b);
+DECL_ATOM(gray8a8);
+DECL_ATOM(gray16);
+DECL_ATOM(a8);
+DECL_ATOM(alpha8);
+DECL_ATOM(r8);
+DECL_ATOM(g8);
+DECL_ATOM(b8);
+DECL_ATOM(gray8);
+DECL_ATOM(efnt2);
+DECL_ATOM(a8l8);
 
 static epx_gc_t* def_gc = 0;
 
@@ -1802,6 +1858,138 @@ static ERL_NIF_TERM make_event(ErlNifEnv* env, epx_event_t* e)
 			    data);
 }
 
+/******************************************************************************
+ *
+ *  simd
+ *  acceltype()  = emu|altivec|mmx|sse2|neon
+ *  cpu_vendor_name :: string()
+ *  cpu_features    :: string()
+ *  cpu_cache_line_size :: integer()
+ *  accel = {acceltype(), [acceltype()]}
+ *  function = [{name,format()}]
+ *****************************************************************************/
+
+static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc, 
+			      const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    if (argv[0] == ATOM(cpu_vendor_name)) {
+	char buf[1024];
+	int n = epx_cpu_vendor_name(buf, sizeof(buf));
+	return enif_make_string_len(env, buf, n, ERL_NIF_LATIN1);
+    }
+    else if (argv[0] == ATOM(cpu_features)) {
+	char buf[1024];
+	int n = epx_cpu_features(buf, sizeof(buf));
+	return enif_make_string_len(env, buf, n, ERL_NIF_LATIN1);
+    }
+    else if (argv[0] == ATOM(cpu_cache_line_size)) {
+	return enif_make_int(env, epx_cpu_cache_line_size());
+    }
+    else if (argv[0] == ATOM(accel)) {
+	ERL_NIF_TERM type;
+	ERL_NIF_TERM avail[5];
+	int accel;
+	int i = 0;
+
+	accel = epx_simd_accel();
+	if (epx_simd == NULL) 
+	    type = ATOM(none);
+	else {
+	    if (epx_simd->type == EPX_SIMD_EMU) 	 type = ATOM(emu);
+	    else if (epx_simd->type == EPX_SIMD_ALTIVEC) type = ATOM(altivec);
+	    else if (epx_simd->type == EPX_SIMD_MMX)     type = ATOM(mmx);
+	    else if (epx_simd->type == EPX_SIMD_SSE2)    type = ATOM(sse2);
+	    else if (epx_simd->type == EPX_SIMD_NEON)    type = ATOM(neon);
+	    accel -= epx_simd->type;
+	}
+	// list types available
+	if (accel & EPX_SIMD_EMU)     avail[i++] = ATOM(emu);
+	if (accel & EPX_SIMD_ALTIVEC) avail[i++] = ATOM(altivec);
+	if (accel & EPX_SIMD_MMX)     avail[i++] = ATOM(mmx);
+	if (accel & EPX_SIMD_SSE2)    avail[i++] = ATOM(sse2);
+	if (accel & EPX_SIMD_NEON)    avail[i++] = ATOM(neon);
+	return 
+	    enif_make_tuple2(env, type,
+			     enif_make_list_from_array(env, avail, i));
+    }
+    else if (argv[0] == ATOM(functions)) {
+	// return functions that are accelerated (fixme)
+	// check that we are accelerated, do not forget to update this list!
+	return
+	    enif_make_list(
+		env, 7,
+		enif_make_tuple(env, 2, enif_make_atom(env, "copy_to"),
+				enif_make_list(env, 0)),
+		enif_make_tuple(env, 2, enif_make_atom(env, "fill_area"),
+				enif_make_list(env, 0)),
+		enif_make_tuple(env, 2, enif_make_atom(env, "fill_area_blend"),
+				enif_make_list(env, 6, 
+					       ATOM(rgb),
+					       ATOM(bgr),
+					       ATOM(argb),
+					       ATOM(abgr),
+					       ATOM(rgba),
+					       ATOM(bgra))),
+		enif_make_tuple(env, 2, enif_make_atom(env, "blend_area"),
+				enif_make_list(env, 4,
+					       ATOM(argb),
+					       ATOM(abgr),
+					       ATOM(rgba),
+					       ATOM(bgra))),
+		enif_make_tuple(env, 2, enif_make_atom(env, "alpha_area"),
+				enif_make_list(env, 4,
+					       ATOM(argb),
+					       ATOM(abgr),
+					       ATOM(rgba),
+					       ATOM(bgra))),
+		enif_make_tuple(env, 2, enif_make_atom(env, "fade_area"),
+				enif_make_list(env, 4,
+					       ATOM(argb),
+					       ATOM(abgr),
+					       ATOM(rgba),
+					       ATOM(bgra))),
+		enif_make_tuple(env, 2, enif_make_atom(env, "color_area"),
+				enif_make_list(env, 8,
+					       ATOM(argb),
+					       ATOM(abgr),
+					       ATOM(rgba),
+					       ATOM(bgra),
+					       enif_make_tuple(
+						   env,2,
+						   ATOM(a8),ATOM(rgba)),
+					       enif_make_tuple(
+						   env,2,
+						   ATOM(a8),ATOM(bgra)),
+					       enif_make_tuple(
+						   env,2,
+						   ATOM(a8),ATOM(argb)),
+					       enif_make_tuple(
+						   env,2,
+						   ATOM(a8),ATOM(abgr))
+				    )));
+    }
+    else 
+	return enif_make_badarg(env);
+}
+
+static ERL_NIF_TERM simd_set(ErlNifEnv* env, int argc, 
+			     const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    int accel;
+    if (argv[0] == ATOM(none)) accel = EPX_SIMD_NONE;
+    else if (argv[0] == ATOM(emu)) accel = EPX_SIMD_EMU;
+    else if (argv[0] == ATOM(altivec)) accel = EPX_SIMD_ALTIVEC;
+    else if (argv[0] == ATOM(mmx)) accel = EPX_SIMD_MMX;
+    else if (argv[0] == ATOM(sse2)) accel = EPX_SIMD_SSE2;
+    else if (argv[0] == ATOM(neon)) accel = EPX_SIMD_NEON;
+    else if (argv[0] == ATOM(auto)) accel = EPX_SIMD_AUTO;
+    else return enif_make_badarg(env);
+    // We could check for availability here ? and return error 
+    epx_simd_init(accel);
+    return ATOM(ok);
+}
 
 /******************************************************************************
  *
@@ -4263,6 +4451,20 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     LOAD_ATOM(nbottom);
     LOAD_ATOM(nleft);
 
+    // simd_info
+    LOAD_ATOM(emu);
+    LOAD_ATOM(altivec);
+    LOAD_ATOM(mmx);
+    LOAD_ATOM(sse2);
+    LOAD_ATOM(neon);
+    LOAD_ATOM(auto);
+    LOAD_ATOM(accel);
+    LOAD_ATOM(functions);
+    LOAD_ATOM(cpu_features);
+    LOAD_ATOM(cpu_vendor_name);
+    LOAD_ATOM(cpu_serial_number);
+    LOAD_ATOM(cpu_cache_line_size);
+
     // pixmap_info
     LOAD_ATOM(width);
     LOAD_ATOM(height);
@@ -4464,6 +4666,41 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     LOAD_ATOM(sub);
     LOAD_ATOM(src_blend);
     LOAD_ATOM(dst_blend);
+
+    // Pixel formats (subset)
+    LOAD_ATOM(argb);
+    LOAD_ATOM(a8r8g8b8);
+    LOAD_ATOM(rgba);
+    LOAD_ATOM(r8g8b8a8);
+    LOAD_ATOM(abgr);
+    LOAD_ATOM(a8b8g8r8);
+    LOAD_ATOM(bgra);
+    LOAD_ATOM(b8g8r8a8);
+    LOAD_ATOM(rgb);
+    LOAD_ATOM(r8g8b8);
+    LOAD_ATOM(bgr);
+    LOAD_ATOM(b8g8r8);
+    LOAD_ATOM(565);
+    LOAD_ATOM(r5g6b5);
+    LOAD_ATOM(565BE);
+    LOAD_ATOM(r5g6b5BE);
+    LOAD_ATOM(565LE);
+    LOAD_ATOM(r5g6b5LE);
+    LOAD_ATOM(b5g6r5);
+    LOAD_ATOM(b5g6r5BE);
+    LOAD_ATOM(b5g6r5LE);
+    LOAD_ATOM(1555);
+    LOAD_ATOM(a1r5g5b);
+    LOAD_ATOM(gray8a8);
+    LOAD_ATOM(gray16);
+    LOAD_ATOM(a8);
+    LOAD_ATOM(alpha8);
+    LOAD_ATOM(r8);
+    LOAD_ATOM(g8);
+    LOAD_ATOM(b8);
+    LOAD_ATOM(gray8);
+    LOAD_ATOM(efnt2);
+    LOAD_ATOM(a8l8);
 
     // create the "default" gc
     def_gc = epx_resource_alloc(&gc_res, sizeof(epx_gc_t));

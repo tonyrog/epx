@@ -64,7 +64,20 @@ clean:
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);'  $< > $@
 
+
 -include depend.mk
+
+$(EBIN)/epx_image_png.beam: epx_image_png.erl 
+	$(ERLC) $(ERLC_FLAGS) +native -o $(EBIN) $<
+
+$(EBIN)/epx_image_jpeg.beam: epx_image_jpeg.erl
+	$(ERLC) $(ERLC_FLAGS) +native -o $(EBIN) $<
+
+$(EBIN)/epx_huffman.beam: epx_huffman.erl
+	$(ERLC) $(ERLC_FLAGS) +native -o $(EBIN) $<
+
+$(EBIN)/epx_dct.beam: epx_dct.erl
+	$(ERLC) $(ERLC_FLAGS) +native -o $(EBIN) $<
 
 $(EBIN)/%.beam:	%.erl
 	$(ERLC) $(ERLC_FLAGS) -o $(EBIN) $<

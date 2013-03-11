@@ -28,25 +28,6 @@
 #include "epx_cpuid.h"
 #include "epx_simd.h"
 
-#if 0
-#define EXTERN_SIMD_API(type) \
-    extern epx_simd_copy_fn_t        epx_simd_copy##type;	       \
-    extern epx_simd_fill_32_fn_t     epx_simd_fill_32##type;		\
-    extern epx_simd_alpha_color_fn_t epx_simd_add_blend_area_rgba32##type; \
-    extern epx_simd_alpha_color_fn_t epx_simd_add_blend_area_argb32##type; \
-    extern epx_simd_alpha_color_fn_t epx_simd_add_blend_area_a8_rgba32##type; \
-    extern epx_simd_alpha_color_fn_t epx_simd_add_blend_area_a8_argb32##type; \
-    extern epx_simd_alpha_fn_t       epx_simd_alpha_area_argb32##type;	\
-    extern epx_simd_alpha_fn_t       epx_simd_alpha_area_rgba32##type;	\
-    extern epx_simd_fn_t             epx_simd_blend_area_rgba32##type;	\
-    extern epx_simd_fn_t             epx_simd_blend_area_argb32##type;	\
-    extern epx_simd_alpha_fn_t       epx_simd_fade_area_rgba32##type;	\
-    extern epx_simd_alpha_fn_t       epx_simd_fade_area_argb32##type;	\
-    extern epx_simd_fill_fn_t        epx_simd_fill_area_blend_rgb24##type; \
-    extern epx_simd_fill_fn_t        epx_simd_fill_area_blend_argb32##type; \
-    extern epx_simd_fill_fn_t        epx_simd_fill_area_blend_rgba32##type
-#endif
-
 #define EXTERN_SIMD_API(type) \
     extern void epx_simd_copy##type(uint8_t* src, uint8_t* dst, size_t n); \
     extern void epx_simd_fill_32##type(uint8_t* src, uint32_t v, size_t n); \
@@ -64,49 +45,53 @@
     extern void epx_simd_fill_area_blend_argb32##type(uint8_t* dst,int dst_wb,epx_pixel_t color,unsigned int width,unsigned int height); \
     extern void epx_simd_fill_area_blend_rgba32##type(uint8_t* dst,int dst_wb,epx_pixel_t color,unsigned int width,unsigned int height)
 
-#define INIT_SIMD_API(type) { \
-    epx_simd_copy##type,			\
-    epx_simd_fill_32##type,			\
-    epx_simd_add_blend_area_rgba32##type,	\
-    epx_simd_add_blend_area_argb32##type,	 \
-    epx_simd_add_blend_area_a8_rgba32##type,	 \
-    epx_simd_add_blend_area_a8_argb32##type,	 \
-    epx_simd_alpha_area_argb32##type,		 \
-    epx_simd_alpha_area_rgba32##type,		 \
-    epx_simd_blend_area_rgba32##type,		 \
-    epx_simd_blend_area_argb32##type,		 \
-    epx_simd_fade_area_rgba32##type,		 \
-    epx_simd_fade_area_argb32##type,		 \
-    epx_simd_fill_area_blend_rgb24##type,	 \
-    epx_simd_fill_area_blend_argb32##type,	 \
-    epx_simd_fill_area_blend_rgba32##type }
+#define INIT_SIMD_API(t,n) \
+    { .type = (t),					\
+      .copy = epx_simd_copy##n,		\
+      .fill_32 = epx_simd_fill_32##n,				\
+      .add_blend_area_rgba32 = epx_simd_add_blend_area_rgba32##n, \
+      .add_blend_area_argb32 = epx_simd_add_blend_area_argb32##n, \
+      .add_blend_area_a8_rgba32 = epx_simd_add_blend_area_a8_rgba32##n, \
+      .add_blend_area_a8_argb32 = epx_simd_add_blend_area_a8_argb32##n, \
+      .alpha_area_argb32 = epx_simd_alpha_area_argb32##n,		\
+      .alpha_area_rgba32 = epx_simd_alpha_area_rgba32##n,		\
+      .blend_area_rgba32 = epx_simd_blend_area_rgba32##n,		\
+      .blend_area_argb32 = epx_simd_blend_area_argb32##n,		\
+      .fade_area_rgba32 = epx_simd_fade_area_rgba32##n,		\
+      .fade_area_argb32 = epx_simd_fade_area_argb32##n,		\
+      .fill_area_blend_rgb24 = epx_simd_fill_area_blend_rgb24##n, \
+      .fill_area_blend_argb32 = epx_simd_fill_area_blend_argb32##n, \
+      .fill_area_blend_rgba32 = epx_simd_fill_area_blend_rgba32##n, \
+    }
 
 EXTERN_SIMD_API(_emu);
-static epx_simd_t simd_emu = INIT_SIMD_API(_emu);
+static epx_simd_t simd_emu = INIT_SIMD_API(EPX_SIMD_EMU,_emu);
 
 #if defined(__VEC__) && defined(__ALTIVEC__)
 EXTERN_SIMD_API(_altivec);
-static epx_simd_t simd_altivec = INIT_SIMD_API(_altivec);
+static epx_simd_t simd_altivec = INIT_SIMD_API(EPX_SIMD_ALTIVEC,_altivec);
 #endif
 
 #if defined(__MMX__) && defined(USE_MMX)
 EXTERN_SIMD_API(_mmx);
-static epx_simd_t simd_mmx = INIT_SIMD_API(_mmx);
+static epx_simd_t simd_mmx = INIT_SIMD_API(EPX_SIMD_MMX,_mmx);
 #endif
 
 #if defined(__SSE2__) && defined(USE_SSE2)
 EXTERN_SIMD_API(_sse2);
-static epx_simd_t simd_sse2 = INIT_SIMD_API(_sse2);
+static epx_simd_t simd_sse2 = INIT_SIMD_API(EPX_SIMD_SSE2,_sse2);
 #endif
 
 // SIMD function block pointer
-epx_simd_t* epx_simd;
+epx_simd_t* epx_simd = NULL;
 
 static unsigned char   cpu_serial_number[64];
 static size_t          cpu_serial_number_len = 0;
 static char            cpu_vendor_name[64];
 static size_t          cpu_vendor_name_len = 0;
-
+static char            cpu_features[256];
+static size_t          cpu_features_len = 0;
+static int             cpu_cache_line_size = 0;
 //
 // Return cpu serial number if available
 // return 0 if not available otherwise the 
@@ -128,21 +113,55 @@ int epx_cpu_vendor_name(char* buf, size_t maxlen)
 {
     int n = (cpu_vendor_name_len > maxlen) ? maxlen : cpu_vendor_name_len;
     memcpy(buf, cpu_vendor_name, n);
-    return cpu_vendor_name_len;
+    return n;
+}
+
+int epx_cpu_features(char* buf, size_t maxlen)
+{
+    int n = (cpu_features_len > maxlen) ? maxlen : cpu_features_len;
+    memcpy(buf, cpu_features, n);
+    return n;
+}
+
+int epx_cpu_cache_line_size()
+{
+    return cpu_cache_line_size;
+}
+
+int epx_simd_accel()
+{
+    int accel = 0;
+
+    accel |= EPX_SIMD_EMU;
+#if defined(__ppc__) || defined(__ppc64__)
+#if defined(__VEC__) && defined(__ALTIVEC__)
+    accel |= EPX_SIMD_ALTIVEC;
+#endif
+#endif
+#if defined(__MMX__) && defined(USE_MMX)
+    accel |= EPX_SIMD_MMX;
+#endif
+#if defined(__SSE2__) && defined(USE_SSE2)
+    accel |= EPX_SIMD_SSE2;
+#endif
+#if defined(__NEON__) && defined(USE_NEON)
+    accel |= EPX_SIMD_NEON;
+#endif
+    return accel;
 }
 
 #if defined(__i386__) || defined(__x86_64__)
 
 static char* cpuid_feature_name[32] =
 {
-    "FPU", "VME",   "DE",      "PSE",
-    "TSC", "MSR",   "PAE",     "MCE",
-    "CX8", "APIC",  "B10",     "SEP",
-    "MTRR",  "PGE", "MCA",     "CMOV",
-    "PAT",   "PSE36", "PSN",   "CLFSH",
-    "B20",   "DS",    "ACPI",  "MMX",
-    "FXSR",  "SSE",   "SSE2",  "SS", 
-    "HTT",   "TM",    "IA64",  "PBE" 
+    "fpu",  "vme",   "de",    "pse",
+    "tsc",  "msr",   "pae",   "mce",
+    "cx8",  "apic",  "b10",   "sep",
+    "mtrr", "pge",   "mca",   "cmov",
+    "pat",  "pse36", "psn",   "clfsh",
+    "b20",  "ds",    "acpi",  "mmx",
+    "fxsr", "sse",   "sse2",  "ss", 
+    "htt",  "tm",    "ia64",  "pbe" 
 };
 
 static void cpuid(int f, int *eax, int *ebx, int* ecx, int* edx)
@@ -247,24 +266,41 @@ static int cpuidCacheLineSize()
 void epx_simd_init(int accel)
 {
     int feature = 0;
-    int cacheline = 64;
+
+
 #if defined(__i386__) || defined(__x86_64__)
+    char* name;
     char* hex = "0123456789ABCDEF";
     int i;
+    int j;
 
-    feature = cpuidFeature();
-    cacheline = cpuidCacheLineSize();
-
-    EPX_DBGFMT("cpu: %s\r\n", cpuidVendorName(cpu_vendor_name));
-    cpu_vendor_name_len = strlen(cpu_vendor_name);
+    name = cpuidVendorName(cpu_vendor_name);
+    cpu_vendor_name_len = strlen(name);
+    EPX_DBGFMT("cpu: %s\r\n", name);
 
     EPX_DBGFMT("Features:");
+    feature = cpuidFeature();
+    j = 0;
     for (i = 0; i < 32; i++) {
 	if ((1 << i) & feature) {
+	    size_t len = strlen(cpuid_feature_name[i]);
 	    // EPX_DBGFMT("  %s", cpuid_feature_name[i]);
+	    if (j+len+1 < (int)sizeof(cpu_features)) {
+		memcpy(&cpu_features[j], cpuid_feature_name[i], len);
+		cpu_features[j+len] = ',';
+		j++;
+		j += len;
+	    }
 	}
     }
-    EPX_DBGFMT("cache_line_size: %d", cacheline);
+    if (j > 0) {
+	j--;
+	cpu_features[j] = '\0';
+    }
+    cpu_features_len = j;
+
+    cpu_cache_line_size = cpuidCacheLineSize();
+    EPX_DBGFMT("cache_line_size: %d", cpu_cache_line_size);
 
     if (feature & CPUID_PSN) {
 	char xserial[25];
@@ -284,11 +320,22 @@ void epx_simd_init(int accel)
 	EPX_DBGFMT("Serial: Not available");
     }
 #endif
-    EPX_DBGFMT("SIMD: Enable emu");
-    epx_simd = &simd_emu;
+
+    epx_simd = NULL;
+
+    if (accel == EPX_SIMD_NONE) {
+	EPX_DBGFMT("SIMD: disabled");
+	return;
+    }
+
+    if ((accel & EPX_SIMD_EMU) || (accel==EPX_SIMD_AUTO)) {
+	EPX_DBGFMT("SIMD: Enable emu");
+	epx_simd = &simd_emu;
+    }
+
 #if defined(__ppc__) || defined(__ppc64__)
 #if defined(__VEC__) && defined(__ALTIVEC__)
-    if (accel & EPX_SIMD_ALTIVEC) {
+    if ((accel & EPX_SIMD_ALTIVEC)) {
 	EPX_DBGFMT("SIMD: Enable altivec");
 	epx_simd = &simd_altivec;
     }
