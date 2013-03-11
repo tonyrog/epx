@@ -19,18 +19,24 @@ regression() ->
     regression(argb).
 
 regression(Format) ->
-    A = epx:pixmap_create(?WIDTH, ?HEIGHT, Format),
-    B = epx:pixmap_create(?WIDTH, ?HEIGHT, Format),
-    regression(A,B).
+    regression(Format,Format).
+
+regression(PixelFormatA,PixelFormatB) ->
+    A = epx:pixmap_create(?WIDTH, ?HEIGHT, PixelFormatA),
+    B = epx:pixmap_create(?WIDTH, ?HEIGHT, PixelFormatB),
+    regression_(A,B).
 
 test() ->
     test(argb).
 
 test(Format) ->
-    A = epx:pixmap_create(?WIDTH, ?HEIGHT, Format),
-    B = epx:pixmap_create(?WIDTH, ?HEIGHT, Format),
-    regression(A,B),
-    [test_random(Operation, A, B, 100) ||
+    test(Format,Format).
+
+test(PixelFormatA,PixelFormatB) ->
+    A = epx:pixmap_create(?WIDTH, ?HEIGHT, PixelFormatA),
+    B = epx:pixmap_create(?WIDTH, ?HEIGHT, PixelFormatB),
+    regression_(A,B),
+    [test_random(Operation,A,B,100) ||
 	Operation <- [copy0, sum, blend, shadow, shadow_blend,
 		      alpha, fade, color, color_blend,
 		      clear,
@@ -43,16 +49,18 @@ test(Format) ->
 		      src_blend, dst_blend
 		      ]].
 
-test_random(_Operation, _A, _B, 0) ->
+test_random(_Operation,_A,_B, 0) ->
     ok;
-test_random(Operation, A, B, I) ->
-    Ap = random_argb(),
-    Bp = random_argb(),
+test_random(Operation,A,B,I) ->
+    PixelFormatA = epx:pixmap_info(A, pixel_format),
+    PixelFormatB = epx:pixmap_info(B, pixel_format),
+    Ap = random_pixel(PixelFormatA),
+    Bp = random_pixel(PixelFormatB),
     X  = random(0, ?WIDTH-1),
     Y  = random(0, ?HEIGHT-1),
     Fader = random(0,255),        %% mapped to (0..1)
     %% Fader = random:uniform(),  %% (0..1) used as fader/alpha ...
-    Color = random_argb(),     %% used in color/color_blend
+    Color = random_pixel(argb),     %% used in color/color_blend
     Vector = {Operation,X,Y,Ap,Bp,Fader,Color},
     case test_vector(A,B,Vector) of
 	{C,C} ->
@@ -67,16 +75,15 @@ test_vector(A,B,{Operation,X,Y,Ap,Bp,Fader,Color}) ->
     epx:pixmap_put_pixel(B, X, Y, Bp),
     area(Operation, A, B, Fader, Color),
     Cp = epx:pixmap_get_pixel(B, X, Y),
-    case calc_pixel(Operation, Ap, Bp, Fader, Color) of
+    case calc_pixel(Operation,Ap,Bp,Fader,Color) of
 	Cp -> {Cp,Cp};
 	Dp -> {Cp,Dp}
     end.
 
-regression(A,B) ->
-    regress_vector(A,B,{alpha,0,0,{45,186,219,27},{167,95,44,80},255,{188,232,78,139}}),
-    regress_vector(A,B,{fade,0,0,{161,19,123,180},{49,149,173,54},255,{240,183,105,223}}),
+regression_(_A,_B) ->
+%%    regress_vector(A,B,{alpha,0,0,{45,186,219,27},{167,95,44,80},255,{188,232,78,139}}),
+%%    regress_vector(A,B,{fade,0,0,{161,19,123,180},{49,149,173,54},255,{240,183,105,223}}),
     ok.
-
 
 regress_vector(A,B,Vector) ->
     case test_vector(A,B,Vector) of
@@ -90,8 +97,11 @@ perf() ->
     perf(argb).
 
 perf(Format) ->
-    A = epx:pixmap_create(?WIDTH, ?HEIGHT, Format),
-    B = epx:pixmap_create(?WIDTH, ?HEIGHT, Format),
+    perf(Format,Format).
+
+perf(AFormat,BFormat) ->
+    A = epx:pixmap_create(?WIDTH, ?HEIGHT, AFormat),
+    B = epx:pixmap_create(?WIDTH, ?HEIGHT, BFormat),
     [perf_random(Operation, A, B, 1000) ||
 	Operation <- [copy0, sum, blend, shadow, shadow_blend,
 		      alpha, fade, color, color_blend,
@@ -299,11 +309,19 @@ luminance(R,G,B) ->
     (R*299 + G*587 + B*114) div 1000.
 
 
-random_rgb() ->
-    { 255, random(0,255), random(0,255), random(0,255) }.
-
-random_argb() ->
-    { random(0,255), random(0,255), random(0,255), random(0,255) }.
-
+random_pixel(Format) ->
+    case Format of
+	rgb  -> { 255, random(0,255), random(0,255), random(0,255) };
+	bgr  -> { 255, random(0,255), random(0,255), random(0,255) };
+	argb -> { random(0,255), random(0,255), random(0,255), random(0,255)};
+	abgr -> { random(0,255), random(0,255), random(0,255), random(0,255)};
+	rgba -> { random(0,255), random(0,255), random(0,255), random(0,255)};
+	bgra -> { random(0,255), random(0,255), random(0,255), random(0,255)};
+	a8   -> { random(0,255), 0, 0, 0};
+	r8   -> { 255, random(0,255), 0, 0 };
+	g8   -> { 255, 0, random(0,255), 0 };
+	b8   -> { 255, 0, 0, random(0,255) }
+    end.
+	    
 random(A, B) when is_integer(A), A =< B ->   
     random:uniform((B - A) + 1) - 1 + A.

@@ -87,6 +87,36 @@ epx_simd_vector_set_pixel (uint8_t a,uint8_t r,uint8_t g,uint8_t b)
 				 a,r,g,b);
 }
 
+static inline epx_vector_u8_t __attribute__((__always_inline__))
+epx_simd_vector_set_subpixel (uint8_t* src,int k)
+{
+    switch(k) {
+    case 0: 
+	return epx_simd_vector_set_8(src[0],0,0,0,
+				     src[1],0,0,0,
+				     src[2],0,0,0,
+				     src[3],0,0,0);
+    case 1: 
+	return epx_simd_vector_set_8(0,src[0],0,0,
+				     0,src[1],0,0,
+				     0,src[2],0,0,
+				     0,src[3],0,0);
+    case 2: 
+	return epx_simd_vector_set_8(0,0,src[0],0,
+				     0,0,src[1],0,
+				     0,0,src[2],0,
+				     0,0,src[3],0,);
+    case 3:
+	return epx_simd_vector_set_8(0,0,0,src[0],
+				     0,0,0,src[1],
+				     0,0,0,src[2],
+				     0,0,0,src[3]);
+    default:
+	return epx_simd_vector_splat_u8(0);
+    }
+}
+
+
 static inline void __attribute__((__always_inline__))
 epx_simd_empty_state()
 {

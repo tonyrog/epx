@@ -684,10 +684,10 @@ generic:
 		uint8_t* src1 = src;
 		uint8_t* dst1 = dst;
 		unsigned int width1 = width;
-		// FIXME: use epx_add_blend_row_a8_rgba32 (with color=0!)
+		// FIXME: use epx_add_blend_row_a8_argb32 (with color=0!)
 		while(width1--) {
 		    uint8_t a = ((*src1)*fade >> 8);
-		    dst1[0]=epx_blend(a,0,dst1[0]); // NEW
+		    dst1[0]=epx_blend(a,src1[0],dst1[0]); // NEW
 		    dst1[1]=epx_blend(a,0,dst1[1]);
 		    dst1[2]=epx_blend(a,0,dst1[2]);
 		    dst1[3]=epx_blend(a,0,dst1[3]);
@@ -709,7 +709,7 @@ generic:
 		    dst1[0]=epx_blend(a,0,dst1[0]);
 		    dst1[1]=epx_blend(a,0,dst1[1]);
 		    dst1[2]=epx_blend(a,0,dst1[2]);
-		    dst1[3]=epx_blend(a,0,dst1[3]);
+		    dst1[3]=epx_blend(a,src1[0],dst1[3]);
 		    src1++;
 		    dst1 += 4;
 		}
@@ -731,7 +731,7 @@ generic:
 		    d.r = epx_blend(a,0,d.r);
 		    d.g = epx_blend(a,0,d.g);
 		    d.b = epx_blend(a,0,d.b);
-		    d.a = epx_blend(a,0,d.a);
+		    d.a = epx_blend(a,src1[0],d.a);
 		    pack_dst(d, dst1);
 		    src1++;
 		    dst1 += dst_psz;
