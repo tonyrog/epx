@@ -24,7 +24,9 @@
 
 #define SSE2_MIN_BLOCK_LEN 64
 
-#include "epx_simd_common.c"
+#define SIMD_FUNCTION(name) epx_simd_##name##_sse2
+#include "epx_simd.i"
+#undef SIMD_FUNCTION
 
 void epx_simd_copy_sse2(uint8_t* src, uint8_t* dst, size_t n)
 {

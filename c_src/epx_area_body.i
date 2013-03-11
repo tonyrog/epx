@@ -15,9 +15,9 @@
  *
  ***************************************************************************/
 
+// parameterized area function
 //
 // Common AREA functions
-// ONLY to be used be epx_pixmap.c as
 // #define AREA_PARAMS_DECL
 // #define AREA_OPERATION
 // #define AREA_NAME

@@ -19,7 +19,7 @@
 // Idea how to make simd functions a bit more "easy"
 //
 
-// macros used:\
+// macros used:
 //   SIMD_AREA_FUNCTION     name of the function
 //   SIMD_AREA_PARAMS_DECL  extra parameters
 //   SIMD_AREA_PARAMS       name of the params
@@ -31,14 +31,15 @@
 // Function template 
 // Src Dst Width Height
 //
-void SIMD_AREA_FUNCTION(u_int8_t* src, int src_wb,
-			u_int8_t* dst, int dst_wb,
+void SIMD_AREA_FUNCTION(uint8_t* src, int src_wb,
+			uint8_t* dst, int dst_wb,
 			SIMD_AREA_PARAMS_DECL
 			unsigned int width, unsigned int height)
 {
     unsigned int doffs = EPX_ALIGN_OFFS(dst,EPX_SIMD_VECTOR_ALIGN);
     unsigned int soffs = EPX_ALIGN_OFFS(src,EPX_SIMD_VECTOR_ALIGN);
     int walign = 0;
+    SIMD_AREA_LOCAL_DECL
 
     if (soffs != doffs) {
 	if (doffs != 0)
@@ -46,8 +47,8 @@ void SIMD_AREA_FUNCTION(u_int8_t* src, int src_wb,
 
 	while(height > 0) {
 	    unsigned int width1 = width;
-	    u_int8_t* src1 = src;
-	    u_int8_t* dst1 = dst;
+	    uint8_t* src1 = src;
+	    uint8_t* dst1 = dst;
 
 	    if (walign) {
 		SIMD_AREA_UNALIGNED(src1,dst1,walign);
@@ -79,8 +80,8 @@ void SIMD_AREA_FUNCTION(u_int8_t* src, int src_wb,
 
 	while(height > 0) {
 	    unsigned int width1 = width;
-	    u_int8_t* src1 = src;
-	    u_int8_t* dst1 = dst;
+	    uint8_t* src1 = src;
+	    uint8_t* dst1 = dst;
 
 	    if (walign) {
 		SIMD_AREA_UNALIGNED(src1,dst1,walign);
@@ -104,6 +105,7 @@ void SIMD_AREA_FUNCTION(u_int8_t* src, int src_wb,
 	    height--;
 	}
     }
+    epx_simd_empty_state();
 }
 
 		   

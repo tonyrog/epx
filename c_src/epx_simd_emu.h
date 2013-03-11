@@ -36,8 +36,6 @@ typedef uint32_t epx_vector_t;
 #define EPX_SIMD_VECTOR_PIXELS_ARGB16 2  // number of R5G6B5 pixels per vector
 #define EPX_SIMD_VECTOR_PIXELS_ARGB15 2  // number of A1R5G5B5 pixels per vector
 
-#define SIMD_FUNCTION(name) epx_simd_##name##_emu
-
 static inline epx_vector_t __attribute__((__always_inline__))
 epx_simd_vector_set_8(uint8_t x0,uint8_t x1,uint8_t x2,uint8_t x3)
 {

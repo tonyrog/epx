@@ -418,12 +418,10 @@ void epx_shade_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 // FUNCTION: epx_blend_AREA ( ... )
 #define AREA_FUNCTION         epx_blend_AREA
 #define AREA_PARAMS_DECL
-#define AREA_PARAMS_LIST
 #define AREA_OPERATION(s,d)   epx_pixel_blend(s.a,s,d)
-#include "epx_area_common.c"
+#include "epx_area_body.i"
 #undef AREA_FUNCTION
 #undef AREA_PARAMS_DECL
-#undef AREA_PARAMS_LIST
 #undef AREA_OPERATION
 // END-FUNCTION
 
@@ -485,12 +483,10 @@ generic:
 // FUNCTION: epx_sum_area ( ... )
 #define AREA_FUNCTION         epx_sum_area
 #define AREA_PARAMS_DECL      
-#define AREA_PARAMS_LIST      
 #define AREA_OPERATION(s,d)   epx_pixel_add(s, d)
-#include "epx_area_common.c"
+#include "epx_area_body.i"
 #undef AREA_FUNCTION
 #undef AREA_PARAMS_DECL
-#undef AREA_PARAMS_LIST
 #undef AREA_OPERATION
 // END-FUCNTION
 
@@ -505,12 +501,10 @@ static inline epx_pixel_t alpha_pixel(uint8_t a, epx_pixel_t s, epx_pixel_t d)
 // FUNCTION: epx_alpha_AREA ( ... )
 #define AREA_FUNCTION         epx_alpha_AREA
 #define AREA_PARAMS_DECL      uint8_t alpha,
-#define AREA_PARAMS_LIST      alpha
-#define AREA_OPERATION(s,d)   alpha_pixel(AREA_PARAMS_LIST, s, d)
-#include "epx_area_common.c"
+#define AREA_OPERATION(s,d)   alpha_pixel(alpha, s, d)
+#include "epx_area_body.i"
 #undef AREA_FUNCTION
 #undef AREA_PARAMS_DECL
-#undef AREA_PARAMS_LIST
 #undef AREA_OPERATION
 // END-FUCNTION
 
@@ -596,12 +590,10 @@ static inline epx_pixel_t fade_pixel(uint8_t fade, epx_pixel_t s, epx_pixel_t d)
 // FUNCTION: epx_fade_AREA ( ... )
 #define AREA_FUNCTION         epx_fade_AREA
 #define AREA_PARAMS_DECL      uint8_t fade,
-#define AREA_PARAMS_LIST      fade
-#define AREA_OPERATION(s,d)   fade_pixel(AREA_PARAMS_LIST, s, d)
-#include "epx_area_common.c"
+#define AREA_OPERATION(s,d)   fade_pixel(fade, s, d)
+#include "epx_area_body.i"
 #undef AREA_FUNCTION
 #undef AREA_PARAMS_DECL
-#undef AREA_PARAMS_LIST
 #undef AREA_OPERATION
 // END-FUCNTION
 
@@ -2259,12 +2251,10 @@ static epx_pixel_t binop_dst_blend(epx_pixel_t a, epx_pixel_t b)
 // FUNCTION: epx_binop_sub_AREA ( ... )
 #define AREA_FUNCTION         epx_binop_sub_AREA
 #define AREA_PARAMS_DECL
-#define AREA_PARAMS_LIST
 #define AREA_OPERATION(s,d)   epx_pixel_sub(s,d)
-#include "epx_area_common.c"
+#include "epx_area_body.i"
 #undef AREA_FUNCTION
 #undef AREA_PARAMS_DECL
-#undef AREA_PARAMS_LIST
 #undef AREA_OPERATION
 // END-FUNCTION
 
@@ -2272,12 +2262,10 @@ static epx_pixel_t binop_dst_blend(epx_pixel_t a, epx_pixel_t b)
 // FUNCTION: epx_binop_add_AREA ( ... )
 #define AREA_FUNCTION         epx_binop_add_AREA
 #define AREA_PARAMS_DECL
-#define AREA_PARAMS_LIST
 #define AREA_OPERATION(s,d)   epx_pixel_add(s,d)
-#include "epx_area_common.c"
+#include "epx_area_body.i"
 #undef AREA_FUNCTION
 #undef AREA_PARAMS_DECL
-#undef AREA_PARAMS_LIST
 #undef AREA_OPERATION
 // END-FUNCTION
 

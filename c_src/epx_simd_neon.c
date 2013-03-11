@@ -23,7 +23,9 @@
 #include "epx_simd_neon.h"
 #include "epx_pixmap.h"
 
-#include "epx_simd_common.c"
+#define SIMD_FUNCTION(name) epx_simd_##name##_neon
+#include "epx_simd.i"
+#undef SIMD_FUNCTION
 
 void epx_simd_copy_neon(const u_int8_t* src, u_int8_t* dst, size_t n)
 {

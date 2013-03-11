@@ -32,6 +32,23 @@ set_uint32(uint8_t x0,uint8_t x1,uint8_t x2,uint8_t x3)
 //
 //  Add source with color and blend it with dst, using af as a scaling factor
 //
+
+#define SIMD_AREA_FUNCTION         SIMD_FUNCTION(add_blend_area_rgba32)
+#define SIMD_AREA_PARAMS_DECL      uint8_t af, epx_pixel_t color,
+#define SIMD_AREA_LOCAL_DECL       int iaf = af;		     \
+    epx_vector_u16_t fv = epx_simd_vector_splat_u16(iaf);	     \
+    epx_vector_u8_t  c8 = epx_simd_vector_set_pixel(color.r,color.g, \
+						    color.b,color.a);
+#define SIMD_AREA_UNALIGNED(s,d,w) epx_add_blend_row_rgba32((s),(d),af,color,(w))
+#define SIMD_AREA_OPERATION(ts,td) epx_simd_fade_rgba32(fv,epx_simd_adds_u8(c8,(ts)),(td))
+#include "epx_simd_area_body.i"
+#undef SIMD_AREA_FUNCTION
+#undef SIMD_AREA_PARAMS_DECL
+#undef SIMD_AREA_LOCAL_DECL
+#undef SIMD_AREA_UNALIGNED
+#undef SIMD_AREA_OPERATION
+
+/**********
 void SIMD_FUNCTION(add_blend_area_rgba32)
     (uint8_t* src, int src_wb,
      uint8_t* dst, int dst_wb,
@@ -113,10 +130,28 @@ void SIMD_FUNCTION(add_blend_area_rgba32)
     }
     epx_simd_empty_state();
 }
+**********/
 
 //
 // Same as add_blend_area_rgba but with alpha channel first
 // 
+
+#define SIMD_AREA_FUNCTION         SIMD_FUNCTION(add_blend_area_argb32)
+#define SIMD_AREA_PARAMS_DECL      uint8_t af, epx_pixel_t color,
+#define SIMD_AREA_LOCAL_DECL       int iaf = af;		     \
+    epx_vector_u16_t fv = epx_simd_vector_splat_u16(iaf);	     \
+    epx_vector_u8_t  c8 = epx_simd_vector_set_pixel(color.a,color.r, \
+						    color.g,color.b);
+#define SIMD_AREA_UNALIGNED(s,d,w) epx_add_blend_row_argb32((s),(d),af,color,(w))
+#define SIMD_AREA_OPERATION(ts,td) epx_simd_fade_argb32(fv,epx_simd_adds_u8(c8,(ts)),(td))
+#include "epx_simd_area_body.i"
+#undef SIMD_AREA_FUNCTION
+#undef SIMD_AREA_PARAMS_DECL
+#undef SIMD_AREA_LOCAL_DECL
+#undef SIMD_AREA_UNALIGNED
+#undef SIMD_AREA_OPERATION
+
+ /*************
 void SIMD_FUNCTION(add_blend_area_argb32)
     (uint8_t* src, int src_wb,
      uint8_t* dst, int dst_wb,
@@ -197,6 +232,7 @@ void SIMD_FUNCTION(add_blend_area_argb32)
     }
     epx_simd_empty_state();
 }
+*********/
 
 // 
 // 
@@ -323,9 +359,19 @@ void SIMD_FUNCTION(add_blend_area_a8_argb32)
     epx_simd_empty_state();
 }
 
-//
-//
-//
+#define SIMD_AREA_FUNCTION         SIMD_FUNCTION(alpha_area_argb32)
+#define SIMD_AREA_PARAMS_DECL      uint8_t a,
+#define SIMD_AREA_LOCAL_DECL       epx_vector_i8_t a8 = epx_simd_vector_set_pixel(0,a,a,a);
+#define SIMD_AREA_UNALIGNED(s,d,w) epx_alpha_row_argb32((s),(d),a,(w))
+#define SIMD_AREA_OPERATION(ts,td) epx_simd_alpha_32(a8,(ts),(td))
+#include "epx_simd_area_body.i"
+#undef SIMD_AREA_FUNCTION
+#undef SIMD_AREA_PARAMS_DECL
+#undef SIMD_AREA_LOCAL_DECL
+#undef SIMD_AREA_UNALIGNED
+#undef SIMD_AREA_OPERATION
+
+/*******
 void SIMD_FUNCTION(alpha_area_argb32)
     (uint8_t* src, int src_wb,
      uint8_t* dst, int dst_wb,
@@ -399,6 +445,21 @@ void SIMD_FUNCTION(alpha_area_argb32)
     }    
     epx_simd_empty_state();
 }
+******/
+
+#define SIMD_AREA_FUNCTION         SIMD_FUNCTION(alpha_area_rgba32)
+#define SIMD_AREA_PARAMS_DECL      uint8_t a,
+#define SIMD_AREA_LOCAL_DECL       epx_vector_i8_t a8 = epx_simd_vector_set_pixel(a,a,a,0);
+#define SIMD_AREA_UNALIGNED(s,d,w) epx_alpha_row_rgba32((s),(d),a,(w))
+#define SIMD_AREA_OPERATION(ts,td) epx_simd_alpha_32(a8,(ts),(td))
+#include "epx_simd_area_body.i"
+#undef SIMD_AREA_FUNCTION
+#undef SIMD_AREA_PARAMS_DECL
+#undef SIMD_AREA_LOCAL_DECL
+#undef SIMD_AREA_UNALIGNED
+#undef SIMD_AREA_OPERATION
+
+ /****
 
 void SIMD_FUNCTION(alpha_area_rgba32)
     (uint8_t* src, int src_wb,
@@ -474,8 +535,21 @@ void SIMD_FUNCTION(alpha_area_rgba32)
     }    
     epx_simd_empty_state();
 }
+***/
 
+#define SIMD_AREA_FUNCTION  SIMD_FUNCTION(blend_area_rgba32)
+#define SIMD_AREA_PARAMS_DECL
+#define SIMD_AREA_LOCAL_DECL
+#define SIMD_AREA_UNALIGNED(s,d,w) epx_blend_row_rgba32((s),(d),(w))
+#define SIMD_AREA_OPERATION(ts,td) epx_simd_blend_rgba32((ts),(td))
+#include "epx_simd_area_body.i"
+#undef SIMD_AREA_FUNCTION
+#undef SIMD_AREA_PARAMS_DECL
+#undef SIMD_AREA_LOCAL_DECL
+#undef SIMD_AREA_UNALIGNED
+#undef SIMD_AREA_OPERATION
 
+/*****
 void SIMD_FUNCTION(blend_area_rgba32)
     (uint8_t* src, int src_wb, 
      uint8_t* dst, int dst_wb,
@@ -549,7 +623,21 @@ void SIMD_FUNCTION(blend_area_rgba32)
     }
     epx_simd_empty_state();
 }
+****/
 
+#define SIMD_AREA_FUNCTION  SIMD_FUNCTION(blend_area_argb32)
+#define SIMD_AREA_PARAMS_DECL
+#define SIMD_AREA_LOCAL_DECL
+#define SIMD_AREA_UNALIGNED(s,d,w) epx_blend_row_argb32((s),(d),(w))
+#define SIMD_AREA_OPERATION(ts,td) epx_simd_blend_argb32((ts),(td))
+#include "epx_simd_area_body.i"
+#undef SIMD_AREA_FUNCTION
+#undef SIMD_AREA_PARAMS_DECL
+#undef SIMD_AREA_LOCAL_DECL
+#undef SIMD_AREA_UNALIGNED
+#undef SIMD_AREA_OPERATION
+
+/***
 void SIMD_FUNCTION(blend_area_argb32)
     (uint8_t* src, int src_wb, 
      uint8_t* dst, int dst_wb,
@@ -621,8 +709,22 @@ void SIMD_FUNCTION(blend_area_argb32)
     }
     epx_simd_empty_state();
 }
+***/
 
 
+#define SIMD_AREA_FUNCTION         SIMD_FUNCTION(fade_area_rgba32)
+#define SIMD_AREA_PARAMS_DECL      uint8_t af,
+#define SIMD_AREA_LOCAL_DECL       int iaf = af; epx_vector_u16_t fv = epx_simd_vector_splat_u16(iaf);
+#define SIMD_AREA_UNALIGNED(s,d,w) epx_fade_row_rgba32((s),(d),af,(w))
+#define SIMD_AREA_OPERATION(ts,td) epx_simd_fade_rgba32(fv,(ts),(td))
+#include "epx_simd_area_body.i"
+#undef SIMD_AREA_FUNCTION
+#undef SIMD_AREA_PARAMS_DECL
+#undef SIMD_AREA_LOCAL_DECL
+#undef SIMD_AREA_UNALIGNED
+#undef SIMD_AREA_OPERATION
+
+/**********
 void SIMD_FUNCTION(fade_area_rgba32)
     (uint8_t* src, int src_wb,
      uint8_t* dst, int dst_wb,
@@ -700,6 +802,22 @@ void SIMD_FUNCTION(fade_area_rgba32)
     epx_simd_empty_state();
 }
 
+**********/
+
+
+#define SIMD_AREA_FUNCTION         SIMD_FUNCTION(fade_area_argb32)
+#define SIMD_AREA_PARAMS_DECL      uint8_t af,
+#define SIMD_AREA_LOCAL_DECL       int iaf = af; epx_vector_u16_t fv = epx_simd_vector_splat_u16(iaf);
+#define SIMD_AREA_UNALIGNED(s,d,w) epx_fade_row_argb32((s),(d),af,(w))
+#define SIMD_AREA_OPERATION(ts,td) epx_simd_fade_argb32(fv,(ts),(td))
+#include "epx_simd_area_body.i"
+#undef SIMD_AREA_FUNCTION
+#undef SIMD_AREA_PARAMS_DECL
+#undef SIMD_AREA_LOCAL_DECL
+#undef SIMD_AREA_UNALIGNED
+#undef SIMD_AREA_OPERATION
+
+/********
 void SIMD_FUNCTION(fade_area_argb32)
     (uint8_t* src, int src_wb,
      uint8_t* dst, int dst_wb,
@@ -776,7 +894,7 @@ void SIMD_FUNCTION(fade_area_argb32)
     }
     epx_simd_empty_state();
 }
-
+********/
 
 void SIMD_FUNCTION(fill_area_blend_argb32)
     (uint8_t* dst,int dst_wb,

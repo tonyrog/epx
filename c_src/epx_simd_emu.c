@@ -22,7 +22,9 @@
 #include "epx_simd_emu.h"
 #include "epx_pixmap.h"
 
-#include "epx_simd_common.c"
+#define SIMD_FUNCTION(name) epx_simd_##name##_emu
+#include "epx_simd.i"
+#undef SIMD_FUNCTION
 
 void epx_simd_copy_emu(uint8_t* src, uint8_t* dst, size_t n)
 {

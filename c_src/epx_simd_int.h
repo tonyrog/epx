@@ -224,16 +224,16 @@ static inline void epx_add_blend_row_rgba32(uint8_t* src, uint8_t* dst,
 					    unsigned int width)
 {
     while(width--) {
-	uint8_t a,r,g,b;
+	uint8_t a1,a,r,g,b;
 	r = epx_add(src[0], color.r);
 	g = epx_add(src[1], color.g);
 	b = epx_add(src[2], color.b);
 	a = epx_add(src[3], color.a);
-	a = ((a * af) >> 8);
-	dst[0]=epx_blend(a,r,dst[0]);
-	dst[1]=epx_blend(a,g,dst[1]);
-	dst[2]=epx_blend(a,b,dst[2]);
-	dst[3]=epx_blend(a,a,dst[3]);
+	a1 = ((a * af) >> 8);
+	dst[0]=epx_blend(a1,r,dst[0]);
+	dst[1]=epx_blend(a1,g,dst[1]);
+	dst[2]=epx_blend(a1,b,dst[2]);
+	dst[3]=epx_blend(a1,a,dst[3]);
 	src += 4;
 	dst += 4;
     }
@@ -245,16 +245,16 @@ static inline void epx_add_blend_row_argb32(uint8_t* src, uint8_t* dst,
 					    unsigned int width)
 {
     while(width--) {
-	uint8_t a,r,g,b;
+	uint8_t a1,a,r,g,b;
 	a = epx_add(src[0], color.a);
 	r = epx_add(src[1], color.r);
 	g = epx_add(src[2], color.g);
 	b = epx_add(src[3], color.b);
-	a = ((a * af) >> 8);
-	dst[0]=epx_blend(a,a,dst[0]);
-	dst[1]=epx_blend(a,r,dst[1]);
-	dst[2]=epx_blend(a,g,dst[2]);
-	dst[3]=epx_blend(a,b,dst[3]);
+	a1 = ((a * af) >> 8);
+	dst[0]=epx_blend(a1,a,dst[0]);
+	dst[1]=epx_blend(a1,r,dst[1]);
+	dst[2]=epx_blend(a1,g,dst[2]);
+	dst[3]=epx_blend(a1,b,dst[3]);
 	src += 4;
 	dst += 4;
     }
@@ -266,13 +266,13 @@ static inline void epx_add_blend_row_a8_rgba32(uint8_t* src, uint8_t* dst,
 					       unsigned int width)
 {
     while(width--) {
-	uint8_t a;
+	uint8_t a1,a;
 	a = epx_add(src[0], color.a);
-	a = ((a * af) >> 8);
-	dst[0]=epx_blend(a,color.r,dst[0]);
-	dst[1]=epx_blend(a,color.g,dst[1]);
-	dst[2]=epx_blend(a,color.b,dst[2]);
-	dst[3]=epx_blend(a,a,dst[3]);
+	a1 = ((a * af) >> 8);
+	dst[0]=epx_blend(a1,color.r,dst[0]);
+	dst[1]=epx_blend(a1,color.g,dst[1]);
+	dst[2]=epx_blend(a1,color.b,dst[2]);
+	dst[3]=epx_blend(a1,a,dst[3]);
 	src += 1;
 	dst += 4;
     }
@@ -286,13 +286,13 @@ static inline void epx_add_blend_row_a8_argb32(uint8_t* src, uint8_t* dst,
 					       unsigned int width)
 {
     while(width--) {
-	uint8_t a;
+	uint8_t a1,a;
 	a = epx_add(src[0], color.a);
-	a = ((a * af) >> 8);
-	dst[0]=epx_blend(a,a,dst[0]);
-	dst[1]=epx_blend(a,color.r,dst[1]);
-	dst[2]=epx_blend(a,color.g,dst[2]);
-	dst[3]=epx_blend(a,color.b,dst[3]);
+	a1 = ((a * af) >> 8);
+	dst[0]=epx_blend(a1,a,dst[0]);
+	dst[1]=epx_blend(a1,color.r,dst[1]);
+	dst[2]=epx_blend(a1,color.g,dst[2]);
+	dst[3]=epx_blend(a1,color.b,dst[3]);
 	src += 1;
 	dst += 4;
     }

@@ -39,7 +39,6 @@ typedef __neon_uint8x16_t  epx_vector_t;
 #define EPX_SIMD_VECTOR_PIXELS_ARGB16 8  // # of R5G6B5 pixels per vector
 #define EPX_SIMD_VECTOR_PIXELS_ARGB15 8  // # of A1R5G5B5 pixels per vector
 
-#define SIMD_FUNCTION(name) epx_simd_##name##_neon
 
 #define epx_simd_vector_set_8(x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16) \
     _mm_setr_epi8((x1),(x2),(x3),(x4),(x5),(x6),(x7),(x8),		\

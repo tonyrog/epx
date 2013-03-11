@@ -10,8 +10,8 @@
 -compile(export_all).
 
 %% enough height & width to get simd working
--define(HEIGHT, 128).
--define(WIDTH,  128).
+-define(HEIGHT, 127).
+-define(WIDTH,  127).
 %% -define(HEIGHT, 1).
 %% -define(WIDTH,  1).
 
