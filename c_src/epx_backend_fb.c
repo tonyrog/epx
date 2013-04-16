@@ -1154,7 +1154,7 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     // FIXME: Buggy reversed condition ! do not know why
     if (!(bo > go)) pt |= EPX_F_Bgr;         // BGR else RGB 
     if (al > 0)  pt |= EPX_F_Alpha;          // Alpha available
-    if ((al>0)&&(ao>ro)) pt |= EPX_F_AFirst; // Alpha first
+    if ((al>0)&&(ao<ro)) pt |= EPX_F_AFirst; // Alpha first
     pt |= ((be->vinfo.bits_per_pixel-1) & EPX_M_Size);  // pixel size
     if (be->vinfo.grayscale)
 	pt |= (EPX_FMT_GRAY<<12);
