@@ -218,8 +218,7 @@ init() ->
     erlang:load_nif(Nif, 0).
     
 %%
-%% This is a simple version of the start function
-%% For a more robust version use application:start(epx)
+%% 
 %%
 start() ->
     application:load(?MODULE), %% make sure command line env is loaded

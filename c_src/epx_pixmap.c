@@ -1890,7 +1890,7 @@ void epx_pixmap_alpha_area(epx_pixmap_t* src,epx_pixmap_t* dst, uint8_t alpha,
 		      width, height, &sr, &dr) < 0)
 	return;
 
-    if (alpha == EPX_ALPHA_OPAQUE)
+    if (alpha == EPX_ALPHA_TRANSPARENT)
 	return;
     else
 	epx_alpha_area(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y),

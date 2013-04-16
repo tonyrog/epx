@@ -25,7 +25,7 @@
 -define(FNumber,             16#829d).
 -define(ExposureProgram,     16#8822).
 -define(ISOSpeedRatings,     16#8827).
--define(CFARepeatPatternDim, 16#828d ).
+-define(CFARepeatPatternDim, 16#828d).
 
 -define(ExifVersion,             16#9000).
 -define(DateTimeOriginal,        16#9003).

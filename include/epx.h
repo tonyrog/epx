@@ -54,9 +54,6 @@
 
 extern void epx_init(int accel);
 
-extern int epx_cpu_serial_number(unsigned char* buf, size_t maxlen);
-extern int epx_cpu_vendor_name(char* buf, size_t maxlen);
-
 /* OpenGL utility functions */
 #ifdef HAVE_OPENGL
 extern int epx_gl_load_texture(epx_pixmap_t* pic, GLuint* textureName,

@@ -15,39 +15,33 @@
 %% -define(HEIGHT, 1).
 %% -define(WIDTH,  1).
 
-regression() ->
-    regression(argb).
-
-regression(Format) ->
-    regression(Format,Format).
-
-regression(PixelFormatA,PixelFormatB) ->
-    A = epx:pixmap_create(?WIDTH, ?HEIGHT, PixelFormatA),
-    B = epx:pixmap_create(?WIDTH, ?HEIGHT, PixelFormatB),
-    regression_(A,B).
 
 test() ->
-    test(argb).
+    test(argb,1000).
 
-test(Format) ->
-    test(Format,Format).
+test(Format,N) ->
+    test(Format,Format,N).
 
-test(PixelFormatA,PixelFormatB) ->
+test(PixelFormatA,PixelFormatB,N) ->
+    test(PixelFormatA,PixelFormatB,N,
+	 [copy0, sum, blend, shadow, shadow_blend,
+	  alpha, fade, color, color_blend,
+	  clear,
+	  src,dst,
+	  src_over,dst_over,
+	  src_in, dst_in,
+	  src_out, dst_out,
+	  src_atop, dst_atop,
+	  'xor', copy, add, sub,
+	  src_blend, dst_blend
+	 ]).
+
+test(PixelFormatA,PixelFormatB,N,Operations) ->
     A = epx:pixmap_create(?WIDTH, ?HEIGHT, PixelFormatA),
     B = epx:pixmap_create(?WIDTH, ?HEIGHT, PixelFormatB),
     regression_(A,B),
-    [test_random(Operation,A,B,100) ||
-	Operation <- [copy0, sum, blend, shadow, shadow_blend,
-		      alpha, fade, color, color_blend,
-		      clear,
-		      src,dst,
-		      src_over,dst_over,
-		      src_in, dst_in,
-		      src_out, dst_out,
-		      src_atop, dst_atop,
-		      'xor', copy, add, sub,
-		      src_blend, dst_blend
-		      ]].
+    [test_random(Operation,A,B,N) ||
+	Operation <- Operations].
 
 test_random(_Operation,_A,_B, 0) ->
     ok;
@@ -75,10 +69,23 @@ test_vector(A,B,{Operation,X,Y,Ap,Bp,Fader,Color}) ->
     epx:pixmap_put_pixel(B, X, Y, Bp),
     area(Operation, A, B, Fader, Color),
     Cp = epx:pixmap_get_pixel(B, X, Y),
-    case calc_pixel(Operation,Ap,Bp,Fader,Color) of
+    AF = epx:pixmap_info(A,pixel_format),
+    BF = epx:pixmap_info(B,pixel_format),
+    case calc_pixel(Operation,Ap,Bp,Fader,Color,AF,BF) of
 	Cp -> {Cp,Cp};
 	Dp -> {Cp,Dp}
     end.
+
+regression() ->
+    regression(argb).
+
+regression(Format) ->
+    regression(Format,Format).
+
+regression(PixelFormatA,PixelFormatB) ->
+    A = epx:pixmap_create(?WIDTH, ?HEIGHT, PixelFormatA),
+    B = epx:pixmap_create(?WIDTH, ?HEIGHT, PixelFormatB),
+    regression_(A,B).
 
 regression_(_A,_B) ->
 %%    regress_vector(A,B,{alpha,0,0,{45,186,219,27},{167,95,44,80},255,{188,232,78,139}}),
@@ -154,68 +161,102 @@ area(Operation, A, B, _F, _C) ->
 
 
 
-calc_pixel(copy0,S,_D,_F,_C) ->
-    S;
-calc_pixel(sum,S,D,_F,_C) ->
-    pixel_add(S,D);
-calc_pixel(blend,S,D,_F,_C) ->
-    pixel_blend(element(1,S),S,D);
-calc_pixel(shadow,S,D,_F,_C) ->
+calc_pixel(copy0,S,_D,_F,_C,_AF,BF) ->
+    set_alpha(S,BF);
+calc_pixel(sum,S,D,_F,_C,_AF, BF) ->
+    set_alpha(pixel_add(S,D), BF);
+calc_pixel(blend,S,D,_F,_C,AF,BF) ->
+    P = case has_alpha(AF) of
+	    true -> pixel_blend(element(1,S),S,D);
+	    false -> S
+	end,
+    set_alpha(P,BF);
+calc_pixel(shadow,S,D,_F,_C,_AF,BF) ->
     G = luminance(S),
-    pixel_shadow(G, D);
-calc_pixel(shadow_blend,_S={0,_,_,_},D,_F,_C) ->
-    D;
-calc_pixel(shadow_blend,S={255,_,_,_},D,_F,_C) ->
+    set_alpha(pixel_shadow(G, D), BF);
+calc_pixel(shadow_blend,_S={0,_,_,_},D,_F,_C,_AF,BF) ->
+    set_alpha(D,BF);
+calc_pixel(shadow_blend,S={255,_,_,_},D,_F,_C,_AF,BF) ->
     G = luminance(S),
-    pixel_shadow(G, D);
-calc_pixel(shadow_blend,S,D,_F,_C) ->
+    P = pixel_shadow(G, D),
+    set_alpha(P, BF);
+calc_pixel(shadow_blend,S,D,_F,_C,_AF,BF) ->
     D1 = pixel_blend(element(1,S),S,D),
     G = luminance(D1),
-    pixel_shadow(G, D1);
-calc_pixel(alpha,S,D,F,_C) ->
-    case fix_8_8(F) of
-	255 -> D;
-	Fu  ->
-	    {_,R,G,B} = pixel_blend(Fu,S,D),
-	    {element(1,D),R,G,B}
-    end;
-calc_pixel(fade,S,D,F,_C) ->
+    P = pixel_shadow(G, D1),
+    set_alpha(P, BF);
+calc_pixel(alpha,S,D,F,_C,_AF,BF) ->
+    P = case fix_8_8(F) of
+	    255 -> D;
+	    Fu  ->
+		{_,R,G,B} = pixel_blend(Fu,S,D),
+		{element(1,D),R,G,B}
+	end,
+    set_alpha(P, BF);
+calc_pixel(fade,S,D,F,_C,_AF,BF) ->
     Sa = element(1,S),
-    case fix_8_8(F) of
-	0   -> D;
-	255 -> pixel_blend(Sa,S,D);
-	Fu ->
-	    A = (Sa*Fu) div 256,
-	    pixel_blend(A,S,D)
-    end;
-calc_pixel(color,S,_D,F,Color) ->
+    P = case fix_8_8(F) of
+	    0   -> D;
+	    255 -> 
+		if Sa =:= 255 -> S;
+		   true -> pixel_blend(Sa,S,D)
+		end;
+	    Fu ->
+		A = (Sa*Fu) div 256,
+		pixel_blend(A,S,D)
+	end,
+    set_alpha(P, BF);
+calc_pixel(color,S,_D,F,Color,_AF,BF) ->
     S1 = pixel_add(Color, S),
     A = (element(1,S1)*fix_8_8(F)) div 256,
     S2 = setelement(1,S1,A),
-    pixel_shadow(A, S2);
-calc_pixel(color_blend,S,D,F,Color) ->
+    set_alpha(pixel_shadow(A, S2),BF);
+calc_pixel(color_blend,S,D,F,Color,_AF,BF) ->
     S1 = pixel_add(Color, S),
     A = (element(1,S1)*fix_8_8(F)) div 256,
-    pixel_blend(A, S1, D);
+    set_alpha(pixel_blend(A, S1, D), BF);
+calc_pixel(clear,_S,_D,_F,_C,_AF,BF) ->
+    set_alpha({0,0,0,0}, BF);
+calc_pixel(src,S,_D,_F,_C,_AF,BF)  ->
+    set_alpha(pixel_scale(element(1,S), S),BF);
+calc_pixel(dst,_S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_scale(element(1,D), D),BF);
+calc_pixel(src_over,S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_over(S, D), BF);
+calc_pixel(dst_over,S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_over(D, S),BF);
+calc_pixel(src_in,S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_in(S, D),BF);
+calc_pixel(dst_in,S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_in(D, S),BF);
+calc_pixel(src_out,S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_out(S, D),BF);
+calc_pixel(dst_out,S,D,_F,_C,_AF,BF) -> 
+    set_alpha(pixel_out(D, S),BF);
+calc_pixel(src_atop,S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_atop(S, D),BF);
+calc_pixel(dst_atop,S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_atop(D, S),BF);
+calc_pixel('xor',S,D,_F,_C,_AF,BF) ->    
+    set_alpha(pixel_xor(S, D),BF);
+calc_pixel('copy',S, D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_copy(S, D), BF);
+calc_pixel('add',S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_add(S, D),BF);
+calc_pixel('sub',S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_sub(S, D),BF);
+calc_pixel(src_blend,S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_blend(element(1,S), S, D),BF);
+calc_pixel(dst_blend,S,D,_F,_C,_AF,BF) ->
+    set_alpha(pixel_blend(element(1,D), D, S),BF).
 
-calc_pixel(clear,_S,_D,_F,_C) ->
-    {0,0,0,0};
-calc_pixel(src,S,_D,_F,_C)  ->     pixel_scale(element(1,S), S);
-calc_pixel(dst,_S,D,_F,_C) ->      pixel_scale(element(1,D), D);
-calc_pixel(src_over,S,D,_F,_C) ->  pixel_over(S, D);
-calc_pixel(dst_over,S,D,_F,_C) ->  pixel_over(D, S);
-calc_pixel(src_in,S,D,_F,_C) ->    pixel_in(S, D);
-calc_pixel(dst_in,S,D,_F,_C) ->    pixel_in(D, S);
-calc_pixel(src_out,S,D,_F,_C) ->   pixel_out(S, D);
-calc_pixel(dst_out,S,D,_F,_C) ->   pixel_out(D, S);
-calc_pixel(src_atop,S,D,_F,_C) ->  pixel_atop(S, D);
-calc_pixel(dst_atop,S,D,_F,_C) ->  pixel_atop(D, S);
-calc_pixel('xor',S,D,_F,_C) ->     pixel_xor(S, D);
-calc_pixel('copy',S, D,_F,_C) ->    pixel_copy(S, D);
-calc_pixel('add',S,D,_F,_C) ->     pixel_add(S, D);
-calc_pixel('sub',S,D,_F,_C) ->     pixel_sub(S, D);
-calc_pixel(src_blend,S,D,_F,_C) -> pixel_blend(element(1,S), S, D);
-calc_pixel(dst_blend,S,D,_F,_C) -> pixel_blend(element(1,D), D, S).
+set_alpha({A,R,G,B},DstFormat) ->
+    {Am,Rm,Gm,Bm} = pixel_mask(DstFormat),
+    P = {A band Am, R band Rm, G band Gm, B band Bm},
+    case has_alpha(DstFormat) of
+	true -> P;
+	false -> setelement(1,P,255)
+    end.
     
 %% pixel operation 
 pixel_blend(A, {A0,R0,G0,B0}, {A1,R1,G1,B1}) ->
@@ -308,20 +349,120 @@ luminance({_A,R,G,B}) ->
 luminance(R,G,B) ->
     (R*299 + G*587 + B*114) div 1000.
 
+has_alpha(Format) ->
+    %% fixme: return complex pixel_format!
+    case Format of
+	rgb       -> false;
+	bgr       -> false;
+	r8g8b8    -> false;
+	b8g8r8    -> false;
+	argb      -> true;
+	abgr      -> true;
+	rgba      -> true;
+	bgra      -> true;
+	'565'     -> false;
+	'565BE'   -> false;
+	'565LE'   -> false;
+	r5g6b5    -> false;
+	r5g6b5BE  -> false;
+	r5g6b5LE  -> false;
+	b5g6r5    -> false;
+	b5g6r5BE  -> false;
+	b5g6r5LE  -> false;
+	'1555'     -> true;
+	'a1r5g5b5' -> true;
+	gray8a8    -> true;
+	a8l8       -> true;
+	gray8      -> false;
+	alpha8     -> true;
+	a8         -> true;
+	r8         -> false;
+	g8         -> false;
+	b8         -> false
+    end.
+
+
+pixel_mask(Format) ->
+    case Format of
+	rgb       -> { 255, 255, 255, 255 };
+	bgr       -> { 255, 255, 255, 255 };
+	r8g8b8    -> { 255, 255, 255, 255 };
+	b8g8r8    -> { 255, 255, 255, 255 };
+
+	argb      -> { 255, 255, 255, 255};
+	abgr      -> { 255, 255, 255, 255};
+	rgba      -> { 255, 255, 255, 255};
+	bgra      -> { 255, 255, 255, 255};
+
+	'565'     -> { 255, 16#f8, 16#fc, 16#f8 };
+	'565BE'   -> { 255, 16#f8, 16#fc, 16#f8 };
+	'565LE'   -> { 255, 16#f8, 16#fc, 16#f8 };
+
+	r5g6b5    -> { 255, 16#f8, 16#fc, 16#f8 };
+	r5g6b5BE  -> { 255, 16#f8, 16#fc, 16#f8 };
+	r5g6b5LE  -> { 255, 16#f8, 16#fc, 16#f8 };
+
+	b5g6r5    -> { 255, 16#f8, 16#fc, 16#f8 };
+	b5g6r5BE  -> { 255, 16#f8, 16#fc, 16#f8 };
+	b5g6r5LE  -> { 255, 16#f8, 16#fc, 16#f8 };
+
+	'1555'     -> { 255, 16#f8, 16#f8, 16#f8 };	
+	'a1r5g5b5' -> { 255, 16#f8, 16#f8, 16#f8 };	
+
+	gray8a8    -> { 255, 255, 255, 255};
+	a8l8       -> { 255, 255, 255, 255};
+	gray8      -> { 255, 255, 255, 255};
+	alpha8     -> { 255, 0, 0, 0   };
+	a8         -> { 255, 0, 0, 0   };
+	r8         -> { 255, 255, 0, 0 };
+	g8         -> { 255, 0, 255, 0 };
+	b8         -> { 255, 0, 0, 255 }
+    end.
 
 random_pixel(Format) ->
     case Format of
-	rgb  -> { 255, random(0,255), random(0,255), random(0,255) };
-	bgr  -> { 255, random(0,255), random(0,255), random(0,255) };
-	argb -> { random(0,255), random(0,255), random(0,255), random(0,255)};
-	abgr -> { random(0,255), random(0,255), random(0,255), random(0,255)};
-	rgba -> { random(0,255), random(0,255), random(0,255), random(0,255)};
-	bgra -> { random(0,255), random(0,255), random(0,255), random(0,255)};
-	a8   -> { random(0,255), 0, 0, 0};
-	r8   -> { 255, random(0,255), 0, 0 };
-	g8   -> { 255, 0, random(0,255), 0 };
-	b8   -> { 255, 0, 0, random(0,255) }
+	rgb     -> { 255, r8(), r8(), r8() };
+	bgr     -> { 255, r8(), r8(), r8() };
+	r8g8b8  -> { 255, r8(), r8(), r8() };
+	b8g8r8  -> { 255, r8(), r8(), r8() };
+
+	argb -> { r8(), r8(), r8(), r8()};
+	abgr -> { r8(), r8(), r8(), r8()};
+	rgba -> { r8(), r8(), r8(), r8()};
+	bgra -> { r8(), r8(), r8(), r8()};
+
+	'565'     -> { 255, r8(5), r8(6), r8(5) };
+	'565BE'   -> { 255, r8(5), r8(6), r8(5) };
+	'565LE'   -> { 255, r8(5), r8(6), r8(5) };
+
+	r5g6b5    -> { 255, r8(5), r8(6), r8(5) };
+	r5g6b5BE  -> { 255, r8(5), r8(6), r8(5) };
+	r5g6b5LE  -> { 255, r8(5), r8(6), r8(5) };
+
+	b5g6r5    -> { 255, r8(5), r8(6), r8(5) };
+	b5g6r5BE  -> { 255, r8(5), r8(6), r8(5) };
+	b5g6r5LE  -> { 255, r8(5), r8(6), r8(5) };
+
+	'1555'     -> { r8(1), r8(5), r8(5), r8(5) };	
+	'a1r5g5b5' -> { r8(1), r8(5), r8(5), r8(5) };	
+
+	gray8a8    -> G=r8(), { r8(), G, G, G};
+	a8l8       -> G=r8(), { r8(), G, G, G};
+	gray8      -> G=r8(), { 255, G, G, G};
+
+	alpha8     -> { r8(), 0, 0, 0 };
+
+	a8   -> { r8(), 0, 0, 0   };
+	r8   -> { 255, r8(), 0, 0 };
+	g8   -> { 255, 0, r8(), 0 };
+	b8   -> { 255, 0, 0, r8() }
     end.
+
+r8() -> r8(8).
+
+r8(8) -> random(0,255);
+r8(5) -> random(0,31) bsl 3;
+r8(6) -> random(0,63) bsl 2.
 	    
 random(A, B) when is_integer(A), A =< B ->   
     random:uniform((B - A) + 1) - 1 + A.

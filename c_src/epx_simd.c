@@ -89,7 +89,7 @@ static unsigned char   cpu_serial_number[64];
 static size_t          cpu_serial_number_len = 0;
 static char            cpu_vendor_name[64];
 static size_t          cpu_vendor_name_len = 0;
-static char            cpu_features[256];
+static char            cpu_features[1024];
 static size_t          cpu_features_len = 0;
 static int             cpu_cache_line_size = 0;
 //
@@ -151,17 +151,80 @@ int epx_simd_accel()
 }
 
 #if defined(__i386__) || defined(__x86_64__)
-
-static char* cpuid_feature_name[32] =
+//
+// http://en.wikipedia.org/wiki/CPUID
+//
+static char* cpuid_feature_name_dx[32] =
 {
-    "fpu",  "vme",   "de",    "pse",
-    "tsc",  "msr",   "pae",   "mce",
-    "cx8",  "apic",  "b10",   "sep",
-    "mtrr", "pge",   "mca",   "cmov",
-    "pat",  "pse36", "psn",   "clfsh",
-    "b20",  "ds",    "acpi",  "mmx",
-    "fxsr", "sse",   "sse2",  "ss", 
-    "htt",  "tm",    "ia64",  "pbe" 
+    "fpu",    // 0  - Floating-point Unit On-Chip
+    "vme",    // 1  - Virtual Mode Extension
+    "de",     // 2  - Debugging Extension
+    "pse",    // 3  - Page Size Extension
+    "tsc",    // 4  - Time Stamp Counter
+    "msr",    // 5  - Model Specific Registers
+    "pae",    // 6  - Physical Address Extension
+    "mce",    // 7  - Machine-Check Exception
+    "cx8",    // 8  - CMPXCHG8 Instruction
+    "apic",   // 9  - On-chip APIC Hardware
+    "_",      // 10 - Reserved
+    "sep",    // 11 - Fast System Call
+    "mtrr",   // 12 - Memory Type Range Registers
+    "pge",    // 13 - Page Global Enable
+    "mca",    // 14 - Machine-Check Architecture
+    "cmov",   // 15 - Conditional Move Instruction
+    "pat",    // 16 - Page Attribute Table
+    "pse36",  // 17 - 36-bit Page Size Extension
+    "psn",    // 18 - Processor serial number is present and enabled
+    "clfsh",  // 19 - CLFLUSH Instruction
+    "_",      // 20 - Reserved
+    "ds",     // 21 - Debug Store
+    "acpi",   // 22 - Thermal Monitor and Software Controlled Clock Facilities
+    "mmx",    // 23 - MMX technology
+    "fxsr",   // 24 - FXSAVE and FXSTOR Instructions
+    "sse",    // 25 - Streaming SIMD Extensions
+    "sse2",   // 26 - Streaming SIMD Extensions 2
+    "ss",     // 27 - Self-Snoop
+    "ht",     // 28 - Multi-Threading
+    "tm",     // 29 - Thermal Monitor
+    "ia64",   // 30 - Reserved ? 64-bit
+    "pbe"     // 31 - Pending Break Enable
+};
+
+// uses short name sse3 instead of pni !
+static char* cpuid_feature_name_cx[32] =
+{
+    "sse3",         // 0  - Streaming SIMD Extensions 3
+    "pclmulqdq",    // 1  - PCLMULDQ Instruction
+    "dtes64",       // 2  - 64-Bit Debug Store
+    "monitor",      // 3  - MONITOR/MWAIT
+    "ds_cpl",       // 4  - CPL Qualified Debug Store
+    "vmx",          // 5  - Virtual Machine Extensions
+    "smx",          // 6  - Safer Mode Extensions
+    "est",          // 7  - Enhanced Intel SpeedStep® Technology
+    "tm2",          // 8  - Thermal Monitor 2
+    "ssse3",        // 9  - Supplemental Streaming SIMD Extensions 3
+    "cid",          // 10 - L1 Context ID
+    "_",            // 11 - Reserved
+    "fma",          // 12 - Fused Multiply Add
+    "cx16",         // 13 - CMPXCHG16B
+    "xtpr",         // 14 - xTPR Update Control
+    "pdcm",         // 15 - Perfmon and Debug Capability
+    "_",            // 16 - Reserved
+    "pcid",         // 17 - Process Context Identifiers
+    "dca",          // 18 - Direct Cache Access
+    "sse4.1",       // 19 - Streaming SIMD Extensions 4.1
+    "sse4.2",       // 20 - Streaming SIMD Extensions 4.2
+    "x2apic",       // 21 - Extended xAPIC Support
+    "movbe",        // 22 - MOVBE Instruction
+    "popcnt",       // 23 - POPCNT Instruction
+    "tscdeadline",  // 24 - Time Stamp Counter Deadline
+    "aes",          // 25 - AES Instruction Extensions
+    "xsave",        // 26 - XSAVE/XSTOR States
+    "osxsave",      // 27 - OS-Enabled Extended State Management
+    "avx",          // 28 - Advanced Vector Extensions
+    "f16c",         // 29 - 16-bit floating-point conversion instructions
+    "rdrnd",        // 30 - RDRAND instruction supported
+    "hypervisor"    // 31 - (Not used in Intel doc...)
 };
 
 static void cpuid(int f, int *eax, int *ebx, int* ecx, int* edx)
@@ -208,12 +271,14 @@ static char* cpuidVendorName(char* name)
     return name;
 }
 
-static int cpuidFeature()
+static int cpuidFeature(int* ecx, int* edx)
 {
     int a, b, c, d;
 
     cpuid(1, &a, &b, &c, &d);
-    return d;
+    *ecx = c;
+    *edx = d;
+    return 0;
 }
 
 // Serial number is 12 bytes 
@@ -265,7 +330,8 @@ static int cpuidCacheLineSize()
 
 void epx_simd_init(int accel)
 {
-    int feature = 0;
+    int feature_cx = 0;
+    int feature_dx = 0;
 
 
 #if defined(__i386__) || defined(__x86_64__)
@@ -279,20 +345,35 @@ void epx_simd_init(int accel)
     EPX_DBGFMT("cpu: %s\r\n", name);
 
     EPX_DBGFMT("Features:");
-    feature = cpuidFeature();
+    cpuidFeature(&feature_cx, &feature_dx);
     j = 0;
+    // first the old dx flags
     for (i = 0; i < 32; i++) {
-	if ((1 << i) & feature) {
-	    size_t len = strlen(cpuid_feature_name[i]);
+	if ((1 << i) & feature_dx) {
+	    size_t len = strlen(cpuid_feature_name_dx[i]);
 	    // EPX_DBGFMT("  %s", cpuid_feature_name[i]);
 	    if (j+len+1 < (int)sizeof(cpu_features)) {
-		memcpy(&cpu_features[j], cpuid_feature_name[i], len);
+		memcpy(&cpu_features[j], cpuid_feature_name_dx[i], len);
 		cpu_features[j+len] = ',';
 		j++;
 		j += len;
 	    }
 	}
     }
+    // then the later cx flags
+    for (i = 0; i < 32; i++) {
+	if ((1 << i) & feature_cx) {
+	    size_t len = strlen(cpuid_feature_name_cx[i]);
+	    // EPX_DBGFMT("  %s", cpuid_feature_name[i]);
+	    if (j+len+1 < (int)sizeof(cpu_features)) {
+		memcpy(&cpu_features[j], cpuid_feature_name_cx[i], len);
+		cpu_features[j+len] = ',';
+		j++;
+		j += len;
+	    }
+	}
+    }
+
     if (j > 0) {
 	j--;
 	cpu_features[j] = '\0';
@@ -302,7 +383,7 @@ void epx_simd_init(int accel)
     cpu_cache_line_size = cpuidCacheLineSize();
     EPX_DBGFMT("cache_line_size: %d", cpu_cache_line_size);
 
-    if (feature & CPUID_PSN) {
+    if (feature_cx & CPUID_PSN) {
 	char xserial[25];
 	cpuidSerial(cpu_serial_number);
 	cpu_serial_number_len = 12;
@@ -343,7 +424,7 @@ void epx_simd_init(int accel)
 #endif
 
 #if defined(__MMX__) && defined(USE_MMX)
-    if ((feature & CPUID_MMX) &&
+    if ((feature_cx & CPUID_MMX) &&
 	((accel==EPX_SIMD_AUTO) || (accel & EPX_SIMD_MMX))) {
 	EPX_DBGFMT("SIMD: Enable mmx");
 	epx_simd = &simd_mmx;
@@ -352,7 +433,7 @@ void epx_simd_init(int accel)
 
 
 #if defined(__SSE2__) && defined(USE_SSE2)
-    if ((feature & CPUID_SSE2) &&
+    if ((feature_cx & CPUID_SSE2) &&
 	((accel==EPX_SIMD_AUTO) || (accel & EPX_SIMD_SSE2))) {
 	EPX_DBGFMT("SIMD: Enable sse2");
 	epx_simd = &simd_sse2;

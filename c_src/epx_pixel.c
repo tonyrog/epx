@@ -46,7 +46,7 @@ static struct {
     { "rgb",      EPX_FORMAT_RGB  },  
     { "r8g8b8",   EPX_FORMAT_RGB  },
 
-    { "bgr",      EPX_FORMAT_BGR  },  
+    { "bgr",      EPX_FORMAT_BGR  },
     { "b8g8r8",   EPX_FORMAT_BGR  },
 
     { "565",      EPX_FORMAT_R5G6B5_BE },
@@ -63,6 +63,10 @@ static struct {
 
     { "1555",     EPX_FORMAT_A1R5G5B5 },
     { "a1r5g5b",  EPX_FORMAT_A1R5G5B5 },
+
+    { "555",      EPX_FORMAT_R5G5B5X1 },
+    { "r5g5b5_1", EPX_FORMAT_R5G5B5X1 },
+    { "_1r5g5b5", EPX_FORMAT_X1R5G5B5 },
 
     { "gray8a8", EPX_FORMAT_A8L8 },
     { "gray16",  EPX_FORMAT_L16 },

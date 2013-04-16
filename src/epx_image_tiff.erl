@@ -22,7 +22,7 @@
 
 -module(epx_image_tiff).
 
--behaviour(ei).
+-behaviour(epx_image).
 -export([magic/1, mime_type/0, extensions/0,
 	 read_info/1, write_info/2,
 	 read/2, write/2]).
@@ -56,10 +56,10 @@ extensions() -> [".tiff", ".tif" ].
 read_info(Fd) ->
     case scan_fd(Fd, fun collect_fun/3, #epx_image { type = ?MODULE }) of
 	{ok, IMG} ->
-	    Bps = ei:attribute(IMG, 'BitsPerSample'),
-	    Xs  = ei:attribute(IMG,'ExtraSamples',[]),
+	    Bps = epx_image:attribute(IMG, 'BitsPerSample'),
+	    Xs  = epx_image:attribute(IMG,'ExtraSamples',[]),
 	    Format = 
-		case ei:attribute(IMG, 'PhotoMetricInterpretation') of
+		case epx_image:attribute(IMG, 'PhotoMetricInterpretation') of
 		    [0] ->
 			case Bps of
 			    [4] -> gray4;
@@ -95,21 +95,13 @@ read_info(Fd) ->
 write_info(_Fd, _IMG) ->
     ok.
 
-read(Fd, IMG) ->
-    read(Fd, IMG, 
-	 fun(_, Row, Ri, St) ->
-		 ?dbg("tiff: load row ~p\n", [Ri]),
-		 [{Ri,Row}|St] end, 
-	 []).
-
-
-read(Fd,IMG, RowFun, St0) ->
-    SOffset       = ei:attribute(IMG, 'StripOffset'),
-    SCount        = ei:attribute(IMG, 'StripByteCounts'),
-    [Compression] = ei:attribute(IMG, 'Compression',[1]),
-    [Predict]     = ei:attribute(IMG, 'Predictor', [0]),
-    [FillOrder]   = ei:attribute(IMG, 'FillOrder', [1]),
-    {SampleOrder,Y0,Ys} = case ei:attribute(IMG, 'Orientation', [1]) of
+read(Fd,IMG) ->
+    SOffset       = epx_image:attribute(IMG, 'StripOffset'),
+    SCount        = epx_image:attribute(IMG, 'StripByteCounts'),
+    [Compression] = epx_image:attribute(IMG, 'Compression',[1]),
+    [Predict]     = epx_image:attribute(IMG, 'Predictor', [0]),
+    [FillOrder]   = epx_image:attribute(IMG, 'FillOrder', [1]),
+    {SampleOrder,Y0,Ys} = case epx_image:attribute(IMG, 'Orientation', [1]) of
 			      [1] -> {left_to_right, 0, 1};
 			      [2] -> {right_to_left, 0, 1};
 			      [3] -> {right_to_left, IMG#epx_image.height-1,-1};
@@ -118,10 +110,9 @@ read(Fd,IMG, RowFun, St0) ->
     BytesPerRow = (IMG#epx_image.depth div 8) * IMG#epx_image.width,
     ?dbg("BytesPerRow = ~p\n", [BytesPerRow]),
     IMG1 = IMG#epx_image { order = SampleOrder },
-    PIX = #ei_pixmap { width = IMG1#epx_image.width,
-			height = IMG1#epx_image.height,
-			format = IMG1#epx_image.format },
-    case read_strips(Fd,PIX,RowFun,St0,Y0,Ys,BytesPerRow,
+    PIX = epx:pixmap_create(IMG1#epx_image.width,IMG1#epx_image.height,
+			    IMG1#epx_image.format),
+    case read_strips(Fd,PIX,Y0,Ys,BytesPerRow,
 		     Compression, Predict, FillOrder,SOffset,SCount) of
 	{ok, PIX1} ->
 	    {ok, IMG1#epx_image { pixmaps = [PIX1]}};
@@ -130,36 +121,33 @@ read(Fd,IMG, RowFun, St0) ->
     end.
 
 
-read_strips(_Fd,PIX,_RowFun,St0,_Ri,_Rs,
+read_strips(_Fd,PIX,_Ri,_Rs,
 	    _BytesPerRow,_Compression, _Predict, _Fill, [], []) ->
-    {ok, PIX#ei_pixmap { pixels = St0 }};
-read_strips(Fd,PIX,RowFun,St0,Ri,Rs,
+    {ok,PIX};
+read_strips(Fd,PIX,Ri,Rs,
 	    BytesPerRow,Compression, Predict, Fill,
 	    [Offs|SOffset], [Size|SCount]) ->
     case file:pread(Fd,Offs,Size) of
 	{ok,Bin} ->
 	    case Compression of
 		1 -> %% no compression
-		    {St1,Rj} = split_strip(PIX,Bin,BytesPerRow,
-					   RowFun,St0,Ri,Rs),
-		    read_strips(Fd,PIX,RowFun,St1,Rj,Rs,BytesPerRow,
+		    Rj = split_strip(PIX,Bin,BytesPerRow,Ri,Rs),
+		    read_strips(Fd,PIX,Rj,Rs,BytesPerRow,
 				Compression,Predict,Fill,SOffset,SCount);
 
 		5 -> %% lzw compression
 		    Bin1 = lzw:decompress_tiff(Bin, 8, Fill),
-		    Bin2 = undo_differencing(Bin1, Predict,
-					     PIX#ei_pixmap.format,
-					     PIX#ei_pixmap.width),
-		    {St1,Rj} = split_strip(PIX,Bin2,BytesPerRow,
-					   RowFun,St0,Ri,Rs),
-		    read_strips(Fd,PIX,RowFun,St1,Rj,Rs,BytesPerRow,
+		    [{width,Width},{format,Format}] =
+			epx:pixmap_info(PIX, [width,format]),
+		    Bin2 = undo_differencing(Bin1, Predict, Format, Width),
+		    Rj = split_strip(PIX,Bin2,BytesPerRow,Ri,Rs),
+		    read_strips(Fd,PIX,Rj,Rs,BytesPerRow,
 				Compression, Predict, Fill, SOffset, SCount);
 		
 		32773 ->
 		    Bin1 = unpack_bits(Bin),
-		    {St1,Rj} = split_strip(PIX,Bin1,BytesPerRow,
-					   RowFun,St0,Ri,Rs),
-		    read_strips(Fd,PIX,RowFun,St1,Rj,Rs,BytesPerRow,
+		    Rj = split_strip(PIX,Bin1,BytesPerRow,Ri,Rs),
+		    read_strips(Fd,PIX,Rj,Rs,BytesPerRow,
 				Compression, Predict, Fill, SOffset, SCount);
 		_ ->
 		    {error, {unknown_compression,Compression}}
@@ -169,13 +157,15 @@ read_strips(Fd,PIX,RowFun,St0,Ri,Rs,
     end.
 
 
-split_strip(PIX,Strip,RowWidth,RowFun,St0,Ri,Rs) ->
+split_strip(PIX,Strip,RowWidth,Ri,Rs) ->
     case Strip of
-	<<Row:RowWidth/binary, Tail/binary>> ->
-	    St1 = RowFun(PIX,Row,Ri,St0),
-	    split_strip(PIX,Tail,RowWidth,RowFun,St1,Ri+Rs,Rs);
+	<<RowData:RowWidth/binary, Tail/binary>> ->
+	    [{width,Width},{format,Format}] = 
+		epx:pixmap_info(PIX, [width,format]),
+	    epx:pixmap_put_pixels(PIX,0,Ri,Width,1,Format,RowData),
+	    split_strip(PIX,Tail,RowWidth,Ri+Rs,Rs);
 	_ ->
-	    {St0,Ri}
+	    Ri
     end.
 
 
@@ -446,6 +436,7 @@ decode_tag(Tag) ->
 	?YCbCrPositioning -> 'YCbCrPositioning';
 	?ReferenceBlackWhite -> 'ReferenceBlackWhite';
 	?Copyright -> 'Copyright';
+	?GPSIFD -> 'GPSIFD';
 	_ -> Tag
     end.
 

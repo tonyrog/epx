@@ -859,50 +859,50 @@ collect_maker_fixme(Fd, T, St) ->
     MakerBin = T#tiff_entry.value,
     case MakerBin of
 	<<"OLYMP",0,1,0,_/binary>> ->
-	    ei_tiff:scan_ifd(Fd,
-			     [$0,$:|T#tiff_entry.ifd],
-			     T#tiff_entry.offs+8,
-			     T#tiff_entry.endian,
-			     fun collect_olymp/3, St);
+	    epx_image_tiff:scan_ifd(Fd,
+				    [$0,$:|T#tiff_entry.ifd],
+				    T#tiff_entry.offs+8,
+				    T#tiff_entry.endian,
+				    fun collect_olymp/3, St);
 	<<"Nikon",0,1,0,_/binary>> ->
-	    ei_tiff:scan_ifd(Fd,
-			     [$0,$:|T#tiff_entry.ifd],
-			     T#tiff_entry.offs+8,
-			     T#tiff_entry.endian,
-			     fun collect_nikon/3, St);
+	    epx_image_tiff:scan_ifd(Fd,
+				    [$0,$:|T#tiff_entry.ifd],
+				    T#tiff_entry.offs+8,
+				    T#tiff_entry.endian,
+				    fun collect_nikon/3, St);
 	<<"SONY DSC ",0,0,0,_/binary>> ->
 	    %% NOT working - what is SONY doing ?
-	    ei_tiff:scan_ifd(Fd,
-			     [$0,$:|T#tiff_entry.ifd],
-			     T#tiff_entry.offs+14,
-			     T#tiff_entry.endian,
-			     fun collect_sony/3, St);
+	    epx_image_tiff:scan_ifd(Fd,
+				    [$0,$:|T#tiff_entry.ifd],
+				    T#tiff_entry.offs+14,
+				    T#tiff_entry.endian,
+				    fun collect_sony/3, St);
 	<<"FUJIFILM",Offset:32/little>> ->
-	    ei_tiff:scan_ifd_bin(MakerBin, 
-				 [$0,$:|T#tiff_entry.ifd],
-				 Offset, little,
-				 fun collect_fujifilm/3, St);
+	    epx_image_tiff:scan_ifd_bin(MakerBin, 
+					[$0,$:|T#tiff_entry.ifd],
+					Offset, little,
+					fun collect_fujifilm/3, St);
 	_ ->
-	    ei_tiff:scan_ifd(Fd,
-			     [$0,$:|T#tiff_entry.ifd],
-			     T#tiff_entry.offs+8,
-			     T#tiff_entry.endian,
-			     fun collect_other/3, St)
+	    epx_image_tiff:scan_ifd(Fd,
+				    [$0,$:|T#tiff_entry.ifd],
+				    T#tiff_entry.offs+8,
+				    T#tiff_entry.endian,
+				    fun collect_other/3, St)
     end.
 
 
 collect_exif(Fd, T, St) ->
-    ?dbg("EXIF(~s) ~p ~p ~p\n", 
-	[T#tiff_entry.ifd,
-	 ei_exif:decode_tag(T#tiff_entry.tag),
-	 T#tiff_entry.type, T#tiff_entry.value]),
+    io:format("EXIF(~s) ~p ~p ~p\n", 
+	      [T#tiff_entry.ifd,
+	       epx_exif:decode_tag(T#tiff_entry.tag),
+	       T#tiff_entry.type, T#tiff_entry.value]),
     case T#tiff_entry.tag of
 	?ExifInteroperabilityOffset ->
 	    [Offset] = T#tiff_entry.value,
 	    %% could be handle by a collect_interop?
-	    case ei_tiff:scan_ifd(Fd, [$0,$.|T#tiff_entry.ifd],
-				  Offset, T#tiff_entry.endian,
-				  fun collect_exif/3, St) of
+	    case epx_image_tiff:scan_ifd(Fd, [$0,$.|T#tiff_entry.ifd],
+					 Offset, T#tiff_entry.endian,
+					 fun collect_exif/3, St) of
 		{ok, St1} ->
 		    St1;
 		_Error ->
@@ -922,9 +922,9 @@ collect_exif(Fd, T, St) ->
 
 %% Image info collector functions
 collect_tiff(Fd, T, St) ->
-    Key = ei_tiff:decode_tag(T#tiff_entry.tag),
-    ?dbg("TIFF(~s) ~p ~p ~p\n", 
-	[T#tiff_entry.ifd,Key,T#tiff_entry.type, T#tiff_entry.value]),
+    Key = epx_image_tiff:decode_tag(T#tiff_entry.tag),
+    io:format("TIFF(~s) ~p ~p ~p\n", 
+	      [T#tiff_entry.ifd,Key,T#tiff_entry.type, T#tiff_entry.value]),
     case T#tiff_entry.tag of
 	?ImageWidth ->
 	    [Width] = T#tiff_entry.value,
@@ -954,9 +954,19 @@ collect_tiff(Fd, T, St) ->
 	    end;
 	?ExifOffset ->
 	    [Offset] = T#tiff_entry.value,
-	    case ei_tiff:scan_ifd(Fd, [$0,$.|T#tiff_entry.ifd],
-				  Offset, T#tiff_entry.endian,
-				  fun collect_exif/3, St) of
+	    case epx_image_tiff:scan_ifd(Fd, [$0,$.|T#tiff_entry.ifd],
+					 Offset, T#tiff_entry.endian,
+					 fun collect_exif/3, St) of
+		{ok, St1} ->
+		    St1;
+		_Error ->
+		    St
+	    end;
+	?GPSIFD ->
+	    [Offset] = T#tiff_entry.value,
+	    case epx_image_tiff:scan_ifd(Fd, [$0,$.|T#tiff_entry.ifd],
+					 Offset, T#tiff_entry.endian,
+					 fun collect_exif/3, St) of
 		{ok, St1} ->
 		    St1;
 		_Error ->
@@ -979,7 +989,7 @@ process_jfif(Bin, IMG) ->
     end.
 
 process_exif(Bin, IMG) ->
-    case ei_tiff:scan_binary(Bin, fun collect_tiff/3, IMG) of
+    case epx_image_tiff:scan_binary(Bin, fun collect_tiff/3, IMG) of
 	{ok, IMG1} ->
 	    IMG1;
 	_Error ->

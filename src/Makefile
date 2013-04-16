@@ -13,6 +13,7 @@ MODULES = \
 	epx_image \
 	epx_image_undef \
 	epx_image_png \
+	epx_image_tiff \
 	epx_image_jpeg \
 	epx_image_bmp \
 	epx_image_xpm \

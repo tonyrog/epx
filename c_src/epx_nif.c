@@ -427,6 +427,7 @@ DECL_ATOM(bytes_per_row);
 DECL_ATOM(bits_per_pixel);
 DECL_ATOM(bytes_per_pixel);
 //DECL_ATOM(pixel_format);
+//DECL_ATOM(epx_pixel_format);
 DECL_ATOM(parent);
 DECL_ATOM(clip);
 DECL_ATOM(backend);
@@ -438,6 +439,7 @@ DECL_ATOM(count);
 //DECL_ATOM(width);
 //DECL_ATOM(height);
 //DECL_ATOM(pixel_format);
+//DECL_ATOM(epx_pixel_format);
 
 // window_info
 // DECL_ATOM(width);
@@ -496,6 +498,14 @@ DECL_ATOM(glyph_delta_y);
 DECL_ATOM(glyph_fixed_width);
 DECL_ATOM(glyph_dot_kern);
 
+// Backend info
+DECL_ATOM(pending);
+DECL_ATOM(opengl);
+DECL_ATOM(use_opengl);
+DECL_ATOM(windows);
+DECL_ATOM(pixmaps);
+DECL_ATOM(epx_pixel_formats);
+
 // Font info
 DECL_ATOM(file_name);
 DECL_ATOM(file_size);
@@ -507,6 +517,7 @@ DECL_ATOM(slant);
 DECL_ATOM(style);
 DECL_ATOM(spacing);
 DECL_ATOM(pixel_format);
+DECL_ATOM(epx_pixel_format);
 DECL_ATOM(pixel_size);
 DECL_ATOM(point_size);
 DECL_ATOM(resolution_x);
@@ -676,6 +687,23 @@ DECL_ATOM(b8);
 DECL_ATOM(gray8);
 DECL_ATOM(efnt2);
 DECL_ATOM(a8l8);
+// epx_pixel_format.format
+DECL_ATOM(rgb4);
+DECL_ATOM(rgb5);
+DECL_ATOM(rgb8);
+DECL_ATOM(rgb10);
+DECL_ATOM(rgb12);
+DECL_ATOM(rgb16);
+DECL_ATOM(rgb332);
+DECL_ATOM(rgb232);
+DECL_ATOM(rgb565);
+DECL_ATOM(yuv8);
+DECL_ATOM(alpha);
+DECL_ATOM(gray);
+DECL_ATOM(red);
+DECL_ATOM(green);
+DECL_ATOM(blue);
+DECL_ATOM(calpha);
 
 static epx_gc_t* def_gc = 0;
 
@@ -1303,6 +1331,12 @@ static int get_bool(ErlNifEnv* env, const ERL_NIF_TERM term,
     return 1;
 }
 
+static ERL_NIF_TERM make_bool(ErlNifEnv* env, int value)
+{
+    (void) env;
+    return (value) ? ATOM(true) : ATOM(false);
+}
+
 
 // Parse pixel format argument
 // Input styles:  format-name (atom)
@@ -1328,6 +1362,50 @@ static ERL_NIF_TERM make_pixel_format(ErlNifEnv* env, epx_format_t fmt)
     if (!(name = epx_pixel_format_to_name(fmt)))
 	return ATOM(undefined);
     return enif_make_atom(env, name);
+}
+
+// return
+// #epx_pixel_format { name, format, bgr, alpha_first, alpha, little, bpp }
+//
+static ERL_NIF_TERM make_epx_pixel_format(ErlNifEnv* env, epx_format_t fmt)
+{
+    ERL_NIF_TERM name;
+    ERL_NIF_TERM format;
+    char* ptr;
+
+    if (!(ptr = epx_pixel_format_to_name(fmt)))
+	name=ATOM(undefined);
+    else 
+	name=enif_make_atom(env, ptr);
+    switch((fmt&EPX_M_Fmt)>>12) {
+    case EPX_FMT_RGB4: format = ATOM(rgb4); break;
+    case EPX_FMT_RGB5: format = ATOM(rgb5); break;
+    case EPX_FMT_RGB8: format = ATOM(rgb8); break;
+    case EPX_FMT_RGB10:format = ATOM(rgb10); break;
+    case EPX_FMT_RGB12:format = ATOM(rgb12); break;
+    case EPX_FMT_RGB16:format = ATOM(rgb16); break;
+    case EPX_FMT_RGB332: format = ATOM(rgb332); break;
+    case EPX_FMT_RGB232:format = ATOM(rgb232); break;
+    case EPX_FMT_RGB565:format = ATOM(rgb565); break;
+    case EPX_FMT_YUV8:format = ATOM(yuv8); break;
+    case EPX_FMT_ALPHA:format = ATOM(alpha); break;
+    case EPX_FMT_GRAY:format = ATOM(gray); break;
+    case EPX_FMT_RED:format = ATOM(red); break;
+    case EPX_FMT_GREEN:format = ATOM(green); break;
+    case EPX_FMT_BLUE:format = ATOM(blue); break;
+    case EPX_FMT_CALPHA:format = ATOM(calpha); break;
+    default: format=ATOM(undefined); break;
+    }
+    return 
+	enif_make_tuple(env, 8,
+			ATOM(epx_pixel_format),
+			name,
+			format,
+			(fmt & EPX_F_Bgr) ? ATOM(true) : ATOM(false),
+			(fmt & EPX_F_AFirst) ? ATOM(true) : ATOM(false),
+			(fmt & EPX_F_Alpha) ? ATOM(true) : ATOM(false),
+			(fmt & EPX_F_Little) ? ATOM(true) : ATOM(false),
+			enif_make_int(env, EPX_PIXEL_BIT_SIZE(fmt)));
 }
 
 
@@ -2052,6 +2130,9 @@ static ERL_NIF_TERM pixmap_info(ErlNifEnv* env, int argc,
     }
     else if (argv[1] == ATOM(pixel_format)) {
 	return make_pixel_format(env, src->pixel_format);
+    }
+    else if (argv[1] == ATOM(epx_pixel_format)) {
+	return make_epx_pixel_format(env, src->pixel_format);
     }
     else if (argv[1] == ATOM(parent)) {
 	if (!src->parent)
@@ -3030,6 +3111,9 @@ static ERL_NIF_TERM animation_info(ErlNifEnv* env, int argc,
     else if (argv[1] == ATOM(pixel_format)) {
 	return make_pixel_format(env, anim->hdr.pixel_format);
     }
+    else if (argv[1] == ATOM(epx_pixel_format)) {
+	return make_epx_pixel_format(env, anim->hdr.pixel_format);
+    }
     else 
 	return enif_make_badarg(env);
 }
@@ -3738,6 +3822,8 @@ static ERL_NIF_TERM font_info(ErlNifEnv* env, int argc,
 	return make_font_spacing(env, font->font_info.spacing);
     else if (argv[1] == ATOM(pixel_format))
 	return make_pixel_format(env, font->font_info.pixel_format);
+    else if (argv[1] == ATOM(epx_pixel_format))
+	return make_epx_pixel_format(env, font->font_info.pixel_format);
     else if (argv[1] == ATOM(pixel_size))
 	return enif_make_uint(env, font->font_info.pixel_size);
     else if (argv[1] == ATOM(point_size))
@@ -4197,8 +4283,47 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
 				 const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
-    // Fixme expose, pending, opengl, use_opengl, windows, pixmaps
+    epx_backend_t* backend;
+    
+    if (!get_object(env, argv[0], &backend_res, (void**) &backend))
+	return enif_make_badarg(env);
+
+    if (argv[1] == ATOM(pending)) {  // number of events pending
+	return enif_make_int(env, backend->pending);
+    }
+    else if (argv[1] == ATOM(opengl)) { // opengl support
+	return make_bool(env, backend->opengl);
+    }
+    else if (argv[1] == ATOM(use_opengl)) { // opengl used
+	return make_bool(env, backend->use_opengl);
+    }
+    else if (argv[1] == ATOM(windows)) { // windows attached
+	epx_window_t* window = backend->window_list;
+	ERL_NIF_TERM list = enif_make_list(env, 0);
+	while(window) {
+	    list =
+		enif_make_list_cell(env, 
+				    make_object(env, ATOM(epx_window), window),
+				    list);
+	    window = window->next;
+	}
+	return list;
+    }
+    else if (argv[1] == ATOM(pixmaps)) { // pixmaps attached
+	epx_pixmap_t* pixmap = backend->pixmap_list;
+	ERL_NIF_TERM list = enif_make_list(env, 0);
+	while(pixmap) {
+	    list =
+		enif_make_list_cell(env, 
+				    make_object(env, ATOM(epx_pixmap), pixmap),
+				    list);
+	    pixmap = pixmap->next;
+	}
+	return list;
+    }
+    else if (argv[1] == ATOM(epx_pixel_formats)) { // pixmap formats supported
+	return enif_make_list(env, 0);
+    }
     return enif_make_badarg(env);    
 }
 
@@ -4472,6 +4597,7 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     LOAD_ATOM(bits_per_pixel);
     LOAD_ATOM(bytes_per_pixel);
     LOAD_ATOM(pixel_format);
+    LOAD_ATOM(epx_pixel_format);
     LOAD_ATOM(parent);
     LOAD_ATOM(clip);
     LOAD_ATOM(backend);
@@ -4519,6 +4645,14 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     LOAD_ATOM(glyph_fixed_width);
     LOAD_ATOM(glyph_dot_kern);
 
+    // backend info
+    LOAD_ATOM(pending);
+    LOAD_ATOM(opengl);
+    LOAD_ATOM(use_opengl);
+    LOAD_ATOM(windows);
+    LOAD_ATOM(pixmaps);
+    LOAD_ATOM(epx_pixel_formats);
+
     // font_info atoms
     LOAD_ATOM(file_name);
     LOAD_ATOM(file_size);
@@ -4530,6 +4664,7 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     LOAD_ATOM(style);
     LOAD_ATOM(spacing);
     LOAD_ATOM(pixel_format);
+    LOAD_ATOM(epx_pixel_format);
     LOAD_ATOM(pixel_size);
     LOAD_ATOM(point_size);
     LOAD_ATOM(resolution_x);
@@ -4701,6 +4836,24 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     LOAD_ATOM(gray8);
     LOAD_ATOM(efnt2);
     LOAD_ATOM(a8l8);
+
+    // epx_pixel_format.format
+    LOAD_ATOM(rgb4);
+    LOAD_ATOM(rgb5);
+    LOAD_ATOM(rgb8);
+    LOAD_ATOM(rgb10);
+    LOAD_ATOM(rgb12);
+    LOAD_ATOM(rgb16);
+    LOAD_ATOM(rgb332);
+    LOAD_ATOM(rgb232);
+    LOAD_ATOM(rgb565);
+    LOAD_ATOM(yuv8);
+    LOAD_ATOM(alpha);
+    LOAD_ATOM(gray);
+    LOAD_ATOM(red);
+    LOAD_ATOM(green);
+    LOAD_ATOM(blue);
+    LOAD_ATOM(calpha);
 
     // create the "default" gc
     def_gc = epx_resource_alloc(&gc_res, sizeof(epx_gc_t));

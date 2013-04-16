@@ -121,6 +121,7 @@
 -define(YCbCrPositioning, 531).
 -define(ReferenceBlackWhite, 532).
 -define(Copyright, 33432).    %% ASCII
+-define(GPSIFD, 34853).  %% long offset to GPS info
 
 -endif.
 

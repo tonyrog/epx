@@ -152,11 +152,38 @@ static epx_window_t* find_event_window(X11Backend* x11, Window w)
     return NULL;
 }
 
-#if 0 
-// Not used right now but it's a fixme
+// number of bits set in mask
+static int bit_count(unsigned long mask)
+{
+    int i = 0;
+    while(mask) {
+	if (mask & 1)
+	    i++;
+	mask >>= 1;
+    }
+    return i;
+}
+// first high bit set
+static int bit_pos(unsigned long mask)
+{
+    int i = 31;
+    while(mask) {
+	if (mask >> 31)
+	    return i;
+	mask <<= 1;
+	i--;
+    }
+    return -1;
+}
 
+int efmt_table_size = 0;
+epx_format_t efmt_table[64];
+
+// #if 0 
+// Not used right now but it's a fixme
+#define DBG(...) printf(__VA_ARGS__)
 /* scan trough a screen and locate a "nice" visual  */
-static Visual* find_visual_of_screen(Screen* screen)
+void make_screen_formats(Screen* screen)
 {
     int i;
 
@@ -166,22 +193,83 @@ static Visual* find_visual_of_screen(Screen* screen)
 
 	for (j = 0; j < d->nvisuals; j++) {
 	    Visual* v = &d->visuals[j];
+	    int nr    = bit_count(v->red_mask);
+	    int ng    = bit_count(v->green_mask);
+	    int nb    = bit_count(v->blue_mask);
+	    int ntot  = bit_count(v->red_mask|v->green_mask|v->blue_mask);
+	    int pr    = bit_pos(v->red_mask);
+	    int pg    = bit_pos(v->green_mask);
+	    int pb    = bit_pos(v->blue_mask);
+	    int fmt = 0;
+	    int bgr = 0;
+	    int alpha = 0;
+	    int alpha_first = 0;
+	    int little_endian = 0;
+	    int bits_per_pixel = 0;
+	    epx_format_t efmt;
+	    int c;
+	    int k;
 
-	    (void) v; // Inhibits warning when DBG is not active.
+#if defined(__cplusplus) || defined(c_plusplus)
+	    c = v->c_class;
+#else
+	    c = v->class;
+#endif
+	    if (((c != TrueColor) && (c != DirectColor))) 
+		continue;
 
-	    EDBG("Visual: screen=%d, visual=%d", i, j);
-	    EDBG("          depth=%d", d->depth);
-	    EDBG("             id=%X", (unsigned int)v->visualid);
-	    EDBG("       red_mask=%lX", v->red_mask);
-	    EDBG("     green_mask=%lX", v->green_mask);
-	    EDBG("      blue_mask=%lX", v->blue_mask);
-	    EDBG("   bits_per_rgb=%d", v->bits_per_rgb);
-	    EDBG("%s", "");
+	    bgr = !((pr>pg) && (pg>pb));
+	    if ((v->bits_per_rgb == 5) && (d->depth == 15)) {
+		fmt = EPX_FMT_RGB5;
+		bits_per_pixel = 16;
+	    }
+	    else if ((v->bits_per_rgb == 5) && (d->depth == 16)) {
+		if ((nr == 5) && (ng == 5) && (nb == 5)) {
+		    fmt = EPX_FMT_RGB5;
+		    alpha = 1;
+		    alpha_first = (pr == 14);
+		}
+		else if ((nr == 5) && (ng == 6) && (nb == 5))
+		    fmt = EPX_FMT_RGB565;
+		bits_per_pixel = 16;
+	    }
+	    else if ((v->bits_per_rgb == 8) && (d->depth == 24)) {
+		fmt = EPX_FMT_RGB8;
+		bits_per_pixel = 24;
+	    }
+	    else if ((v->bits_per_rgb == 8) && (d->depth == 32)) {
+		fmt = EPX_FMT_RGB8;
+		alpha = 1;
+		alpha_first = (pr == 23);
+		bits_per_pixel = 32;
+	    }
+
+	    efmt = EPX_FMT(fmt,bgr,alpha,alpha_first,little_endian,bits_per_pixel);
+	    for (k = 0; k < efmt_table_size; k++) {
+		if (efmt_table[k] == efmt)
+		    break;
+	    }
+	    if (k == efmt_table_size) {
+		if (efmt_table_size < 
+		    (int)(sizeof(efmt_table)/sizeof(efmt_table[0]))) {
+		    char* pt_name;
+		    efmt_table[k] = efmt;
+		    efmt_table_size++;
+		    // construct epx_format_t value and remove duplicates
+		    // ignore glx variants for now
+		    if ((pt_name = epx_pixel_format_to_name(efmt)) != NULL)
+			printf("epx_format = %s\n", pt_name);
+		    else {
+			printf("#r=%d,#g=%d,#b=%d,bit=%d,depth=%d,.r=%d,.g=%d,.b=%d\r\n",
+			       nr,ng,nb,ntot,d->depth,
+			       pr,pg,pb);
+		    }
+		}
+	    }
 	}
     }
-    return NULL;
 }
-#endif
+// #endif
 
 
 
@@ -220,6 +308,9 @@ epx_backend_t* x11_init(epx_dict_t* param)
 	be->b.use_opengl = int_param;
     
     be->screen = DefaultScreen(be->display);
+
+    make_screen_formats(ScreenOfDisplay(be->display,be->screen));
+
     if (be->b.use_opengl) {
 #ifdef HAVE_OPENGL
 	int   nscreens;
@@ -911,7 +1002,8 @@ next:
     case KeyPress:
     case KeyRelease: {
 	char ignored_char;
-	KeySym sym = XKeycodeToKeysym(x11->display, ev.xkey.keycode, 0);
+	//KeySym sym = XKeycodeToKeysym(x11->display, ev.xkey.keycode, 0);
+	KeySym sym = XkbKeycodeToKeysym(x11->display, ev.xkey.keycode, 0, 0);
 	
 	if (sym == NoSymbol) {
 	    EPX_DBGFMT("event sym=NoSymbol");

@@ -53,7 +53,7 @@
 	  ascent
 	 }).
 
-
+%% FIXME: lager ?
 -define(epx_info(F,A), error_logger:info_msg(io_lib:format((F),(A)))).
 -define(epx_warning(F,A), error_logger:warning_msg(io_lib:format((F),(A)))).
 -define(epx_error(F,A), error_logger:error_msg(io_lib:format((F),(A)))).
@@ -64,4 +64,21 @@
 	    _ -> 
 		ok
 	end).
+
+-type epx_px_format() ::
+	rgb4 | rgb5 | rgb8 | rgb10 | rgb12 | rgb16 | rgb332 | rgb232 |
+	rgb565 | yuv8 | alpha | gray | red | green | blue | calpha.
+%% note! calpha is used in efnt2 format
+
+-record(epx_pixel_format,
+	{
+	  name         :: atom(),          %% optional name
+	  format       :: epx_px_format(), %% various channel size
+	  bgr          :: boolean(),       %% bgr or rgb channel order
+	  alpha_first  :: boolean(),       %% alpha first or last channel
+	  alpha        :: boolean(),       %% alpha used or not
+	  little       :: boolean(),       %% overall pixel endian
+	  bits_per_pixel :: 1..64          %% overall number of bits 
+	}).
+
 -endif.
