@@ -34,7 +34,7 @@ LIBDIR=../lib
 ifeq ($(TYPE), debug)
 override OBJDIR=../obj/debug
 override LIBDIR=../lib/debug
-CFG_LIB=$(EPX_DIR)/lib/debug/epx.a -lm
+CFG_LIB=$(EPX_DIR)/lib/debug/epx.a -lm 
 DFLAGS += -Ddebug -DDEBUG -D_THREAD_SAFE -D_REENTRANT
 CFLAGS += -g -Wall -Wextra -Wswitch-default -Wswitch-enum -fno-common 
 endif
@@ -42,7 +42,7 @@ endif
 ifeq ($(TYPE), release)
 override OBJDIR=../obj/release
 override LIBDIR=../lib/release
-CFG_LIB=$(EPX_DIR)/lib/release/epx.a -lm
+CFG_LIB=$(EPX_DIR)/lib/release/epx.a -lm 
 DFLAGS += -D_THREAD_SAFE -D_REENTRANT
 CFLAGS += -O3 -Wall -Wextra -Wswitch-default -Wswitch-enum -fno-common
 endif
@@ -285,7 +285,7 @@ ifdef RANLIB
 endif
 
 $(EPX_NIF): $(EPX_LIB) $(OBJDIR)/epx_nif.o
-	$(LD_SHARED) -o $@ $(OBJDIR)/epx_nif.o $(DLL_LIBS) $(BE_LD_FLAGS) $(EPX_LIB) $(LD_FLAGS) $(ARCH_FLAGS)
+	$(LD_SHARED) -o $@ $(OBJDIR)/epx_nif.o $(DLL_LIBS)  $(EPX_LIB) $(LD_FLAGS) $(ARCH_FLAGS) $(BE_LD_FLAGS)
 
 -include $(OBJDIR)/depend.mk
 
