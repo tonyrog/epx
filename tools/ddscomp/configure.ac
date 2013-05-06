@@ -13,7 +13,7 @@ AC_HEADER_STDC
 
 AC_PROG_CXX
 
-AC_ARG_WITH(core, [  --with-core=dir           Core code base directory. Default: ../ ],,[with_core=".."])
+AC_ARG_WITH(core, [  --with-core=dir           Core code base directory. Default: ../.. ],,[with_core="../.."])
 AC_SUBST(CORE_DIR, $with_core)
 
 AC_ARG_WITH(ffmpeg, [  --with-ffmpeg=dir       Where to look for ffmpeg. Default: ../../../extern ],,[with_ffmpeg="../../extern"])

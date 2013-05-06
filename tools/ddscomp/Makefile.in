@@ -4,7 +4,7 @@
 #
 CXX := @CXX@
 VERSION:=@VERSION@
-BINDIR := ../bin
+BINDIR :=  @CORE_DIR@/bin
 TARGET := $(BINDIR)/@Target@
 COREINC := @CORE_DIR@/include
 EPXINC := @CORE_DIR@/include
