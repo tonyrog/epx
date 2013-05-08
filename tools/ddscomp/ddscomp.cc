@@ -21,19 +21,28 @@
 //                                // imageOffset[0] == 0.
 //
 //  After the header, there are image_count images of varying sizes.
-//  Each bimage has one or more of the following image blocks. Each block
-//  describes how the next given number of pixels are to be drawn.
-//  A block never wraps onto a new line. At the end of the current
-//  line the current block ends, and a new one starts for the next line.
-//  If a line in an image is blank, a EPX_ANIM_SKIP block is given
-//  with the pixel_count set to mWidth. When the accumulated pixel_count
-//  for all blocks processed so far is equal to mWidth, a new line is started.
+//  Each image has one or more of the image blocks described
+//  below. Each block describes how the next given number of pixels
+//  are to be drawn.  A block never wraps onto a new line. At the end
+//  of the current line the current block ends, and a new block starts
+//  for the next line.  If a line in an image is blank, a
+//  EPX_ANIM_SKIP block is given with the pixel_count set to
+//  mWidth. When the accumulated pixel_count for all blocks processed
+//  so far is equal to mWidth, a new line is started.
 //
-//  Each line has one or or more of sections, each one with the following
-//  format:
+//  Each block can be one of the following types.
+//
+// typedef struct _epx_anim_pixels_t {
+//    uint8_t    type;       // Draw type
+//    uint8_t    itype;      // Indirect Draw type
+//    uint16_t   nblocks;    // #linked blocks (mType==EPX_ANIM_INDIRECT)
+//    uint32_t   count;      // # of pixels | offset INDIRECT
+// } epx_anim_pixels_t;
+//
+//
+/// Draw type
 //
 //  EPX_ANIM_SKIP
-//
 //        Skip the next pix_count pixels on the current line.
 //        Activated by Alpha=0.
 //
@@ -73,7 +82,6 @@
 extern "C" {
 #include <libswscale/swscale.h>
 }
-#define DEBUG 1
 #define DDS_FORMAT_VERSION 0x00000001
 
 int skip_block_count = 0;
@@ -655,7 +663,7 @@ FrameBlock* insert_block(int frame, int y, int offset, epx_anim_pixels_t* hdr)
 
     b = (FrameBlock*) dds_lhash_insert_new(hblock, &bt, &bt);
 #ifdef DEBUG
-    if (b != NULL) {
+   if (b != NULL) {
 	if (debug_output)
 	    printf("INSERT:%8p:f=%d,y=%d,hash=%8lx\n",
 		   b, frame, y, b->bucket.hvalue);
@@ -897,7 +905,6 @@ int dds_compress(int frame, u_int32_t offset,
     epx_pixel_t aRow[aWidth];
     int y;
 
-
     for (y = 0; y < aHeight; y++) {
 	int rsize;
 	int i;
@@ -962,6 +969,11 @@ int dds_compress_row(epx_pixel_t* aRow, DDSImage* aImage, int frame, int y,
 	hdr = (epx_anim_pixels_t *) target;
 
 	analyze_pixel_data(aRow, x, aWidth, hdr);
+	// printf("type[%c] itype[%d] nblocks[%d] count[%d]\r\n",
+	//        block_id[hdr->type],
+	//        hdr->itype,
+	//        hdr->nblocks,
+	//        hdr->count);
 
 	target += sizeof(epx_anim_pixels_t);
 	offset += sizeof(epx_anim_pixels_t);
@@ -1605,12 +1617,12 @@ int main(int argc, char *argv[])
 	exit(-1);
     }
 
-
     //
     // Write out a blank offset table.
     //
     dummy = (char *) malloc(sizeof(int) * (image_count/stepping));
-    if (write(out, dummy, sizeof(int) * (image_count/stepping) != sizeof(int) * (image_count/stepping))) {
+    if (write(out, dummy, sizeof(int) * (image_count/stepping)) !=
+	(ssize_t) sizeof(int) * (image_count/stepping)) {
 	perror("write(offset)");
 	exit(-1);
     }
@@ -1678,7 +1690,8 @@ int main(int argc, char *argv[])
 	if (color_tolerance < 1)
 	    color_tolerance = 1;
 
-	printf("%s:%d compressing\n", dds_name, ind);
+	if (debug_output)
+	    printf("%s:%d compressing\n", dds_name, ind);
 	if (debug_output && use_indirect) {
 	    printf("HASH INFO DUMP\n");
 	    dds_lhash_info(hblock);
@@ -1704,10 +1717,11 @@ int main(int argc, char *argv[])
 		perror("write(offset)");
 		exit(-1);
 	    }
-	    lseek(out, 0, SEEK_END);
+	     lseek(out, 0, SEEK_END);
 	    //
 	    // Dump the image data.
 	    //
+
 	    if (write(out, image_data, image_size) != image_size) {
 		perror("write(image_data)");
 		exit(-1);
