@@ -275,7 +275,7 @@ depend_target:
 		sed 's|^\([^:]*:\)|$$(OBJDIR)/\1|g' > $(OBJDIR)/depend.mk
 
 clean_target:
-	-rm -f $(EPX_LIB) $(OBJDIR)/*.o
+	-rm -f $(EPX_LIB) $(OBJDIR)/*.o $(EPX_NIF)
 
 $(EPX_LIB): $(EPX_LIB_OBJS) $(EPX_SIMD_OBJS) $(EPX_BE_OBJS)
 	rm -f $@
