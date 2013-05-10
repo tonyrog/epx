@@ -1,5 +1,6 @@
 {application, epx,
  [{description, "EPX pixel"},
+  { registered, [] },
   {vsn, "%VSN%"},
   {modules, [epx_app, epx_sup, epx]},
   {mod,{epx_app,[]}},
