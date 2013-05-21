@@ -18,7 +18,7 @@
  *  Framebuffer display driver 
  */
 
-#include "epx_backend.h"
+#include "../include/epx_backend.h"
 
 // FIXME configure
 #include <fcntl.h>

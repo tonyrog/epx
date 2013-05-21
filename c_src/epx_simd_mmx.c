@@ -22,6 +22,8 @@
 #include "epx_simd_mmx.h"
 #include "../include/epx_pixmap.h"
 
+#if defined(__MMX__)
+
 #define MIN_LEN 0x800
 
 #define SIMD_FUNCTION(name) epx_simd_##name##_mmx
@@ -198,4 +200,4 @@ void epx_simd_fill_area_blend_rgb24_mmx(uint8_t* dst,int dst_wb,
     epx_simd_empty_state();
 }
 
-
+#endif

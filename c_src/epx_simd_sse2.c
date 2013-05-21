@@ -22,6 +22,8 @@
 #include "epx_simd_int.h"
 #include "epx_simd_sse2.h"
 
+#if defined(__SSE2__)
+
 #define SSE2_MIN_BLOCK_LEN 64
 
 #define SIMD_FUNCTION(name) epx_simd_##name##_sse2
@@ -199,3 +201,5 @@ void epx_simd_fill_area_blend_rgb24_sse2(uint8_t* dst,int dst_wb,
 	dst += dst_wb;
     }
 }
+
+#endif

@@ -369,6 +369,8 @@ void trace_line_2(epx_pixmap_t* pic, epx_line_t* line1, epx_line_t* line2,
     int n;
     LINE_DECL(1);
     LINE_DECL(2);
+    (void) L_y1_1;
+    (void) L_y1_2;
 
     /* Lines are assumed to run in the same y direction */
     if ((line1->s.y != line2->s.y) ||

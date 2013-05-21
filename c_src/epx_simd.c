@@ -336,7 +336,6 @@ void epx_simd_init(int accel)
 
 #if defined(__i386__) || defined(__x86_64__)
     char* name;
-    char* hex = "0123456789ABCDEF";
     int i;
     int j;
 
@@ -384,16 +383,16 @@ void epx_simd_init(int accel)
     EPX_DBGFMT("cache_line_size: %d", cpu_cache_line_size);
 
     if (feature_cx & CPUID_PSN) {
-	char xserial[25];
 	cpuidSerial(cpu_serial_number);
 	cpu_serial_number_len = 12;
 
-	for (i = 0; i < 12; i++) {
-	    xserial[2*i] = hex[(cpu_serial_number[i] >> 4)&0xf];
-	    xserial[2*i+1] = hex[cpu_serial_number[i] & 0xf];
-	}
-	xserial[24] = 0;
-	EPX_DBGFMT("Serial: %s", xserial);
+	EPX_DBGFMT("Serial: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+		   cpu_serial_number[0],cpu_serial_number[1],
+		   cpu_serial_number[2],cpu_serial_number[3],
+		   cpu_serial_number[4],cpu_serial_number[5],
+		   cpu_serial_number[6],cpu_serial_number[7],
+		   cpu_serial_number[8],cpu_serial_number[9],
+		   cpu_serial_number[10],cpu_serial_number[11]);
     }
     else {
 	memset(cpu_serial_number, 0, sizeof(cpu_serial_number));

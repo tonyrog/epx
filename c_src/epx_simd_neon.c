@@ -23,6 +23,8 @@
 #include "epx_simd_neon.h"
 #include "epx_pixmap.h"
 
+#if defined(__NEON__)
+
 #define SIMD_FUNCTION(name) epx_simd_##name##_neon
 #include "epx_simd.i"
 #undef SIMD_FUNCTION
@@ -144,3 +146,4 @@ void epx_simd_fill_area_blend_rgb24_neon(u_int8_t* dst,int dst_wb,
 	dst += dst_wb;
     }
 }
+#endif

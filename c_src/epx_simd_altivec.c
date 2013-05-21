@@ -25,6 +25,7 @@
 
 #include "epx_simd_common.c"
 
+#if defined(__VEC__) && defined(__ALTIVEC__)
 
 void epx_simd_copy_altivec(const uint8_t* src, uint8_t* dst, size_t n)
 {
@@ -145,3 +146,4 @@ void epx_simd_fill_area_blend_rgb24_altivec(uint8_t* dst,int dst_wb,
     }
 }
 
+#endif

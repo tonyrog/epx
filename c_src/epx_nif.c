@@ -914,6 +914,7 @@ static int epx_thread_stop(epx_thread_t* thr, epx_thread_t* sender,
 {
     epx_message_t m;
     int r;
+    (void) r;
 
     m.type = EPX_MESSAGE_STOP;
     epx_message_send(thr, sender, &m);
