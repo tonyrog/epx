@@ -24,9 +24,9 @@
 #include <stdint.h>
 #include <memory.h>
 
-#include "epx_debug.h"
 #include "epx_cpuid.h"
-#include "epx_simd.h"
+#include "../include/epx_debug.h"
+#include "../include/epx_simd.h"
 
 #define EXTERN_SIMD_API(type) \
     extern void epx_simd_copy##type(uint8_t* src, uint8_t* dst, size_t n); \
@@ -72,12 +72,12 @@ EXTERN_SIMD_API(_altivec);
 static epx_simd_t simd_altivec = INIT_SIMD_API(EPX_SIMD_ALTIVEC,_altivec);
 #endif
 
-#if defined(__MMX__) && defined(USE_MMX)
+#if defined(__MMX__)
 EXTERN_SIMD_API(_mmx);
 static epx_simd_t simd_mmx = INIT_SIMD_API(EPX_SIMD_MMX,_mmx);
 #endif
 
-#if defined(__SSE2__) && defined(USE_SSE2)
+#if defined(__SSE2__)
 EXTERN_SIMD_API(_sse2);
 static epx_simd_t simd_sse2 = INIT_SIMD_API(EPX_SIMD_SSE2,_sse2);
 #endif
@@ -138,13 +138,13 @@ int epx_simd_accel()
     accel |= EPX_SIMD_ALTIVEC;
 #endif
 #endif
-#if defined(__MMX__) && defined(USE_MMX)
+#if defined(__MMX__)
     accel |= EPX_SIMD_MMX;
 #endif
-#if defined(__SSE2__) && defined(USE_SSE2)
+#if defined(__SSE2__)
     accel |= EPX_SIMD_SSE2;
 #endif
-#if defined(__NEON__) && defined(USE_NEON)
+#if defined(__NEON__)
     accel |= EPX_SIMD_NEON;
 #endif
     return accel;
@@ -423,7 +423,7 @@ void epx_simd_init(int accel)
 #endif
 #endif
 
-#if defined(__MMX__) && defined(USE_MMX)
+#if defined(__MMX__)
     if ((feature_cx & CPUID_MMX) &&
 	((accel==EPX_SIMD_AUTO) || (accel & EPX_SIMD_MMX))) {
 	EPX_DBGFMT("SIMD: Enable mmx");
@@ -432,7 +432,7 @@ void epx_simd_init(int accel)
 #endif
 
 
-#if defined(__SSE2__) && defined(USE_SSE2)
+#if defined(__SSE2__)
     if ((feature_cx & CPUID_SSE2) &&
 	((accel==EPX_SIMD_AUTO) || (accel & EPX_SIMD_SSE2))) {
 	EPX_DBGFMT("SIMD: Enable sse2");

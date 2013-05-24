@@ -17,10 +17,10 @@
 //
 // Shape drawing api
 //
-#include "epx_pixel.h"
-#include "epx_pixmap.h"
-#include "epx_gc.h"
-#include "epx_draw.h"
+#include "../include/epx_pixel.h"
+#include "../include/epx_pixmap.h"
+#include "../include/epx_gc.h"
+#include "../include/epx_draw.h"
 
 extern void epx_draw_line_horizontal(epx_pixmap_t* pic, int x1, int x2, int y, 
 				     int flags, epx_pixel_t fg);

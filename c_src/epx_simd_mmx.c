@@ -20,7 +20,7 @@
 
 #include "epx_simd_int.h"
 #include "epx_simd_mmx.h"
-#include "epx_pixmap.h"
+#include "../include/epx_pixmap.h"
 
 #define MIN_LEN 0x800
 

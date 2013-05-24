@@ -916,8 +916,12 @@ collect_exif(Fd, T, St) ->
 		    St
 	    end;
 	_ ->
-	    St
+	    [ {epx_exif:decode_tag(T#tiff_entry.tag),
+	       T#tiff_entry.value} | St]
     end.
+
+collect_items(_Fd, T, Vs) ->
+    [ {T#tiff_entry.tag, T#tiff_entry.value} | Vs].
 
 
 %% Image info collector functions
@@ -956,20 +960,25 @@ collect_tiff(Fd, T, St) ->
 	    [Offset] = T#tiff_entry.value,
 	    case epx_image_tiff:scan_ifd(Fd, [$0,$.|T#tiff_entry.ifd],
 					 Offset, T#tiff_entry.endian,
-					 fun collect_exif/3, St) of
-		{ok, St1} ->
-		    St1;
+					 fun collect_exif/3, []) of
+		{ok, Value} ->
+		    As = St#epx_image.attributes,
+		    St#epx_image { attributes = [{'Exif',Value}|As]};
 		_Error ->
+		    io:format("ExifOffset: error ~p\n", [_Error]),
 		    St
 	    end;
 	?GPSIFD ->
 	    [Offset] = T#tiff_entry.value,
 	    case epx_image_tiff:scan_ifd(Fd, [$0,$.|T#tiff_entry.ifd],
 					 Offset, T#tiff_entry.endian,
-					 fun collect_exif/3, St) of
-		{ok, St1} ->
-		    St1;
+					 fun collect_items/3, []) of
+		{ok, Value} ->
+		    Vs = [V || {_,V} <- lists:reverse(Value)],
+		    As = St#epx_image.attributes,
+		    St#epx_image { attributes = [{'GPS',Vs}|As]};
 		_Error ->
+		    io:format("GPSIFD: error ~p\n", [_Error]),
 		    St
 	    end;
 	_ ->

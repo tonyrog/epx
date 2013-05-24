@@ -18,9 +18,9 @@
 // Some common OpenGL utility functions
 //
 
-#include "epx_pixmap.h"
+#include "../include/epx_pixmap.h"
 
-#ifdef MAC_OS_X
+#if defined(__APPLE__)
 #include <machine/endian.h>
 #else
 #include <endian.h>

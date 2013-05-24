@@ -21,8 +21,8 @@
 #define __EPX_SIMD_INT_H__
 
 #include <stdint.h>
-#include "epx_pixel.h"
-#include "epx_pixmap.h"
+#include "../include/epx_pixel.h"
+#include "../include/epx_pixmap.h"
 
 #if defined(__MMX__) || defined(__SSE2__)
 

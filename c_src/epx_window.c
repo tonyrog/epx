@@ -18,9 +18,9 @@
 // EPX window  managent
 //
 
-#include "epx_object.h"
-#include "epx_dict.h"
-#include "epx_window.h"
+#include "../include/epx_object.h"
+#include "../include/epx_dict.h"
+#include "../include/epx_window.h"
 
 void EPX_WINDOW_TYPE_RELEASE(void* arg)
 {

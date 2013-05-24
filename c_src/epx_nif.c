@@ -24,7 +24,7 @@
 #include <errno.h>
 
 #include "erl_nif.h"
-#include "epx.h"
+#include "../include/epx.h"
 
 #define MAX_PATH 1024
 

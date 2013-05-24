@@ -24,9 +24,9 @@
 #include <math.h>
 
 #include "epx_simd_int.h"
-#include "epx_pixmap.h"
-#include "epx_colors.h"
-#include "epx_simd.h"
+#include "../include/epx_pixmap.h"
+#include "../include/epx_colors.h"
+#include "../include/epx_simd.h"
 
 
 #define EPX_INLINE_COPY_SIZE 32

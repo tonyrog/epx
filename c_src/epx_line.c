@@ -20,9 +20,9 @@
  */
 #include <memory.h>
 #include <math.h>
-#include "epx_pixel.h"
-#include "epx_pixmap.h"
-#include "epx_gc.h"
+#include "../include/epx_pixel.h"
+#include "../include/epx_pixmap.h"
+#include "../include/epx_gc.h"
 
 #define epx_swap_int(a,b) do { \
 	int _swap_t = (a); a = (b); b = _swap_t; \

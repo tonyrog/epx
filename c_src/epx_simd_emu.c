@@ -20,7 +20,7 @@
 #include <memory.h>
 #include "epx_simd_int.h"
 #include "epx_simd_emu.h"
-#include "epx_pixmap.h"
+#include "../include/epx_pixmap.h"
 
 #define SIMD_FUNCTION(name) epx_simd_##name##_emu
 #include "epx_simd.i"

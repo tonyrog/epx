@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <memory.h>
 
-#include "epx_hash.h"
+#include "../include/epx_hash.h"
 
 #define EPX_HASH_SZEXP   8
 #define EPX_HASH_SEGSZ   (1 << EPX_HASH_SZEXP)

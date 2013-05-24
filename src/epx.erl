@@ -213,7 +213,7 @@
 
 
 init() ->
-    Nif = filename:join([code:lib_dir(epx),"lib",?VARIANT,"epx_nif"]),
+    Nif = filename:join([code:priv_dir(epx),"epx_nif"]),
     %% io:format("Loading: ~s\n", [Nif]),
     erlang:load_nif(Nif, 0).
     

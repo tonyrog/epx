@@ -18,7 +18,7 @@
 // General API functions
 //
 
-#include "epx_simd.h"
+#include "../include/epx_simd.h"
 
 void epx_init(int simd)
 {

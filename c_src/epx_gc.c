@@ -19,9 +19,9 @@
 //
 
 #include <stdlib.h>
-#include "epx_colors.h"
-#include "epx_object.h"
-#include "epx_gc.h"
+#include "../include/epx_colors.h"
+#include "../include/epx_object.h"
+#include "../include/epx_gc.h"
 
 epx_gc_t epx_default_gc =
 {

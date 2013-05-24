@@ -22,7 +22,7 @@
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
-#ifdef MAC_OS_X
+#if defined(__APPLE__)
 #include <machine/endian.h>
 #else
 #include <endian.h>
@@ -30,7 +30,7 @@
 #include <memory.h>
 
 #define EPX_HANDLT_T int
-#include "epx_backend.h"
+#include "../include/epx_backend.h"
 #ifdef HAVE_OPENGL
 #include <GL/glx.h>
 

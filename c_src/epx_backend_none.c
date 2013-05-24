@@ -18,7 +18,7 @@
 //  Template display driver 
 //
 
-#include "epx_backend.h"
+#include "../include/epx_backend.h"
 
 /* This structure is stored in epx_window_t opaque field */
 typedef struct {

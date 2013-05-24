@@ -22,9 +22,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "epx_debug.h"
-#include "epx_pixel.h"
-#include "epx_colors.h"
+#include "../include/epx_debug.h"
+#include "../include/epx_pixel.h"
+#include "../include/epx_colors.h"
 
 static struct {
     const char* name;

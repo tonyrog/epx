@@ -19,7 +19,7 @@
  *
  */
 
-#include "epx.h"
+#include "../include/epx.h"
 #include <math.h>
 
 extern void epx_draw_line_horizontal(epx_pixmap_t* pic,

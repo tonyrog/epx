@@ -27,9 +27,9 @@
 #include <wchar.h>
 #include <errno.h>
 
-#include "epx_font.h"
-#include "epx_pixmap.h"
-#include "epx_gc.h"
+#include "../include/epx_font.h"
+#include "../include/epx_pixmap.h"
+#include "../include/epx_gc.h"
 
 char* epx_font_FILE_string(FILE* f,  epx_font_file_t* ff, uint32_t offset);
 int epx_font_info_init(epx_font_t* font, epx_font_file_t* ff);

@@ -20,10 +20,10 @@
 //
 #include <string.h>
 
-#include "epx_dict.h"
-#include "epx_pixmap.h"
-#include "epx_window.h"
-#include "epx_backend.h"
+#include "../include/epx_dict.h"
+#include "../include/epx_pixmap.h"
+#include "../include/epx_window.h"
+#include "../include/epx_backend.h"
 
 typedef epx_backend_t* (*backend_init_t)(epx_dict_t* param);
 
@@ -33,11 +33,11 @@ extern epx_backend_t* none_init(epx_dict_t* param);
 extern epx_backend_t* fb_init(epx_dict_t* param);
 #endif
 
-#if defined(MAC_OS_X) && !defined(__x86_64__)
+#if defined(__APPLE__) && !defined(__x86_64__)
 extern epx_backend_t* carbon_init(epx_dict_t* param);
 #endif
 
-// #if defined(MAC_OS_X)
+// #if defined(__APPLE__)
 // extern epx_backend_t* cocoa_init(epx_dict_t* param);
 // #endif
 
@@ -55,11 +55,11 @@ static struct _backend_item {
     backend_init_t init;
 } backend_item [] =
 {
-#if defined(MAC_OS_X) && !defined(__x86_64__)
+#if defined(__APPLE__) && !defined(__x86_64__)
     {"macos", (backend_init_t) carbon_init},
 #endif
 
-// #if defined(MAC_OS_X)
+// #if defined(__APPLE__)
 //    {"cocoa", (backend_init_t) cocoa_init},
 //#endif
 

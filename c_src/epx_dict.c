@@ -22,7 +22,7 @@
  */
 #include <string.h>
 
-#include "epx_dict.h"
+#include "../include/epx_dict.h"
 
 #define EPX_DICT_ENTRY_CHUNK 32
 
