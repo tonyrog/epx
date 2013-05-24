@@ -382,7 +382,7 @@ void epx_simd_init(int accel)
     cpu_cache_line_size = cpuidCacheLineSize();
     EPX_DBGFMT("cache_line_size: %d", cpu_cache_line_size);
 
-    if (feature_cx & CPUID_PSN) {
+    if (feature_dx & CPUID_PSN) {
 	cpuidSerial(cpu_serial_number);
 	cpu_serial_number_len = 12;
 
@@ -423,7 +423,7 @@ void epx_simd_init(int accel)
 #endif
 
 #if defined(__MMX__)
-    if ((feature_cx & CPUID_MMX) &&
+    if ((feature_dx & CPUID_MMX) &&
 	((accel==EPX_SIMD_AUTO) || (accel & EPX_SIMD_MMX))) {
 	EPX_DBGFMT("SIMD: Enable mmx");
 	epx_simd = &simd_mmx;
@@ -432,7 +432,7 @@ void epx_simd_init(int accel)
 
 
 #if defined(__SSE2__)
-    if ((feature_cx & CPUID_SSE2) &&
+    if ((feature_dx & CPUID_SSE2) &&
 	((accel==EPX_SIMD_AUTO) || (accel & EPX_SIMD_SSE2))) {
 	EPX_DBGFMT("SIMD: Enable sse2");
 	epx_simd = &simd_sse2;
