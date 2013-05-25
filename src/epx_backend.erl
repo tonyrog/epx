@@ -116,6 +116,11 @@ init(Args) ->
 		  error:_ ->
 		      assumed_backend()
 	      end,
+    if BeName =:= "none" ->
+	    ?epx_info("warning no backend selected", []);
+       true ->
+	    ok
+    end,
     try epx:backend_open(BeName, epx:dict_from_list(Args)) of
 	Backend ->
 	    ets:insert(?TABLE, {1, Backend}),
@@ -229,15 +234,51 @@ assumed_backend() ->
 	false ->
 	    case os:type() of
 		{unix,darwin} ->
-		    "macos";
+		    case is_backend("macos") of
+			true -> "macos";
+			false ->
+			    case os:getenv("DISPLAY") of
+				false ->
+				    "none";
+				_ ->
+				    case is_backend("x11") of
+					true -> 
+					    %% fixme check if X11 is running
+					    "x11";
+					false -> "none"
+				    end
+			    end
+		    end;
 		{unix,linux} -> 
 		    case os:getenv("DISPLAY") of
-			false -> "fb";
-			_ -> "x11"
+			false ->
+			    case is_backend("fb") of
+				true -> "fb";
+				false -> "none"
+			    end;
+			_ ->
+			    case is_backend("x11") of
+				true ->
+				    %% fixme check if X11 is running
+				    "x11";
+				false -> 
+				    "none"
+			    end
 		    end;
-		{unix,_} -> "x11";
-		_ -> "none"
+		{unix,_} -> 
+		    case is_backend("x11") of
+			true -> "x11";
+			false -> "none"
+		    end;
+		_ -> 
+		    "none"
 	    end;
 	Backend ->
-	    Backend
+	    case is_backend(Backend) of
+		true -> Backend;
+		false -> "none"
+	    end
     end.
+
+is_backend(Name) ->
+    lists:member(Name, epx:backend_list()).

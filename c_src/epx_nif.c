@@ -1940,7 +1940,7 @@ static ERL_NIF_TERM make_event(ErlNifEnv* env, epx_event_t* e)
 /******************************************************************************
  *
  *  simd
- *  acceltype()  = emu|altivec|mmx|sse2|neon
+ *  acceltype()  :: emu|altivec|mmx|sse2|neon
  *  cpu_vendor_name :: string()
  *  cpu_features    :: string()
  *  cpu_cache_line_size :: integer()

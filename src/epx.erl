@@ -28,12 +28,14 @@
 -export([start/0]).
 -export([old_start/0, old_start/1]).
 %% simd 
--export([simd_info/1,simd_set/1]).
+-export([simd_info/0,simd_info/1,simd_set/1]).
+-export([simd_info_keys/0]).
 %% Pixmap access
 -export([pixmap_create/3,pixmap_create/2]).
 -export([pixmap_copy/1]).
 -export([pixmap_sub_pixmap/5]).
--export([pixmap_info/0, pixmap_info/1, pixmap_info/2]).
+-export([pixmap_info/1, pixmap_info/2]).
+-export([pixmap_info_keys/0]).
 -export([pixmap_set_clip/2]).
 -export([pixmap_fill/2]).
 -export([pixmap_copy_to/2]).
@@ -63,7 +65,8 @@
 -export([animation_open/1]).
 -export([animation_copy/6]).
 -export([animation_draw/6]).
--export([animation_info/0, animation_info/1, animation_info/2]).
+-export([animation_info/1, animation_info/2]).
+-export([animation_info_keys/0]).
 
 %% Dictionary access
 -export([dict_create/0]).
@@ -83,7 +86,8 @@
 -export([gc_copy/1]).
 -export([gc_set/3]).
 -export([gc_get/2]).
--export([gc_info/0, gc_info/1, gc_info/2]).
+-export([gc_info/1, gc_info/2]).
+-exprot([gc_info_keys/0]).
 
 %% Font 
 -export([font_open/1]).
@@ -91,7 +95,8 @@
 -export([font_unload/1]).
 -export([font_map/1]).
 -export([font_unmap/1]).
--export([font_info/0, font_info/1, font_info/2]).
+-export([font_info/1, font_info/2]).
+-export([font_info_keys/0]).
 -export([font_draw_glyph/5]).
 -export([font_draw_string/5]).
 -export([font_draw_utf8/5]).
@@ -105,7 +110,8 @@
 %% Window
 -export([window_create/4]).
 -export([window_create/5]).
--export([window_info/0, window_info/1, window_info/2]).
+-export([window_info/1, window_info/2]).
+-export([window_info_keys/0]).
 -export([window_adjust/2]).
 -export([window_set_event_mask/2]).
 -export([window_enable_events/2]).
@@ -161,7 +167,8 @@
 -opaque epx_gc()        ::  #epx_gc{}  | undefined.
 -opaque epx_dict()      ::  #epx_dict{}  | undefined.
 -opaque epx_animation() ::  #epx_animation{}  | undefined.
--type epx_rect() :: { integer(), integer(), unsigned(), unsigned() }.
+-type epx_rect() :: { X::integer(), Y::integer(), 
+		      Width::unsigned(), Height::unsigned() }.
 
 -type epx_color3() :: {R::byte(),G::byte(),B::byte()}.
 -type epx_color4() :: {A::byte(),R::byte(),G::byte(),B::byte()}.
@@ -248,8 +255,61 @@ old_start(Prefered) ->
 	    epx_backend:create(Name, [])
     end.
 
+-type epx_simd_info_key() ::
+	'accel' |
+	'cpu_vendor_name' |
+	'cpu_features' |
+	'cpu_cache_line_size' |
+	'function'.
+
+-type epx_accel_type() ::
+	none |
+	emu  |
+	altivec |
+	mmx  |
+	sse2 |
+	neon.
+
+-type epx_simd_info() ::
+	{ 'cpu_vendor_name', string() } |
+	{ 'cpu_features', string() } |
+	{ 'cpu_cache_line_size', unsigned() } |
+	{ 'accel',     {epx_accel_type(),[epx_accel_type()]}} |
+	{ 'functions', [{Name::atom(), [epx_pixel_format()]}]}.
+
+%% @doc 
+%%   Get a list of all simd info keys
+%% @end
+-spec simd_info_keys() -> [epx_simd_info_key()].
+
+simd_info_keys() ->
+    ['accel', 
+     'cpu_vendor_name', 
+     'cpu_features', 
+     'cpu_cache_line_size',
+     'functions'].
+
+%% @doc
+%%   Get all available information about SIMD support
+%% @end
+-spec simd_info() -> [epx_simd_info()].
+
+simd_info() ->
+    [{K,simd_info(K)} || K <- simd_info_keys()].
+     
+%% @doc
+%%   Get information about SIMD support
+%% @end
+
+-spec simd_info(Key::epx_simd_info_key()) -> term().
+
 simd_info(_Info) ->
     erlang:error(nif_not_loaded).
+
+%% @doc
+%%   Set current acceleration type
+%% @end
+-spec simd_set(Accel::epx_accel_type()) -> ok.
 
 simd_set(_Accel) ->
     erlang:error(nif_not_loaded).
@@ -321,9 +381,9 @@ pixmap_sub_pixmap(_Src, _X, _Y, _Width, _Height) ->
 %% @doc
 %%   Return available pixmap information elements
 %% @end
--spec pixmap_info() -> [epx_pixmap_info()].
+-spec pixmap_info_keys() -> [epx_pixmap_info()].
 			 
-pixmap_info() ->
+pixmap_info_keys() ->
     [width, height, 
      bytes_per_row, bits_per_pixel, bytes_per_pixel,
      pixel_format, parent, clip, backend].
@@ -335,7 +395,7 @@ pixmap_info() ->
 			 
 pixmap_info(Pixmap) ->
     map(fun(Info) -> {Info,pixmap_info(Pixmap,Info)} end,
-	pixmap_info()).
+	pixmap_info_keys()).
 
 %% @doc
 %%   Get specific pixmap information
@@ -616,12 +676,12 @@ animation_copy(_Anim, _Index, _Pixmap, _Gx,  _X, _Y) ->
 animation_draw(_Anim, _Index, _Pixmap, _Gx,  _X, _Y) ->
     erlang:error(nif_not_loaded).    
 
-animation_info() ->
+animation_info_keys() ->
     [file_name, file_size, count, width, height, pixel_format].
 
 animation_info(Anim) ->
     map(fun(Info) -> {Info,animation_info(Anim,Info)} end,
-	animation_info()).    
+	animation_info_keys()).    
 
 animation_info(_Anim, _Key) ->
     erlang:error(nif_not_loaded).        
@@ -684,7 +744,7 @@ gc_set(_Gc, _Item, _Value) ->
 gc_get(_Gc, _Item) ->
     erlang:error(nif_not_loaded).    
 
-gc_info() ->
+gc_info_keys() ->
     [fill_style,fill_color,fill_texture,
      line_style,line_join_style,line_cap_style,line_width,line_texture,
      border_style,border_join_style,border_cap_style,
@@ -698,7 +758,7 @@ gc_info() ->
 
 gc_info(Gc) ->
     map(fun(Info) -> {Info,gc_info(Gc,Info)} end,
-	gc_info()).        
+	gc_info_keys()).        
     
 gc_info(Gc, Item) ->
     gc_get(Gc, Item).
@@ -718,7 +778,7 @@ font_map(_Font) ->
 font_unmap(_Font) ->
     erlang:error(nif_not_loaded).
 
-font_info() ->
+font_info_keys() ->
     [file_name, file_size, foundry_name, family_name, 
      weight, slant, width, style, spacing, pixel_format,
      pixel_size, point_size, resolution_x, resolution_y,
@@ -726,7 +786,7 @@ font_info() ->
      
 font_info(Font) ->
     map(fun(Info) -> {Info,font_info(Font,Info)} end,
-	font_info()).    
+	font_info_keys()).    
 
 font_info(_Font, _Item) ->
     erlang:error(nif_not_loaded).
@@ -790,9 +850,9 @@ window_create(_X,_Y,_Width,_Height,_Mask) ->
 	{ 'backend', epx_backend() } |
 	{ 'event_mask', epx_window_event_flags() }.
 
--spec window_info() -> [epx_window_info_key()].
+-spec window_info_keys() -> [epx_window_info_key()].
 
-window_info() ->
+window_info_keys() ->
     [x, y, width, height, backend, event_mask].    
 
 -spec window_info(Window::epx_window()) ->    
@@ -800,7 +860,7 @@ window_info() ->
 
 window_info(Window) ->
     map(fun(Info) -> {Info,window_info(Window,Info)} end,
-	window_info()).
+	window_info_keys()).
 
 -spec window_info(Window::epx_window(),Item::epx_window_info_key()) ->
 			 term().
