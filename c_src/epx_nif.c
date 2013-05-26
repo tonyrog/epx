@@ -280,8 +280,13 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
 static ERL_NIF_TERM simd_set(ErlNifEnv* env, int argc,
 			     const ERL_NIF_TERM argv[]);
 
+static ERL_NIF_TERM debug(ErlNifEnv* env, int argc,
+			  const ERL_NIF_TERM argv[]);
+
 ErlNifFunc epx_funcs[] =
 {
+    // Debug 
+    { "debug",         1,  debug },
     // Simd interface
     { "simd_info",     1,  simd_info },
     { "simd_set",      1,  simd_set  },
@@ -396,6 +401,16 @@ DECL_ATOM(true);
 DECL_ATOM(false);
 DECL_ATOM(undefined);
 DECL_ATOM(error);
+
+DECL_ATOM(debug);
+DECL_ATOM(info);
+DECL_ATOM(notice);
+DECL_ATOM(warning);
+//DECL_ATOM(error);
+DECL_ATOM(critical);
+DECL_ATOM(alert);
+DECL_ATOM(emergency);
+DECL_ATOM(none);
 
 // epx types
 DECL_ATOM(epx_pixmap);
@@ -526,7 +541,7 @@ DECL_ATOM(descent);
 DECL_ATOM(ascent);
 
 // epx_font_spacing_t
-DECL_ATOM(none);
+// DECL_ATOM(none);
 DECL_ATOM(proportional);
 DECL_ATOM(monospaced);
 DECL_ATOM(char_cell);
@@ -827,7 +842,7 @@ static void epx_queue_destroy(epx_queue_t* q)
  *   Threads
  *
  *****************************************************************************/
-#ifdef DEBUG
+
 static char* format_message(epx_message_t* m)
 {
     switch(m->type) {
@@ -846,7 +861,6 @@ static char* format_message(epx_message_t* m)
     default: return "unknown";
     }
 }
-#endif
 
 static int epx_message_send(epx_thread_t* thr, epx_thread_t* sender,
 			    epx_message_t* m)
@@ -1936,6 +1950,28 @@ static ERL_NIF_TERM make_event(ErlNifEnv* env, epx_event_t* e)
 			    make_object(env, ATOM(epx_window), e->window),
 			    data);
 }
+
+/******************************************************************************
+ *
+ *****************************************************************************/
+
+static ERL_NIF_TERM debug(ErlNifEnv* env, int argc,
+			  const ERL_NIF_TERM argv[])
+{
+    if (argv[0] == ATOM(debug))        epx_set_debug(DLOG_DEBUG);
+    else if (argv[0] == ATOM(info))    epx_set_debug(DLOG_INFO);
+    else if (argv[0] == ATOM(notice))  epx_set_debug(DLOG_NOTICE);
+    else if (argv[0] == ATOM(warning)) epx_set_debug(DLOG_WARNING);
+    else if (argv[0] == ATOM(error))   epx_set_debug(DLOG_ERROR);
+    else if (argv[0] == ATOM(critical)) epx_set_debug(DLOG_CRITICAL);
+    else if (argv[0] == ATOM(alert))    epx_set_debug(DLOG_ALERT);
+    else if (argv[0] == ATOM(emergency)) epx_set_debug(DLOG_EMERGENCY);
+    else if (argv[0] == ATOM(none))      epx_set_debug(DLOG_NONE);
+    else return enif_make_badarg(env);
+    return ATOM(ok);
+}
+
+
 
 /******************************************************************************
  *
@@ -4526,9 +4562,10 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ErlNifResourceFlags tried;
     (void) env;
     (void) load_info;
-    EPX_DBGFMT("epx_load");
 
-    epx_debug(EPX_DBG_ALL);
+    epx_set_debug(DLOG_DEFAULT);
+
+    EPX_DBGFMT("epx_load");
     epx_init(EPX_SIMD_AUTO);
 
     // Create resource types
@@ -4553,6 +4590,17 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     LOAD_ATOM(false);
     LOAD_ATOM(undefined);
     LOAD_ATOM(error);
+
+    // debug
+    LOAD_ATOM(debug);
+    LOAD_ATOM(info);
+    LOAD_ATOM(notice);
+    LOAD_ATOM(warning);
+    LOAD_ATOM(error);
+    LOAD_ATOM(critical);
+    LOAD_ATOM(alert);
+    LOAD_ATOM(emergency);
+    LOAD_ATOM(none);
     
     // Type names
     LOAD_ATOM(epx_pixmap);

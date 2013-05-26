@@ -217,6 +217,7 @@ component_vh(Comps, IMG) ->
 
 component_vh([{Format,_DC,_AC}|Cs], IMG, H, V) ->
     %% io:format("component_vh: ~p\n", [{component,Format}]),
+    %% io:format("attributes = ~p\n", [IMG#epx_image.attributes]),
     {_Q,H0,V0} = epx_image:attribute(IMG, {component,Format}, undefined),
     component_vh(Cs, IMG, erlang:max(H,H0), erlang:max(V,V0));
 component_vh([], _IMG, H, V) ->
@@ -811,6 +812,7 @@ process_sofn_component(0, _Bin, IMG) ->
     IMG;
 process_sofn_component(I, <<ID:8,H:4,V:4,Q:8,Bin/binary>>,IMG) ->
     Format = component_id(ID),
+    %% io:format("set_attribute ~w\n", [{component,Format}]),
     IMG1 = epx_image:set_attribute(IMG, {component,Format}, {Q,H,V}),
     ?dbg("component ~p q=~p, h=~p, v=~p\n", [Format,Q,H,V]),
     process_sofn_component(I-1, Bin, IMG1).
@@ -892,10 +894,10 @@ collect_maker_fixme(Fd, T, St) ->
 
 
 collect_exif(Fd, T, St) ->
-    io:format("EXIF(~s) ~p ~p ~p\n", 
-	      [T#tiff_entry.ifd,
-	       epx_exif:decode_tag(T#tiff_entry.tag),
-	       T#tiff_entry.type, T#tiff_entry.value]),
+%%    io:format("EXIF(~s) ~p ~p ~p\n", 
+%%	      [T#tiff_entry.ifd,
+%%	       epx_exif:decode_tag(T#tiff_entry.tag),
+%%	       T#tiff_entry.type, T#tiff_entry.value]),
     case T#tiff_entry.tag of
 	?ExifInteroperabilityOffset ->
 	    [Offset] = T#tiff_entry.value,
@@ -927,8 +929,8 @@ collect_items(_Fd, T, Vs) ->
 %% Image info collector functions
 collect_tiff(Fd, T, St) ->
     Key = epx_image_tiff:decode_tag(T#tiff_entry.tag),
-    io:format("TIFF(~s) ~p ~p ~p\n", 
-	      [T#tiff_entry.ifd,Key,T#tiff_entry.type, T#tiff_entry.value]),
+%%    io:format("TIFF(~s) ~p ~p ~p\n", 
+%%	      [T#tiff_entry.ifd,Key,T#tiff_entry.type, T#tiff_entry.value]),
     case T#tiff_entry.tag of
 	?ImageWidth ->
 	    [Width] = T#tiff_entry.value,

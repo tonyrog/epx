@@ -109,67 +109,62 @@ write_info(Fd, IMG) ->
 %% <Special-Purpose Block> ::=    Application Extension  |
 %%                                Comment Extension
 
-read(Fd,IMG,RowFun,St0) ->
+read(Fd,IMG) ->
     file:position(Fd, 6),
     case file:read(Fd, 7) of
 	{ok, <<_Width:16/little, _Hight:16/little,
 	      Map:1, _Cr:3, Sort:1, Pix:3,
 	      Background:8,
 	      AspectRatio:8>>} ->
-	    Palette = read_palette(Fd, Map, Pix+1),
+	    Palette = read_palette(Fd, Map =:= 1, Pix+1),
 	    ?dbg("sizeof(palette)=~p Map=~w, Cr=~w, Sort=~w, Pix=~w\n", 
-		 [length(Palette),Map,Cr,Sort,Pix]),
+		 [tuple_size(Palette),Map,_Cr,Sort,Pix]),
 	    ?dbg("Background=~w, AspectRatio=~w\n",
 		 [Background, AspectRatio]),
 	    As = [{'Background',Background},
 		  {'AspectRatio',AspectRatio},
 		  {'Sort',Sort} | IMG#epx_image.attributes],
 	    IMG1 = IMG#epx_image { palette = Palette, attributes = As},
-	    read_data(Fd, IMG1, RowFun, St0, []);
+	    read_data(Fd, IMG1, []);
 	Error ->
 	    Error
     end.
 
-
-read(Fd, IMG) ->
-    read(Fd, IMG, 
-	 fun(_, Row, Ri, St) ->
-		 ?dbg("gif: load row ~p\n", [Ri]),
-		 [{Ri,Row}|St] end, 
-	 []).
-
-
-read_data(Fd, IMG, RowFun, St0, As) ->
+read_data(Fd, IMG, As) ->
     case file:read(Fd, 1) of
 	{ok, <<?EXTENSION>>} ->
 	    ?dbg("Extension\n",[]),
-	    read_extension(Fd, IMG, RowFun, St0, As);
+	    read_extension(Fd, IMG, As);
 	{ok, <<?IMAGE>>} ->
 	    ?dbg("Image\n",[]),
 	    case file:read(Fd, 9) of
 		{ok, <<Left:16/little, Top:16/little,
-		      Width:16/little, Height:16/little,
-		      Map:1, Interlaced:1, Sort:1,_:2, Pix:3>>} ->
-		    Palette = read_palette(Fd, Map, Pix+1),
-		    As1 = [{'Interlaced', Interlaced},
-			   {'Sort', Sort} | As],
-		    Pixmap0 =
-			#ei_pixmap { top = Top,
-				      left = Left,
-				      width = Width,
-				      height = Height,
-				      format = IMG#epx_image.format,
-				      palette = Palette,
-				      attributes = As1
-				     },
-		    ?dbg("pix=~w, sizeof(palette)=~p\n", [Pix,Palette]),
-		    case read_pixels(Fd,Pixmap0,RowFun,St0,
-				     Width,Height,Interlaced) of
+		       Width:16/little, Height:16/little,
+		       Map:1, Interlaced:1, Sort:1,_:2, Pix:3>>} ->
+		    Palette = read_palette(Fd, Map =:= 1, Pix+1),
+		    As1 = [{'Interlaced', Interlaced},{'Sort', Sort}|
+			   IMG#epx_image.attributes],
+		    Pixmap = epx:pixmap_create(Width,Height,rgba),
+		    Background = proplists:get_value('Background',As1,0),
+
+		    Palette1 = select_palette(Palette,IMG#epx_image.palette),
+		    Ps = {Palette1,
+			  proplists:get_value('Transparent',As1,false),
+			  proplists:get_value('TransparentColor',As1,
+					      Background),
+			  Background},
+		    case read_pixels(Fd,Pixmap,Ps,Width,Height,
+				     Interlaced =:= 1) of
 			{ok, Pixmap1} ->
 			    %% ?dbg("Pixmap = ~p\n", [Pixmap2]),
-			    Ps = IMG#epx_image.pixmaps ++ [Pixmap1],
-			    read_data(Fd, IMG#epx_image { pixmaps = Ps },
-				      RowFun, St0, []);
+			    Pxs = if Top =:= 0, Left =:= 0 ->
+					  IMG#epx_image.pixmaps ++ [Pixmap1];
+				     true ->
+					  IMG#epx_image.pixmaps ++ 
+					      [{Pixmap1,Top,Left}]
+				  end,
+			    read_data(Fd, IMG#epx_image { pixmaps = Pxs },
+				      []);
 			Error -> Error
 		    end;
 		Error -> Error
@@ -182,23 +177,23 @@ read_data(Fd, IMG, RowFun, St0, As) ->
     end.
 
 
-read_extension(Fd, IMG,RowFun,St0,As) ->
+read_extension(Fd,IMG,As) ->
     case file:read(Fd, 1) of
 	{ok,<<?COM_EXTENSION>>} ->
-	    read_comment(Fd, IMG,RowFun,St0,As);
+	    read_comment(Fd,IMG,As);
 	{ok,<<?APP_EXTENSION>>} ->
-	    read_app(Fd, IMG,RowFun,St0,As);
+	    read_app(Fd,IMG,As);
 	{ok,<<?CTL_EXTENSION>>} ->
-	    read_ctl(Fd, IMG,RowFun,St0,As);
+	    read_ctl(Fd,IMG,As);
 	{ok,<<?TXT_EXTENSION>>} ->
-	    read_txt(Fd, IMG,RowFun,St0,As);
+	    read_txt(Fd,IMG,As);
 	{ok, _} ->
 	    read_blocks(Fd), %% skip
-	    read_data(Fd, IMG,RowFun,St0,As)
+	    read_data(Fd,IMG,As)
     end.
 
 
-read_ctl(Fd, IMG,RowFun,St0,As) ->
+read_ctl(Fd,IMG,As) ->
     ?dbg("Control block\n",[]),
     case read_block(Fd) of
 	{ok, <<_:3, DisposalMethod:3, UserInput:1, Transparent:1,
@@ -209,9 +204,11 @@ read_ctl(Fd, IMG,RowFun,St0,As) ->
 		    As1 = [{'TransparentColor', TransparentColor},
 			   {'DelayTime', DelayTime},
 			   {'UserInput', UserInput},
-			   {'Transparent', Transparent},
-			   {'DisposalMethod', DisposalMethod} | As],
-		    read_data(Fd,IMG,RowFun,St0,As1);
+			   {'Transparent', Transparent =/= 0 },
+			   {'DisposalMethod', DisposalMethod} |
+			   IMG#epx_image.attributes ],
+		    read_data(Fd,IMG#epx_image { attributes = As1},
+			      As);
 		{ok,_} ->
 		    {error, bad_ctl_block};
 		Error -> Error
@@ -220,18 +217,18 @@ read_ctl(Fd, IMG,RowFun,St0,As) ->
     end.
 
 
-read_comment(Fd, IMG,RowFun,St0,As) ->
+read_comment(Fd,IMG,As) ->
     ?dbg("Comment block\n",[]),
     case read_blocks(Fd) of
 	{ok, Comment} ->
 	    read_data(Fd, 
-		      IMG#epx_image { comment = binary_to_list(Comment)}
-		      ,RowFun,St0,As);
+		      IMG#epx_image { comment = binary_to_list(Comment)},
+		      As);
 	Error -> Error
     end.
 
 
-read_txt(Fd, IMG,RowFun,St0,As) ->
+read_txt(Fd,IMG,As) ->
     ?dbg("Text block\n",[]),
     case read_block(Fd) of
 	{ok, <<GridLeft:16/little, GridTop:16/little,
@@ -248,7 +245,7 @@ read_txt(Fd, IMG,RowFun,St0,As) ->
 			 {'TextForegroundColorIndex', Foreground},
 			 {'TextBackgroundColorIndex', Background},
 			 {'Text', binary_to_list(Bin)} | As],
-		    read_data(Fd,IMG,RowFun,St0,As1);
+		    read_data(Fd,IMG,As1);
 		Error ->
 		    Error
 	    end;
@@ -257,7 +254,7 @@ read_txt(Fd, IMG,RowFun,St0,As) ->
 	Error -> Error
     end.
 		    
-read_app(Fd, IMG,RowFun,St0,As) ->
+read_app(Fd,IMG,As) ->
     ?dbg("Application block\n",[]),
     case read_block(Fd) of
 	{ok, <<Ident:8/binary, AuthCode:3/binary>>} ->
@@ -270,7 +267,7 @@ read_app(Fd, IMG,RowFun,St0,As) ->
 			 {'ApplicationData', AppData} | 
 			 IMG#epx_image.attributes],
 		    read_data(Fd,IMG#epx_image { attributes = As1},
-			      RowFun,St0,As);
+			      As);
 		Error ->
 		    Error
 	    end;
@@ -315,9 +312,9 @@ read_blocks(Fd,Acc) ->
 
 
 
-read_palette(_Fd, 0, _Pixel) -> 
+read_palette(_Fd, false, _Pixel) -> 
     undefined;
-read_palette(Fd, 1, Pixel) ->
+read_palette(Fd, true, Pixel) ->
     Sz = (1 bsl Pixel),
     case file:read(Fd, Sz*3) of
 	{ok, Bin} -> 
@@ -325,17 +322,22 @@ read_palette(Fd, 1, Pixel) ->
     end.
 
 rd_palette(_Bin, Map, 0) -> 
-    reverse(Map);
+    list_to_tuple(reverse(Map));
 rd_palette(<<R:8,G:8,B:8, Bin/binary>>, Map, I) ->
     rd_palette(Bin, [{R,G,B} | Map], I-1).
+
+write(_Fd, _IMG) ->
+    exit(nyi).
+
+-ifdef(__not_defined__).
 
 write(Fd, IMG) ->
     write_info(Fd, IMG),
     Palette = IMG#epx_image.palette,
     Background = attribute('Background',IMG#epx_image.attributes,0),
     AspectRatio = attribute('AspectRatio', IMG#epx_image.attributes,0),
-    if is_list(Palette) ->
-	    PLen = length(Palette),
+    if is_tuple(Palette) ->
+	    PLen = tuple_size(Palette),
 	    ColorRes = if PLen > 0, PLen =< 256 ->
 			       trunc(math:log(PLen)/math:log(2))+1;
 			  PLen > 0 ->
@@ -405,8 +407,8 @@ write_image(Fd, Pm) ->
     Interlaced = attribute('Interlaced', Pm#ei_pixmap.attributes, 0),
     %% Special code for none compressed data!!!
     Inline     = attribute('Inline', Pm#ei_pixmap.attributes, 0),
-    if is_list(Palette) ->
-	    PLen = length(Palette),
+    if is_tuple(Palette) ->
+	    PLen = tuple_size(Palette),
 	    ColorRes = if PLen > 0, PLen =< 256 ->
 			       trunc(math:log(PLen)/math:log(2))+1;
 			  PLen > 0 ->
@@ -506,18 +508,18 @@ write_blocks(Fd, Bin, Pos, Size) ->
 	    file:write(Fd, <<Sz, Block/binary>>),
 	    file:write(Fd, <<0>>)
     end.
+-endif.
 
 
-read_pixels(Fd,Pix0,RowFun,St0,Width,Height,Interlaced) ->
+read_pixels(Fd,Pixmap,Ps,Width,Height,Interlaced) ->
     case file:read(Fd, 1) of
 	{ok, <<LZWCodeSize>>} ->
 	    case read_image(Fd,LZWCodeSize,Width,Height) of
 		{ok,Data} ->
-		    case Interlaced of
-			1 ->
-			    interlaced_data(Data,Pix0,RowFun,St0,Width,Height);
-			0 ->
-			    raw_data(Data,Pix0,RowFun,St0,0,Width)
+		    if Interlaced ->
+			    interlaced_data(Data,Pixmap,Ps,Width,Height);
+		       true ->
+			    raw_data(Data,Pixmap,Ps,0,Width)
 		    end;
 		Error ->
 		     Error
@@ -539,13 +541,14 @@ read_image(Fd, LZWCodeSize, _Width, _Height) ->
 %%
 %% Read raw data
 %%
-raw_data(Bin,Pix,RowFun,St0,Ri,Width) ->
+raw_data(Bin,Pixmap,Ps,Ri,Width) ->
     case Bin of
 	<<Row:Width/binary, Bin1/binary>> ->
-	    St1 = RowFun(Pix,Row,Ri,St0),
-	    raw_data(Bin1,Pix,RowFun,St1,Ri+1,Width);
+	    Pixels = unpack_pixels(Row, Ps),
+	    epx:pixmap_put_pixels(Pixmap,0,Ri,Width,1,rgba,Pixels),
+	    raw_data(Bin1,Pixmap,Ps,Ri+1,Width);
 	<<>> ->
-	    {ok, Pix#ei_pixmap { pixels = St0 }}
+	    {ok, Pixmap}
     end.
 
 %% Read interlaced data
@@ -560,31 +563,35 @@ raw_data(Bin,Pix,RowFun,St0,Ri,Width) ->
 %% 7                 R4d
 %% ...
 
-interlaced_data(Bin,Pix,RowFun,St0,Width,Height) ->
-    {St1,Bin1} = raster_data(Bin, Pix,RowFun,St0, Height,0,8, Width),
-    {St2,Bin2} = raster_data(Bin1,Pix,RowFun,St1, Height,4,8, Width),
-    {St3,Bin3} = raster_data(Bin2,Pix,RowFun,St2, Height,2,4, Width),
-    {St4,_Bin4} = raster_data(Bin3,Pix,RowFun,St3, Height,1,2, Width),
-    {ok, Pix#ei_pixmap{ pixels = St4 }}.
+interlaced_data(Bin0,Pixmap,Ps,Width,Height) ->
+    Bin1 = raster_data(Bin0,Pixmap,Ps,Height,0,8, Width),
+    Bin2 = raster_data(Bin1,Pixmap,Ps,Height,4,8, Width),
+    Bin3 = raster_data(Bin2,Pixmap,Ps,Height,2,4, Width),
+    _Bin4 = raster_data(Bin3,Pixmap,Ps,Height,1,2, Width),
+    {ok, Pixmap}.
 
-raster_data(Bin,_Pix,_RowFun,St,Height,Ri,_Rs,_Width) when Ri >= Height ->
-    {St, Bin};
-raster_data(Bin,Pix,RowFun,St0,Height,Ri,Rs,Width) ->
-    <<Row:Width/binary, Bin1/binary>> = Bin,
-    St1 = RowFun(Pix,Row,Ri,St0),
-    raster_data(Bin1,Pix,RowFun,St1,Height,Ri+Rs,Rs,Width).
-    
-
-attribute(Name, List, Default) ->
-    case lists:keysearch(Name, 1, List) of
-	false ->
-	    Default;
-	{value,{_,Value}} ->
-	    Value
-    end.
-
-	    
+raster_data(Bin,_Pixmap,_Ps,Height,Ri,_Rs,_Width) when Ri >= Height ->
+    Bin;
+raster_data(Bin,Pixmap,Ps,Height,Ri,Rs,Width) ->
+    <<Row:Width/binary, Bin1/binary>> = Bin, 
+    Pixels = unpack_pixels(Row, Ps),
+    epx:pixmap_put_pixels(Pixmap,0,Ri,Width,1,rgba,Pixels),
+    raster_data(Bin1,Ps,Pixmap,Height,Ri+Rs,Rs,Width).
 
 
-	    
+unpack_pixels(Data,{Palette,Transparent,Ti,Bi}) ->
+    unpack_pixels(Data,Palette,Transparent,Ti,Bi).
 
+unpack_pixels(<<I,Is/binary>>,Palette,Transparent,Ti,Bi) ->
+    if Transparent, I =:= Ti ->
+	    {R,G,B} = element(I+1,Palette),
+	    [R,G,B,0 | unpack_pixels(Is,Palette,Transparent,Ti,Bi)];
+       true ->
+	    {R,G,B} = element(I+1,Palette),
+	    [R,G,B,255 | unpack_pixels(Is,Palette,Transparent,Ti,Bi)]
+    end;
+unpack_pixels(<<>>, _Palette, _Transparent, _Ti, _Bi) ->
+    [].
+
+select_palette(undefined,P) -> P;
+select_palette(P,_) -> P.

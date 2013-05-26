@@ -27,6 +27,8 @@
 %%
 -export([start/0]).
 -export([old_start/0, old_start/1]).
+%% set epx debug level
+-export([debug/1]).
 %% simd 
 -export([simd_info/0,simd_info/1,simd_set/1]).
 -export([simd_info_keys/0]).
@@ -183,7 +185,18 @@
 		    textured | nfirst | nlast | none.
 -type epx_flags() :: [epx_flag()] | unsigned().
 
+-type join_style() :: miter | round | bevel.
 
+-type cap_style() :: none | butt | round | projecting.
+
+-type fill_style() :: solid | blend | sum | aalias | textured | none.
+
+-type line_style() :: solid | blend | sum | aalias | textured |
+		      dashed | nfirst | nlast | none.
+
+-type border_style() :: solid | blend | sum | aalias | textured |
+			dashed | ntop | nright | nbottom | nleft |
+			none.
 
 -type epx_pixel_format() ::
 	%% FIXME fill with more formats
@@ -231,7 +244,6 @@ start() ->
     application:load(?MODULE), %% make sure command line env is loaded
     application:start(?MODULE).
     
-
 old_start() ->
     Backend = epx_backend:assumed_backend(),
     old_start(Backend).
@@ -254,6 +266,19 @@ old_start(Prefered) ->
 		   end,
 	    epx_backend:create(Name, [])
     end.
+
+%% @doc
+%%  Set epx internal debug logginf
+%% @end
+
+-type epx_debug_level() :: debug | info | notice | warning | error |
+			   critical | alert | emergency | none.
+
+-spec debug(Level::epx_debug_level()) -> void().
+
+
+debug(_Level) ->
+    erlang:error(nif_not_loaded).
 
 -type epx_simd_info_key() ::
 	'accel' |
@@ -309,7 +334,7 @@ simd_info(_Info) ->
 %% @doc
 %%   Set current acceleration type
 %% @end
--spec simd_set(Accel::epx_accel_type()) -> ok.
+-spec simd_set(Accel::epx_accel_type()) -> void().
 
 simd_set(_Accel) ->
     erlang:error(nif_not_loaded).
@@ -384,9 +409,15 @@ pixmap_sub_pixmap(_Src, _X, _Y, _Width, _Height) ->
 -spec pixmap_info_keys() -> [epx_pixmap_info()].
 			 
 pixmap_info_keys() ->
-    [width, height, 
-     bytes_per_row, bits_per_pixel, bytes_per_pixel,
-     pixel_format, parent, clip, backend].
+    [width, 
+     height, 
+     bytes_per_row, 
+     bits_per_pixel, 
+     bytes_per_pixel,
+     pixel_format, 
+     parent, 
+     clip, 
+     backend].
 
 %% @doc
 %%   Get all available pixmap information
@@ -726,40 +757,137 @@ dict_from_list(Dict, [{Key,Value}|List]) ->
 dict_from_list(Dict, []) ->
     Dict.
 
-%%
-%% Graphic context
-%%
+-type epx_gc_info_key() ::
+	'fill_style' |
+	'fill_color' |
+	'fill_texture' |
+	'line_style' |
+	'line_join_style' |
+	'line_cap_style' |
+	'line_width' |
+	'line_texture' |
+	'border_style' |
+	'border_join_style' |
+	'border_cap_style' |
+	'border_color' |
+	'border_texture' |
+	'foreground_color' |
+	'background_color' |
+	'fader_value' |
+	'font' |
+	'glyph_delta_x' |
+	'glyph_delta_y' |
+	'glyph_fixed_width' |
+	'glyph_dot_kern'.
+
+-type epx_gc_info() ::
+	{ 'fill_style',      fill_style()} |
+	{ 'fill_color',      epx_color()} |
+	{ 'fill_texture',    epx_pixmap() } |
+	{ 'line_style',      line_style() } |
+	{ 'line_join_style', join_style() } |
+	{ 'line_cap_style',  cap_style() } |
+	{ 'line_width',      unsigned() } |
+	{ 'line_texture',    epx_pixmap() } |
+	{ 'border_style',    border_style() } |
+	{ 'border_join_style', join_style() } |
+	{ 'border_cap_style', cap_style() } |
+	{ 'border_color',     epx_color() } |
+	{ 'border_texture',   epx_pixmap() } |
+	{ 'foreground_color', epx_color() } |
+	{ 'background_color', epx_color() } |
+	{ 'fader_value', byte() } |
+	{ 'font', epx_font() } |
+	{ 'glyph_delta_x', integer() } |
+	{ 'glyph_delta_y', integer() } |
+	{ 'glyph_fixed_width', unsigned() } |
+	{ 'glyph_dot_kern', unsigned() }.
+
+
+
+%% @doc
+%%  Create a new graphic context
+%% @end
+-spec gc_create() -> epx_gc().
+
 gc_create() ->
     erlang:error(nif_not_loaded).    
+
+%% @doc
+%%  Get the default graphic context
+%% @end
+
+-spec gc_default() -> epx_gc().
 
 gc_default() ->
     erlang:error(nif_not_loaded).
 
+%% @doc
+%%  Copy a graphic context
+%% @end
+-spec gc_copy(Gc::epx_gc()) -> epx_gc().
+
 gc_copy(_Gc) ->
     erlang:error(nif_not_loaded).
+
+%% @doc
+%%  Set graphic context item
+%% @end
+
+-spec gc_set(Gc::epx_gc(), Item::epx_gc_info_key(), Value::term()) -> void().
 
 gc_set(_Gc, _Item, _Value) ->
     erlang:error(nif_not_loaded).
 
+%% @doc
+%%  Get graphic context item
+%% @end
+
+-spec gc_get(Gc::epx_gc(), Item::epx_gc_info_key()) -> term().
+
 gc_get(_Gc, _Item) ->
     erlang:error(nif_not_loaded).    
 
+%% @doc
+%%   Get list of all available gc atributes
+%% @end
+-spec gc_info_keys() -> [epx_gc_info_key()].
+
 gc_info_keys() ->
-    [fill_style,fill_color,fill_texture,
-     line_style,line_join_style,line_cap_style,line_width,line_texture,
-     border_style,border_join_style,border_cap_style,
-     border_color,border_texture,
+    [fill_style,
+     fill_color,
+     fill_texture,
+     line_style,
+     line_join_style,
+     line_cap_style,
+     line_width,
+     line_texture,
+     border_style,
+     border_join_style,
+     border_cap_style,
+     border_color,
+     border_texture,
      foreground_color,
      background_color,
      fader_value,
      font,
-     glyph_delta_x,glyph_delta_y,glyph_fixed_width,glyph_dot_kern].
+     glyph_delta_x,
+     glyph_delta_y,
+     glyph_fixed_width,
+     glyph_dot_kern].
      
+%% @doc
+%%   Return information about gc
+%% @end
+
+-spec gc_info(Gc::epx_gc()) -> [epx_gc_info()].
 
 gc_info(Gc) ->
     map(fun(Info) -> {Info,gc_info(Gc,Info)} end,
 	gc_info_keys()).        
-    
+
+-spec gc_info(Gc::epx_gc(), Item::epx_gc_info_key) -> term().
+
 gc_info(Gc, Item) ->
     gc_get(Gc, Item).
 

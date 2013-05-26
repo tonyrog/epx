@@ -16,7 +16,7 @@
 %%%---- END COPYRIGHT ----------------------------------------------------------
 %%% File    : epx_gc.erl
 %%% Author  : Tony Rogvall <tony@PBook.local>
-%%% Description : EPX GC process wrapper
+%%% Description : Epx gc process wrapper
 %%% Created : 24 Oct 2006 by Tony Rogvall <tony@PBook.local>
 
 -module(epx_gc).
