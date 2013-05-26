@@ -45,7 +45,13 @@ start_link(Args) ->
 %%----------------------------------------------------------------------
 %%----------------------------------------------------------------------
 init(Args) ->
-    put(debug, proplists:get_bool(debug, Args)),
+    Debug = proplists:get_bool(debug, Args),
+    put(debug, Debug),
+    if Debug ->
+	    epx:debug(debug);
+       true ->
+	    ok
+    end,
     ?epx_debug("starting ~p", [Args]),
     Backend = {epx_backend, {epx_backend, start_link, [Args]},
 	       permanent, 5000, worker, [epx_backend_srv]},
