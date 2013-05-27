@@ -31,18 +31,12 @@
 
 -define(IMAGE_TYPES, 
 	[?IMAGE_JPEG,
+	 ?IMAGE_TIFF,
+	 ?IMAGE_GIF,
 	 ?IMAGE_PNG,
 	 ?IMAGE_BMP,
-	 ?IMAGE_XPM]).
-
-
-%% -define(IMAGE_TYPES, [?IMAGE_JPEG,
-%% 		      ?IMAGE_TIFF,
-%%                       ?IMAGE_GIF,
-%%                       ?IMAGE_PNG,
-%%                       ?IMAGE_BMP,
-%%                       ?IMAGE_XPM,
-%%                       ?VIDEO_MPEG]).
+	 ?IMAGE_XPM
+	]).
 
 -record(epx_image,
 	{

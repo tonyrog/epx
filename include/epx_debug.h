@@ -19,31 +19,43 @@
 
 #include <stdarg.h>
 
-extern void epx_emit_error(char* file, int line, ...);
-extern void epx_debug(int mask);
+extern void epx_emit_log(int level, char* file, int line, ...);
+extern void epx_set_debug(int level);
 
-extern int  epx_debug_mask;
+extern int  epx_debug_level;
 
-#define EPX_DBG_ALL    0xFFFF
-#define EPX_DBG_INFO   0x0001
-#define EPX_DBG_WARN   0x0010  // emit warnings
-#define EPX_DBG_MEM    0x4000  // detailed memory debug
+#define DLOG_DEBUG     7
+#define DLOG_INFO      6
+#define DLOG_NOTICE    5
+#define DLOG_WARNING   4
+#define DLOG_ERROR     3
+#define DLOG_CRITICAL  2
+#define DLOG_ALERT     1
+#define DLOG_EMERGENCY 0
+#define DLOG_NONE     -1
 
-#if defined(debug) || defined(DEBUG)
-#define EPX_DBG_IS_SET(flags) ((epx_debug_mask & (flags)) == (flags))
-#define EPX_DBGFMT_mask(mask,...)					\
-    do {								\
-	if (EPX_DBG_IS_SET((mask)))					\
-	    epx_emit_error(__FILE__, __LINE__, __VA_ARGS__);		\
-    } while(0)
-#else
-#define EPX_DBG_IS_SET(flags) 0
-#define EPX_DBGFMT_mask(mask,...)
+#ifndef DLOG_DEFAULT
+#define DLOG_DEFAULT DLOG_NONE
 #endif
 
-#define EPX_DBGFMT(...)      EPX_DBGFMT_mask(EPX_DBG_INFO,__VA_ARGS__)
-#define EPX_DBGFMT_MEM(...)  EPX_DBGFMT_mask(EPX_DBG_MEM,__VA_ARGS__)
-#define EPX_DBGFMT_WARN(...) EPX_DBGFMT_mask(EPX_DBG_WARN,__VA_ARGS__)
+#define DLOG(level,file,line,args...) do {				\
+	if (((level) == DLOG_EMERGENCY) ||				\
+	    ((epx_debug_level >= 0) && ((level) <= epx_debug_level))) {	\
+	    epx_emit_log((level),(file),(line),args);			\
+	}								\
+    } while(0)
+
+#define DEBUGF(args...) DLOG(DLOG_DEBUG,__FILE__,__LINE__,args)
+#define INFOF(args...)  DLOG(DLOG_INFO,__FILE__,__LINE__,args)
+#define NOTICEF(args...)  DLOG(DLOG_NOTICE,__FILE__,__LINE__,args)
+#define WARNINGF(args...)  DLOG(DLOG_WARNING,__FILE__,__LINE__,args)
+#define ERRORF(args...)  DLOG(DLOG_ERROR,__FILE__,__LINE__,args)
+#define CRITICALF(args...)  DLOG(DLOG_CRITICAL,__FILE__,__LINE__,args)
+#define ALERTF(args...)  DLOG(DLOG_ALERT,__FILE__,__LINE__,args)
+#define EMERGENCYF(args...)  DLOG(DLOG_EMERGENCY,__FILE__,__LINE__,args)
+
+#define EPX_DBGFMT(args...) DEBUGF(args)
+#define EPX_DBGFMT_MEM(args...) DEBUGF(args)
 
 #endif
 

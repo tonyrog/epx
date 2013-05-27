@@ -20,24 +20,32 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <errno.h>
 
-int epx_debug_mask = 0;
+#include "../include/epx_debug.h"
 
-void epx_emit_error(char* file, int line, ...)
+int epx_debug_level = DLOG_DEFAULT;
+
+void epx_emit_log(int level, char* file, int line, ...)
 {
     va_list ap;
     char* fmt;
 
-    va_start(ap, line);
-    fmt = va_arg(ap, char*);
-
-    fprintf(stderr, "%s:%d: ", file, line); 
-    vfprintf(stderr, fmt, ap);
-    fprintf(stderr, "\r\n");
-    va_end(ap);
+    if ((level == DLOG_EMERGENCY) ||
+	((epx_debug_level >= 0) && (level <= epx_debug_level))) {
+	int save_errno = errno;
+	    
+	va_start(ap, line);
+	fmt = va_arg(ap, char*);
+	fprintf(stderr, "%s:%d: ", file, line); 
+	vfprintf(stderr, fmt, ap);
+	fprintf(stderr, "\r\n");
+	va_end(ap);
+	errno = save_errno;
+    }
 }
 
-void epx_debug(int debug_mask)
+void epx_set_debug(int level)
 {
-    epx_debug_mask = debug_mask;
+    epx_debug_level = level;
 }
