@@ -15,11 +15,11 @@
  *
  ***************************************************************************/
 /*
- *  Framebuffer display driver 
+ *  Framebuffer display driver
  */
 
 #include "../include/epx_backend.h"
-
+#include "../include/epx_debug.h"
 // FIXME configure
 #include <fcntl.h>
 #include <sys/types.h>
@@ -42,13 +42,6 @@
 typedef u_int8_t  u8;
 typedef u_int16_t u16;
 typedef u_int32_t u32;
-
-// HACK
-#undef EPX_DBGFMT
-#define EPX_DBGFMT(...)							\
-    do {								\
-	epx_emit_error(__FILE__, __LINE__, __VA_ARGS__);		\
-    } while(0)
 
 #include "via_ioctl.h"   /* SPECIAL VIA ONLY */
 #include "via_tv.h"   /* SPECIAL VIA ONLY */
@@ -74,7 +67,7 @@ typedef struct {
     int cbuf;                         /* Current buffer displayed */
     epx_pixmap_t screen[2];                /* The screen/off-screen as a pixmap */
     char direct_pixmap_draw;   /* Shall we map fb directly into pixmap? */
-  
+
     unsigned char *org_pixmap_data; /* Place holder for pixmap->data if direct draw */
     int                   via_support;    /* this is a via fb ? */
     struct viafb_driver_version via_vsn;  /* if so this is version */
@@ -133,14 +126,14 @@ static struct viafb_param_map_t {
     { "active_device", "dvi+crt",  DVI_Device, CRT_Device },
     { "active_device", "crt+tv",   CRT_Device, TV_Device },
     { "active_device", "tv+crt",   TV_Device, CRT_Device },
-    { "active_device", "crt+lcd",  CRT_Device, LCD_Device }, 
+    { "active_device", "crt+lcd",  CRT_Device, LCD_Device },
     { "active_device", "lcd+crt",  LCD_Device, CRT_Device },
     { "active_device", "dvi+lcd",  DVI_Device, LCD_Device },
     { "active_device", "lcd+dvi",  LCD_Device, DVI_Device },
     { "active_device", "dvi+tv",   DVI_Device, TV_Device },
     { "active_device", "tv+dvi",   TV_Device,  DVI_Device },
     { "active_device", "lcd+tv",   LCD_Device, TV_Device },
-    { "active_device", "tv+lcd",   TV_Device,  LCD_Device }, 
+    { "active_device", "tv+lcd",   TV_Device,  LCD_Device },
     { "active_device", "lcd+lcd2", LCD_Device, LCD2_Device },
     { "active_device", "lcd2+lcd", LCD2_Device, LCD_Device },
     { "active_device", "crt",      CRT_Device, 0 },
@@ -232,69 +225,69 @@ struct viafb_param_map_t *viafb_parse_parameter(char *param, char *key)
 
 void fb_dump_vinfo(char *header, struct fb_var_screeninfo *vinfo)
 {
-    (void) vinfo; // For make relaease 
-    (void) header;// For make relaease 
-    EPX_DBGFMT("fb: %s", header);
-    EPX_DBGFMT("fb: vinfo.xres            %lu", vinfo->xres);
-    EPX_DBGFMT("fb: vinfo.yres            %lu", vinfo->yres);
-    EPX_DBGFMT("fb: vinfo.xres_virtual    %lu", vinfo->xres_virtual);
-    EPX_DBGFMT("fb: vinfo.yres_virtual    %lu", vinfo->yres_virtual);
-    EPX_DBGFMT("fb: vinfo.xoffset         %lu", vinfo->xoffset);
-    EPX_DBGFMT("fb: vinfo.yoffset         %lu", vinfo->yoffset);
-    EPX_DBGFMT("fb: vinfo.bits_per_pixel  %lu", vinfo->bits_per_pixel);
-    EPX_DBGFMT("fb: vinfo.grayscale       %lu", vinfo->grayscale);
-    EPX_DBGFMT("fb: vinfo.red%s", "");
-    EPX_DBGFMT("fb:          .offset      %lu", vinfo->red.offset);
-    EPX_DBGFMT("fb:          .length      %lu", vinfo->red.length);
-    EPX_DBGFMT("fb:          .msb_right   %lu", vinfo->red.msb_right);
-    EPX_DBGFMT("fb: vinfo.green%s", "");
-    EPX_DBGFMT("fb:          .offset      %lu", vinfo->green.offset);
-    EPX_DBGFMT("fb:          .length      %lu", vinfo->green.length);
-    EPX_DBGFMT("fb:          .msb_right   %lu", vinfo->green.msb_right);
-    EPX_DBGFMT("fb: vinfo.blue%s", "");
-    EPX_DBGFMT("fb:          .offset      %lu", vinfo->blue.offset);
-    EPX_DBGFMT("fb:          .length      %lu", vinfo->blue.length);
-    EPX_DBGFMT("fb:          .msb_right   %lu", vinfo->blue.msb_right);
-    EPX_DBGFMT("fb: vinfo.transp%s", "");
-    EPX_DBGFMT("fb:          .offset      %lu", vinfo->transp.offset);
-    EPX_DBGFMT("fb:          .length      %lu", vinfo->transp.length);
-    EPX_DBGFMT("fb:          .msb_right   %lu", vinfo->transp.msb_right);
-    EPX_DBGFMT("fb: vinfo.nonstd          %lu", vinfo->nonstd);
-    EPX_DBGFMT("fb: vinfo.activate        %lu", vinfo->activate);
-    EPX_DBGFMT("fb: vinfo.height          %lu", vinfo->height);
-    EPX_DBGFMT("fb: vinfo.width           %lu", vinfo->width);
-    EPX_DBGFMT("fb: vinfo.pixclock        %lu", vinfo->pixclock);
-    EPX_DBGFMT("fb: vinfo.left_margin     %lu", vinfo->left_margin);
-    EPX_DBGFMT("fb: vinfo.upper_margin    %lu", vinfo->upper_margin);
-    EPX_DBGFMT("fb: vinfo.lower_margin    %lu", vinfo->lower_margin);
-    EPX_DBGFMT("fb: vinfo.hsync_len       %lu", vinfo->hsync_len);
-    EPX_DBGFMT("fb: vinfo.vsync_len       %lu", vinfo->vsync_len);
-    EPX_DBGFMT("fb: vinfo.sync            %lu", vinfo->sync);
-    EPX_DBGFMT("fb: vinfo.rotate          %lu\n", vinfo->rotate);
+    (void) vinfo; // For make relaease
+    (void) header;// For make relaease
+    DEBUGF("fb: %s", header);
+    DEBUGF("fb: vinfo.xres            %lu", vinfo->xres);
+    DEBUGF("fb: vinfo.yres            %lu", vinfo->yres);
+    DEBUGF("fb: vinfo.xres_virtual    %lu", vinfo->xres_virtual);
+    DEBUGF("fb: vinfo.yres_virtual    %lu", vinfo->yres_virtual);
+    DEBUGF("fb: vinfo.xoffset         %lu", vinfo->xoffset);
+    DEBUGF("fb: vinfo.yoffset         %lu", vinfo->yoffset);
+    DEBUGF("fb: vinfo.bits_per_pixel  %lu", vinfo->bits_per_pixel);
+    DEBUGF("fb: vinfo.grayscale       %lu", vinfo->grayscale);
+    DEBUGF("fb: vinfo.red%s", "");
+    DEBUGF("fb:          .offset      %lu", vinfo->red.offset);
+    DEBUGF("fb:          .length      %lu", vinfo->red.length);
+    DEBUGF("fb:          .msb_right   %lu", vinfo->red.msb_right);
+    DEBUGF("fb: vinfo.green%s", "");
+    DEBUGF("fb:          .offset      %lu", vinfo->green.offset);
+    DEBUGF("fb:          .length      %lu", vinfo->green.length);
+    DEBUGF("fb:          .msb_right   %lu", vinfo->green.msb_right);
+    DEBUGF("fb: vinfo.blue%s", "");
+    DEBUGF("fb:          .offset      %lu", vinfo->blue.offset);
+    DEBUGF("fb:          .length      %lu", vinfo->blue.length);
+    DEBUGF("fb:          .msb_right   %lu", vinfo->blue.msb_right);
+    DEBUGF("fb: vinfo.transp%s", "");
+    DEBUGF("fb:          .offset      %lu", vinfo->transp.offset);
+    DEBUGF("fb:          .length      %lu", vinfo->transp.length);
+    DEBUGF("fb:          .msb_right   %lu", vinfo->transp.msb_right);
+    DEBUGF("fb: vinfo.nonstd          %lu", vinfo->nonstd);
+    DEBUGF("fb: vinfo.activate        %lu", vinfo->activate);
+    DEBUGF("fb: vinfo.height          %lu", vinfo->height);
+    DEBUGF("fb: vinfo.width           %lu", vinfo->width);
+    DEBUGF("fb: vinfo.pixclock        %lu", vinfo->pixclock);
+    DEBUGF("fb: vinfo.left_margin     %lu", vinfo->left_margin);
+    DEBUGF("fb: vinfo.upper_margin    %lu", vinfo->upper_margin);
+    DEBUGF("fb: vinfo.lower_margin    %lu", vinfo->lower_margin);
+    DEBUGF("fb: vinfo.hsync_len       %lu", vinfo->hsync_len);
+    DEBUGF("fb: vinfo.vsync_len       %lu", vinfo->vsync_len);
+    DEBUGF("fb: vinfo.sync            %lu", vinfo->sync);
+    DEBUGF("fb: vinfo.rotate          %lu\n", vinfo->rotate);
 }
 
 void fb_dump_finfo(char *header, struct fb_fix_screeninfo *finfo)
 {
-    (void) finfo; // For make relaease 
-    (void) header;// For make relaease 
-    EPX_DBGFMT("fb: %s", header);
-    EPX_DBGFMT("fb: finfo.id              %s", finfo->id);
-    EPX_DBGFMT("fb: finfo.smem_start      0x%X", finfo->smem_start);
-    EPX_DBGFMT("fb: finfo.smem_len        %lu", finfo->smem_len);
-    EPX_DBGFMT("fb: finfo.type            0x%X", finfo->type);
-    EPX_DBGFMT("fb: finfo.type_aux        %lu", finfo->type_aux);
-    EPX_DBGFMT("fb: finfo.visual          %lu", finfo->visual);
-    EPX_DBGFMT("fb: finfo.xpanstep        %hu", finfo->xpanstep);
-    EPX_DBGFMT("fb: finfo.ypanstep        %hu", finfo->ypanstep);
-    EPX_DBGFMT("fb: finfo.ywrapstep       %hu", finfo->ywrapstep);
-    EPX_DBGFMT("fb: finfo.line_length     %lu", finfo->line_length);
-    EPX_DBGFMT("fb: finfo.mmio_start      %lu", finfo->mmio_start);
-    EPX_DBGFMT("fb: finfo.mmio_len        %lu", finfo->mmio_len);
-    EPX_DBGFMT("fb: finf.accel            %lu", finfo->accel);
+    (void) finfo; // For make relaease
+    (void) header;// For make relaease
+    DEBUGF("fb: %s", header);
+    DEBUGF("fb: finfo.id              %s", finfo->id);
+    DEBUGF("fb: finfo.smem_start      0x%X", finfo->smem_start);
+    DEBUGF("fb: finfo.smem_len        %lu", finfo->smem_len);
+    DEBUGF("fb: finfo.type            0x%X", finfo->type);
+    DEBUGF("fb: finfo.type_aux        %lu", finfo->type_aux);
+    DEBUGF("fb: finfo.visual          %lu", finfo->visual);
+    DEBUGF("fb: finfo.xpanstep        %hu", finfo->xpanstep);
+    DEBUGF("fb: finfo.ypanstep        %hu", finfo->ypanstep);
+    DEBUGF("fb: finfo.ywrapstep       %hu", finfo->ywrapstep);
+    DEBUGF("fb: finfo.line_length     %lu", finfo->line_length);
+    DEBUGF("fb: finfo.mmio_start      %lu", finfo->mmio_start);
+    DEBUGF("fb: finfo.mmio_len        %lu", finfo->mmio_len);
+    DEBUGF("fb: finf.accel            %lu", finfo->accel);
 }
 
 
-static void fb_mod_vinfo(epx_dict_t *param, struct fb_var_screeninfo *vinfo) 
+static void fb_mod_vinfo(epx_dict_t *param, struct fb_var_screeninfo *vinfo)
 {
     int   int_param;
     unsigned int  uint_param;
@@ -375,7 +368,7 @@ static void fb_mod_vinfo(epx_dict_t *param, struct fb_var_screeninfo *vinfo)
     if (epx_dict_lookup_integer(param, "vmode", (int*) &uint_param)  != -1 &&
 	(uint_param != 0xFFFFFFFF))
 	vinfo->vmode = uint_param;
-    
+
 }
 
 epx_backend_t* fb_init(epx_dict_t* param)
@@ -408,12 +401,12 @@ epx_backend_t* fb_init(epx_dict_t* param)
     be->mtrr_fd = -1;
 
     if (epx_dict_lookup_string(param, "framebuffer_device", &string_param, NULL) == -1) {
-	EPX_DBGFMT("mssing framebuffer_device paramter. Defaulting to /dev/fb%d", 
+	DEBUGF("mssing framebuffer_device paramter. Defaulting to /dev/fb%d",
 		0);
 	string_param = "/dev/fb0";
     }
     if ((be->fb_fd = open(string_param, O_RDWR)) == -1) {
-	EPX_DBGFMT("Could not open frame buffer [%s]: [%s]", string_param, strerror(errno));
+	DEBUGF("Could not open frame buffer [%s]: [%s]", string_param, strerror(errno));
 	goto error;
     }
 
@@ -422,15 +415,15 @@ epx_backend_t* fb_init(epx_dict_t* param)
 			     &be->via_vsn) >= 0);
 
     if (ioctl(be->fb_fd, FBIOGET_VSCREENINFO, &be->ovinfo) == -1) {
-	EPX_DBGFMT("ioctl:FBIOGET_VSCREENINFO failed: [%s]", strerror(errno));
+	DEBUGF("ioctl:FBIOGET_VSCREENINFO failed: [%s]", strerror(errno));
 	goto error;
     }
 
     // Unichrome bug workaround.
-    if (!be->ovinfo.red.offset && 
-	!be->ovinfo.green.offset && 
+    if (!be->ovinfo.red.offset &&
+	!be->ovinfo.green.offset &&
 	!be->ovinfo.blue.offset) {
-	EPX_DBGFMT("Unichrome bug workaround. Device driver reported null offsets for color channels, Will fill in BGRA");
+	DEBUGF("Unichrome bug workaround. Device driver reported null offsets for color channels, Will fill in BGRA");
 	be->ovinfo.red.offset = 16;
 	be->ovinfo.red.length = 8;
 	be->ovinfo.red.msb_right = 0;
@@ -443,15 +436,15 @@ epx_backend_t* fb_init(epx_dict_t* param)
 	be->ovinfo.blue.length = 8;
 	be->ovinfo.blue.msb_right = 0;
     }
-	
+
     fb_dump_vinfo("Retrieved values.", &be->ovinfo);
-    
+
 
     r = write(2, cursoroff_str, strlen(cursoroff_str));
     if (r < 0)
 	r = write(2, blankoff_str, strlen(blankoff_str));
     if (r < 0) {
-	EPX_DBGFMT("write failed: [%s]", strerror(errno));
+	DEBUGF("write failed: [%s]", strerror(errno));
     }
 
     be->vinfo  = be->ovinfo;
@@ -497,20 +490,20 @@ static void viafb_dump(char *hdr, struct viafb_ioctl_setting *setting)
 	   (setting->device_status & LCD2_Device)?'X':' ');
 
 
-    printf("viafb: tv_operation_flag:   out_signal[%c] tv_system[%c] tv_level[%c] dedotcrawl[%c]\n", 
+    printf("viafb: tv_operation_flag:   out_signal[%c] tv_system[%c] tv_level[%c] dedotcrawl[%c]\n",
 	   (setting->tv_operation_flag & OP_TV_OUT_SIGNAL)?'X':' ',
 	   (setting->tv_operation_flag & OP_TV_SYSTEM)?'X':' ',
 	   (setting->tv_operation_flag & OP_TV_LEVEL)?'X':' ',
 	   (setting->tv_operation_flag & OP_TV_DEDOTCRAWL)?'X':' ');
 
-    printf("viafb: tv_operation_flag:   brightness[%c] contrast[%c] saturation[%c] tint[%c]\n", 
+    printf("viafb: tv_operation_flag:   brightness[%c] contrast[%c] saturation[%c] tint[%c]\n",
 	   (setting->tv_operation_flag & OP_TV_BRIGHTNESS)?'X':' ',
 	   (setting->tv_operation_flag & OP_TV_CONTRAST)?'X':' ',
 	   (setting->tv_operation_flag & OP_TV_SATURATION)?'X':' ',
 	   (setting->tv_operation_flag & OP_TV_TINT)?'X':' ');
-    
+
     // FFILTER == FLICKER FILTER!
-    printf("viafb: tv_operation_flag:   pos[%c] setting_ffilter[%c] tuning_ffilter[%c]\n", 
+    printf("viafb: tv_operation_flag:   pos[%c] setting_ffilter[%c] tuning_ffilter[%c]\n",
 	   (setting->tv_operation_flag & OP_TV_POSITION)?'X':' ',
 	   (setting->tv_operation_flag & OP_TV_SETTING_FFILTER)?'X':' ',
 	   (setting->tv_operation_flag & OP_TV_TUNING_FFILTER)?'X':' ');
@@ -547,8 +540,8 @@ static void viafb_dump(char *hdr, struct viafb_ioctl_setting *setting)
 	   (setting->primary_device & LCD2_Device)?'X':' ');
 
     printf("viafb: video_device_status: [%X]\n", setting->video_device_status);
-    
-    
+
+
     printf("viafb: tv_attr: system:                 NTSC[%c] PAL[%c] 480P[%c] 576P[%c] 720P[%c] 1080I[%c]\n",
 	   (setting->tv_attributes.system & TVTYPE_NTSC)?'X':' ',
 	   (setting->tv_attributes.system & TVTYPE_PAL)?'X':' ',
@@ -558,24 +551,24 @@ static void viafb_dump(char *hdr, struct viafb_ioctl_setting *setting)
 	   (setting->tv_attributes.system & TVTYPE_1080I)?'X':' '
 	   );
 
-    printf("viafb: tv_attr: level:                  [%s%s%s]\n", 
+    printf("viafb: tv_attr: level:                  [%s%s%s]\n",
 	   (setting->tv_attributes.level == TV_SIZE_NORMAL_SCAN)?"normal scan":"",
 	   (setting->tv_attributes.level == TV_SIZE_FIT_SCAN)?"fit scan":"",
 	   (setting->tv_attributes.level == TV_SIZE_OVER_SCAN)?"over scan":""
 	   );
 
-    printf("viafb: tv_attr: out_signal:             composite[%c] svideo[%c] rgb[%c]\n", 
+    printf("viafb: tv_attr: out_signal:             composite[%c] svideo[%c] rgb[%c]\n",
 	   (setting->tv_attributes.out_signal & TV_OUTPUT_COMPOSITE)?'X':' ',
 	   (setting->tv_attributes.out_signal & TV_OUTPUT_SVIDEO)?'X':' ',
 	   (setting->tv_attributes.out_signal & TV_OUTPUT_RGB)?'X':' '
 	   );
-    printf("viafb: tv_attr: out_signal:             ypbpr[%c] composite_svideo[%c] rgb_composite[%c]\n", 
+    printf("viafb: tv_attr: out_signal:             ypbpr[%c] composite_svideo[%c] rgb_composite[%c]\n",
 	   (setting->tv_attributes.out_signal & TV_OUTPUT_YPBPR)?'X':' ',
 	   (setting->tv_attributes.out_signal & TV_OUTPUT_COMPOSITE_SVIDEO)?'X':' ',
 	   (setting->tv_attributes.out_signal & TV_OUTPUT_RGB_COMPOSITE)?'X':' '
 	   );
 
-    printf("viafb: tv_attr: out_signal:             ypbpr_composite[%c] rgb_composite_svideo[%c] ypbpr_composite_svideo[%c]\n", 
+    printf("viafb: tv_attr: out_signal:             ypbpr_composite[%c] rgb_composite_svideo[%c] ypbpr_composite_svideo[%c]\n",
 	   (setting->tv_attributes.out_signal & TV_OUTPUT_YPBPR_COMPOSITE)?'X':' ',
 	   (setting->tv_attributes.out_signal & TV_OUTPUT_RGB_COMPOSITE_SVIDEO)?'X':' ',
 	   (setting->tv_attributes.out_signal & TV_OUTPUT_YPBPR_COMPOSITE_SVIDEO)?'X':' '
@@ -585,7 +578,7 @@ static void viafb_dump(char *hdr, struct viafb_ioctl_setting *setting)
 	   (setting->tv_attributes.dedotcrawl == STATE_ON)?"on":"",
 	   (setting->tv_attributes.dedotcrawl == STATE_OFF)?"off":"");
 
-    
+
     printf("viafb: tv_attr: ffilter:                [%X]\n", setting->tv_attributes.ffilter);
     printf("viafb: tv_attr: ffilter_state:          [%X]\n", setting->tv_attributes.ffilter_state);
     printf("viafb: tv_attr: adaptive_ffilter:       [%X]\n", setting->tv_attributes.adaptive_ffilter);
@@ -611,10 +604,10 @@ static void viafb_dump(char *hdr, struct viafb_ioctl_setting *setting)
     printf("viafb: lcd_attr: display_center: [%u]\n", setting->lcd_attributes.display_center);
     printf("viafb: lcd_attr: lcd_mode:       [%X]\n", setting->lcd_attributes.lcd_mode);
     puts("-----\n");
-    
+
 }
 
-static int viafb_adjust(int fd, epx_dict_t *param) 
+static int viafb_adjust(int fd, epx_dict_t *param)
 {
     struct viafb_ioctl_setting via_info;
     char* string_param;
@@ -629,7 +622,7 @@ static int viafb_adjust(int fd, epx_dict_t *param)
 	return -1;
     }
     viafb_dump("Before", &via_info);
-    
+
     // Active device
     if (epx_dict_lookup_string(param, "active_device", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("active_device", string_param))) {
@@ -653,95 +646,95 @@ static int viafb_adjust(int fd, epx_dict_t *param)
     //
     if (epx_dict_lookup_string(param, "lcd_scaling", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("lcd_scaling", string_param))) {
-	via_info.lcd_operation_flag |= OP_LCD_CENTERING; 
+	via_info.lcd_operation_flag |= OP_LCD_CENTERING;
 	via_info.lcd_attributes.display_center = p_entry->val;
     }
 
     if (epx_dict_lookup_string(param, "lcd_mode", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("lcd_mode", string_param))) {
-	via_info.lcd_operation_flag |= OP_LCD_MODE; 
+	via_info.lcd_operation_flag |= OP_LCD_MODE;
 	via_info.lcd_attributes.display_center = p_entry->val;
     }
 
     if (epx_dict_lookup_integer(param, "lcd_panel_id", &int_param) != -1) {
-	via_info.lcd_operation_flag |= OP_TV_TINT; 
+	via_info.lcd_operation_flag |= OP_TV_TINT;
 	via_info.lcd_attributes.panel_id = viafb_max(LCD_PANEL_ID_MAXIMUM, int_param);
     }
 
-    // 
+    //
     // TV config
     //
     if (epx_dict_lookup_string(param, "tv_system", &string_param,NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_system", string_param))) {
-	via_info.tv_operation_flag |= OP_TV_SYSTEM; 
+	via_info.tv_operation_flag |= OP_TV_SYSTEM;
 	via_info.tv_attributes.system = p_entry->val;
     }
 
     if (epx_dict_lookup_string(param, "tv_output_signal", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_output_signal", string_param))) {
-	via_info.tv_operation_flag |= OP_TV_OUT_SIGNAL; 
+	via_info.tv_operation_flag |= OP_TV_OUT_SIGNAL;
 	via_info.tv_attributes.out_signal = p_entry->val;
     }
 
     if (epx_dict_lookup_string(param, "tv_scan", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_scan", string_param))) {
-	via_info.tv_operation_flag |= OP_TV_LEVEL; 
+	via_info.tv_operation_flag |= OP_TV_LEVEL;
 	via_info.tv_attributes.level = p_entry->val;
     }
 
     if (epx_dict_lookup_string(param, "tv_dedotcrawl", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_dedotcrawl", string_param))) {
-	via_info.tv_operation_flag |= OP_TV_DEDOTCRAWL; 
+	via_info.tv_operation_flag |= OP_TV_DEDOTCRAWL;
 	via_info.tv_attributes.dedotcrawl = p_entry->val;
     }
 
     if (epx_dict_lookup_integer(param, "tv_brightness", &int_param) != -1) {
-	via_info.tv_operation_flag |= OP_TV_BRIGHTNESS; 
+	via_info.tv_operation_flag |= OP_TV_BRIGHTNESS;
 	via_info.tv_attributes.brightness = viafb_max(TV_BRIGHTNESS_MAXIMUM, int_param);
     }
 
     if (epx_dict_lookup_integer(param, "tv_contrast", &int_param) != -1) {
-	via_info.tv_operation_flag |= OP_TV_CONTRAST; 
+	via_info.tv_operation_flag |= OP_TV_CONTRAST;
 	via_info.tv_attributes.contrast = viafb_max(TV_CONTRAST_MAXIMUM, int_param);
     }
 
     if (epx_dict_lookup_integer(param, "tv_saturation", &int_param) != -1) {
-	via_info.tv_operation_flag |= OP_TV_SATURATION; 
+	via_info.tv_operation_flag |= OP_TV_SATURATION;
 	via_info.tv_attributes.saturation = viafb_max(TV_SATURATION_MAXIMUM, int_param);
     }
 
     if (epx_dict_lookup_integer(param, "tv_tint", &int_param) != -1) {
-	via_info.tv_operation_flag |= OP_TV_TINT; 
+	via_info.tv_operation_flag |= OP_TV_TINT;
 	via_info.tv_attributes.tint = viafb_max(TV_TINT_MAXIMUM, int_param);
     }
 
     if (epx_dict_lookup_integer(param, "tv_tint", &int_param) != -1) {
-	via_info.tv_operation_flag |= OP_TV_TINT; 
+	via_info.tv_operation_flag |= OP_TV_TINT;
 	via_info.tv_attributes.tint = viafb_max(TV_TINT_MAXIMUM, int_param);
     }
 
 
     if (epx_dict_lookup_string(param, "tv_set_ffilter", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_set_ffilter", string_param))) {
-	via_info.tv_operation_flag |= OP_TV_SETTING_FFILTER; 
+	via_info.tv_operation_flag |= OP_TV_SETTING_FFILTER;
 	via_info.tv_attributes.ffilter_state = p_entry->val;
     }
 
 
     if (epx_dict_lookup_integer(param, "tv_tune_ffilter", &int_param) != -1) {
-	via_info.tv_operation_flag |= OP_TV_TUNING_FFILTER; 
+	via_info.tv_operation_flag |= OP_TV_TUNING_FFILTER;
 	via_info.tv_attributes.ffilter = int_param;
     }
 
     if (epx_dict_lookup_string(param, "tv_set_adaptive_ffilter", &string_param, NULL) != -1 &&
 	(p_entry = viafb_parse_parameter("tv_set_adaptive_ffilter", string_param))) {
-	via_info.tv_operation_flag |= OP_TV_SETTING_ADAPTIVE_FFILTER; 
+	via_info.tv_operation_flag |= OP_TV_SETTING_ADAPTIVE_FFILTER;
 	via_info.tv_attributes.adaptive_ffilter_state = p_entry->val;
     }
 
 
     if (epx_dict_lookup_integer(param, "tv_tune_adaptive_ffilter", &int_param) != -1) {
-	via_info.tv_operation_flag |= OP_TV_TUNING_ADAPTIVE_FFILTER; 
+	via_info.tv_operation_flag |= OP_TV_TUNING_ADAPTIVE_FFILTER;
 	via_info.tv_attributes.adaptive_ffilter = int_param;
     }
 
@@ -782,7 +775,7 @@ static int viafb_adjust(int fd, epx_dict_t *param)
     }
 
     //
-    // Tv position time. 
+    // Tv position time.
     // These parameters seem not be used by VIAFB_SET_DEVICE_INFO, so we use specific
     // ioctls for them.
     //
@@ -840,15 +833,15 @@ static int fb_adjust(epx_backend_t *backend, epx_dict_t* param)
     // Retrieve info.
     //
     if (ioctl(be->fb_fd, FBIOGET_VSCREENINFO, &be->vinfo) == -1) {
-	EPX_DBGFMT("ioctl:FBIOGET_VSCREENINFO failed: [%s]", strerror(errno));
+	DEBUGF("ioctl:FBIOGET_VSCREENINFO failed: [%s]", strerror(errno));
 	return 0;
     }
 
     // Unichrome bug workaround.
-    if (!be->vinfo.red.offset && 
-	!be->vinfo.green.offset && 
+    if (!be->vinfo.red.offset &&
+	!be->vinfo.green.offset &&
 	!be->vinfo.blue.offset) {
-	EPX_DBGFMT("Unichrome bug workaround. Device driver reported null offsets for color channels, Will fill in BGRA");
+	DEBUGF("Unichrome bug workaround. Device driver reported null offsets for color channels, Will fill in BGRA");
 	be->vinfo.red.offset = 16;
 	be->vinfo.red.length = 8;
 	be->vinfo.red.msb_right = 0;
@@ -866,7 +859,7 @@ static int fb_adjust(epx_backend_t *backend, epx_dict_t* param)
 	    be->vinfo.transp.offset = 24;
 	}
     }
-	
+
     fb_dump_vinfo("Retrieved values.", &be->vinfo);
     fb_mod_vinfo(param, &be->vinfo);
 
@@ -877,7 +870,7 @@ static int fb_adjust(epx_backend_t *backend, epx_dict_t* param)
     fb_dump_vinfo("Adjusted values to be set.", &be->vinfo);
 
     if (ioctl(be->fb_fd, FBIOPUT_VSCREENINFO, &be->vinfo) < 0) {
-	EPX_DBGFMT("ioctl:FBIOPUT_VSCREENINFO/ACTIVATE) failed [%s]", strerror(errno));
+	DEBUGF("ioctl:FBIOPUT_VSCREENINFO/ACTIVATE) failed [%s]", strerror(errno));
 	return 0;
     }
 
@@ -963,7 +956,7 @@ static int fb_end(epx_window_t* ewin,int off_screen)
   return 0;
 }
 
-static int fb_pic_draw(epx_backend_t* backend, epx_pixmap_t* pixmap, 
+static int fb_pic_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
 		       epx_window_t* ewin,
 		       int src_x, int src_y, int dst_x, int dst_y,
 		       unsigned int width,
@@ -1039,21 +1032,21 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 
     fb_dump_vinfo("Modified values to be set.", &be->vinfo);
     if (ioctl(be->fb_fd, FBIOPUT_VSCREENINFO, &be->vinfo) < 0) {
-	EPX_DBGFMT("ioctl:FBIOPUT_VSCREENINFO/ACTIVATE) failed [%s]", strerror(errno));
+	DEBUGF("ioctl:FBIOPUT_VSCREENINFO/ACTIVATE) failed [%s]", strerror(errno));
 	return -1;
     }
-    
+
     /* Can we double buffer? */
     if (be->dbuf) {
 	be->vinfo.yres_virtual = be->vinfo.yres*2;
 	if (ioctl(be->fb_fd, FBIOPUT_VSCREENINFO, &be->vinfo) < 0) {
-	    EPX_DBGFMT("double buffer test failed [%s]", strerror(errno));
+	    DEBUGF("double buffer test failed [%s]", strerror(errno));
 	    be->dbuf = 0;
 	}
     }
 
     if (ioctl(be->fb_fd, FBIOGET_FSCREENINFO, &be->finfo) == -1) {
-	EPX_DBGFMT("ioctl:FBIOGET_FSCREENINFO failed: [%s]", strerror(errno));
+	DEBUGF("ioctl:FBIOGET_FSCREENINFO failed: [%s]", strerror(errno));
 	return -1;
     }
 
@@ -1062,29 +1055,29 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 
     be->screen[0].data = (unsigned char *) mmap (0, be->finfo.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, be->fb_fd, 0);
     if (!be->screen[0].data) {
-	EPX_DBGFMT("mmap of screen memory failed [%s].", strerror(errno));
+	DEBUGF("mmap of screen memory failed [%s].", strerror(errno));
 	return -1;
     }
 
     /* Setup MTRR */
 #ifdef HAVE_MTRR
-    if ((be->mtrr_fd = open("/proc/mtrr", O_WRONLY, 0)) == -1) 
+    if ((be->mtrr_fd = open("/proc/mtrr", O_WRONLY, 0)) == -1)
     {
 	if (errno == ENOENT) {
-	    EPX_DBGFMT("/proc/mtrr not found: MTRR not enabled %s", "");
+	    DEBUGF("/proc/mtrr not found: MTRR not enabled %s", "");
 	}  else {
-	    EPX_DBGFMT("Error opening /proc/mtrr: [%s], Disabled.", strerror(errno));
+	    DEBUGF("Error opening /proc/mtrr: [%s], Disabled.", strerror(errno));
 	}
     }
     else {
 	struct mtrr_sentry sentry;
-    
+
 	sentry.base = be->finfo.smem_start;
 	sentry.size = 0x2000000;
 	sentry.type = MTRR_TYPE_WRCOMB;
-      
+
 	if ( ioctl(be->mtrr_fd, MTRRIOC_ADD_ENTRY, &sentry) == -1 ) {
-	    EPX_DBGFMT("MTRRIOC_ADD_ENTRY: [%s] Disabled", strerror(errno));
+	    DEBUGF("MTRRIOC_ADD_ENTRY: [%s] Disabled", strerror(errno));
 	    close(be->mtrr_fd);
 	    be->mtrr_fd = -1;
 	}
@@ -1096,7 +1089,7 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     // Also used to test out double buffering,.
     //
     if (ioctl(be->fb_fd, FBIOPAN_DISPLAY, &be->vinfo) == -1) {
-	EPX_DBGFMT("Initial pan failed [%s]. Giving up on double buffering (if active)", strerror(errno));
+	DEBUGF("Initial pan failed [%s]. Giving up on double buffering (if active)", strerror(errno));
 
 	// Reset double buffering.
 	if (be->dbuf) {
@@ -1107,8 +1100,8 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     }
 
 
-    /* 
-     * Setup be->creen pixmap. clip member will be continously modified by fb_pic_draw 
+    /*
+     * Setup be->creen pixmap. clip member will be continously modified by fb_pic_draw
      */
     be->screen[0].width = be->vinfo.xres;
     be->screen[0].height = be->vinfo.yres;
@@ -1152,7 +1145,7 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 
     pt = 0;
     // FIXME: Buggy reversed condition ! do not know why
-    if (!(bo > go)) pt |= EPX_F_Bgr;         // BGR else RGB 
+    if (!(bo > go)) pt |= EPX_F_Bgr;         // BGR else RGB
     if (al > 0)  pt |= EPX_F_Alpha;          // Alpha available
     if ((al>0)&&(ao<ro)) pt |= EPX_F_AFirst; // Alpha first
     pt |= ((be->vinfo.bits_per_pixel-1) & EPX_M_Size);  // pixel size
@@ -1169,11 +1162,11 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	default: break;
 	}
     }
-    else if ((rl==3)&&(gl==3)&&(bl==2)) 
-	pt |= (EPX_FMT_RGB332<<12);	
-    else if ((rl==2)&&(gl==3)&&(bl==2)) 
+    else if ((rl==3)&&(gl==3)&&(bl==2))
+	pt |= (EPX_FMT_RGB332<<12);
+    else if ((rl==2)&&(gl==3)&&(bl==2))
 	pt |= (EPX_FMT_RGB232<<12);
-    else if ((rl==5)&&(gl==6)&&(bl==5)) 
+    else if ((rl==5)&&(gl==6)&&(bl==5))
 	pt |= (EPX_FMT_RGB565<<12);
     else if (rl && !gl && !bl)
 	pt |= (EPX_FMT_RED<<12);
@@ -1183,7 +1176,7 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	pt |= (EPX_FMT_BLUE<<12);
     else
 	pt = EPX_FORMAT_INVALID;
-    
+
     {
 	char* pt_name = epx_pixel_format_to_name(pt);
 	if (pt_name != NULL)
@@ -1204,7 +1197,7 @@ static int fb_win_detach(epx_backend_t* backend, epx_window_t* ewin)
 {
     FbBackend* be = (FbBackend*) backend;
     FbWindow*  win  = (FbWindow*)  ewin->opaque;
-    
+
     if ((be != NULL) && (win->wstate != 0)) {
 	free(win);
 	epx_object_unlink(&backend->window_list, ewin);
@@ -1212,7 +1205,7 @@ static int fb_win_detach(epx_backend_t* backend, epx_window_t* ewin)
 	ewin->backend = NULL;
 
 	// Reset double buffering panning.
-	if (be->dbuf) 
+	if (be->dbuf)
 	    ioctl(be->fb_fd, FBIOPAN_DISPLAY, &be->ovinfo);
 
 	// Reset original screen stats
@@ -1223,7 +1216,7 @@ static int fb_win_detach(epx_backend_t* backend, epx_window_t* ewin)
     return -1;
 }
 
-/* Process mouse and keybord events, called from driver_select. 
+/* Process mouse and keybord events, called from driver_select.
  * return -1: error in event processing
  *         0: no event returned  & no pending
  *         1: one event returned & no pending
