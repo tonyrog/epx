@@ -96,13 +96,20 @@ int DDSPng::load(char* file_name, int start, int stop)
 
     png_read_info(png_ptr, info_ptr);
 
+/*    
     width       = info_ptr->width;
     height      = info_ptr->height;
     color_type  = info_ptr->color_type;
+*/
+    width  = png_get_image_width(png_ptr, info_ptr);
+    height = png_get_image_height(png_ptr, info_ptr);
+    color_type = png_get_color_type(png_ptr, info_ptr);
 
     png_read_update_info(png_ptr, info_ptr);
-
+/*
     rowbytes = info_ptr->rowbytes;
+*/
+    rowbytes = png_get_rowbytes(png_ptr, info_ptr);
 
     /* read file */
     if (setjmp(png_jmpbuf(png_ptr))) {
