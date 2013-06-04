@@ -34,7 +34,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <string.h>
-#ifdef HAVE_MTTR
+#ifdef HAVE_MTRR
 #include <asm/mtrr.h>
 #endif
 #include <strings.h>
@@ -1072,15 +1072,18 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     else {
 	struct mtrr_sentry sentry;
 
-	sentry.base = be->finfo.smem_start;
+	sentry.base = be->finfo.smem_start & 0xFE000000;
 	sentry.size = 0x2000000;
 	sentry.type = MTRR_TYPE_WRCOMB;
 
 	if ( ioctl(be->mtrr_fd, MTRRIOC_ADD_ENTRY, &sentry) == -1 ) {
-	    DEBUGF("MTRRIOC_ADD_ENTRY: [%s] Disabled", strerror(errno));
+	    DEBUGF("MTRRIOC_ADD_ENTRY(%p, %d): [%s] Disabled",
+		   sentry.base, sentry.size, strerror(errno));
 	    close(be->mtrr_fd);
 	    be->mtrr_fd = -1;
 	}
+	else
+	    DEBUGF("MTRR enabled at [%p] size[%d] type[MTRR_TYPE_WRCOMB]", sentry.base, sentry.size);
     }
 #endif
 

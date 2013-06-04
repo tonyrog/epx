@@ -29,7 +29,7 @@
 -export([old_start/0, old_start/1]).
 %% set epx debug level
 -export([debug/1]).
-%% simd 
+%% simd
 -export([simd_info/0,simd_info/1,simd_set/1]).
 -export([simd_info_keys/0]).
 %% Pixmap access
@@ -91,7 +91,7 @@
 -export([gc_info/1, gc_info/2]).
 -exprot([gc_info_keys/0]).
 
-%% Font 
+%% Font
 -export([font_open/1]).
 -export([font_load/1]).
 -export([font_unload/1]).
@@ -144,12 +144,12 @@
 -export_type([epx_backend/0,
 	      epx_window/0,
 	      epx_pixmap/0,
-	      epx_font/0, 
-	      epx_gc/0, 
+	      epx_font/0,
+	      epx_gc/0,
 	      epx_dict/0,
 	      epx_animation/0]).
 
--export_type([epx_rect/0, 
+-export_type([epx_rect/0,
 	      epx_pixel_format/0,
 	      epx_window_event_flag/0,
 	      epx_window_event_flags/0,
@@ -159,7 +159,7 @@
 -type unsigned() :: non_neg_integer().
 -type float01() :: float().  %% 0.0 .. 1.0  way can we not write this?
 %% 0.8 fixpoint type or float in 0.0..1.0
--type fix8() :: byte() | float01(). 
+-type fix8() :: byte() | float01().
 -type void() :: 'ok'.
 
 -opaque epx_backend()   ::  #epx_backend{} | undefined.
@@ -169,19 +169,19 @@
 -opaque epx_gc()        ::  #epx_gc{}  | undefined.
 -opaque epx_dict()      ::  #epx_dict{}  | undefined.
 -opaque epx_animation() ::  #epx_animation{}  | undefined.
--type epx_rect() :: { X::integer(), Y::integer(), 
+-type epx_rect() :: { X::integer(), Y::integer(),
 		      Width::unsigned(), Height::unsigned() }.
 
 -type epx_color3() :: {R::byte(),G::byte(),B::byte()}.
 -type epx_color4() :: {A::byte(),R::byte(),G::byte(),B::byte()}.
 -type epx_color_name() :: atom().  %% x11 color names
 
--type epx_color() :: epx_color3() | 
-		     epx_color4() | 
+-type epx_color() :: epx_color3() |
+		     epx_color4() |
 		     epx_color_name() |
 		     unsigned().
 
--type epx_flag() :: solid | blend | sum | aalias | 
+-type epx_flag() :: solid | blend | sum | aalias |
 		    textured | nfirst | nlast | none.
 -type epx_flags() :: [epx_flag()] | unsigned().
 
@@ -199,35 +199,35 @@
 			none.
 
 -type epx_pixel_format() ::
-	%% FIXME fill with more formats
-	argb | a8r8g8b8 | 
+	%% FIXME fill with more formats(((((((
+	argb | a8r8g8b8 |
 	rgba | r8g8b8a8 |
-	abgr | a8b8g8r8 | 
+	abgr | a8b8g8r8 |
 	bgra | b8g8r8a8 |
 	rgb  | r8g8b8 |
 	bgr  | b8g8r8 |
 	'565' | r5g6b5 | '565BE' | r5g6b5BE |
 	'565LE' | r5g6b5LE |
 	'1555' | a1r5g5b |
-	gray8a8 | 
+	gray8a8 |
 	gray16 |
-	a8 | 
-	alpha8 | 
+	a8 |
+	alpha8 |
 	gray8 |
 	efnt2.
 
--type epx_window_event_flag() :: 
-	key_press | 
-	key_release | 
+-type epx_window_event_flag() ::
+	key_press |
+	key_release |
 	motion |
-	button_press | button_release | 
+	button_press | button_release |
 	focus_in | focus_out |
-	focos | enter | leave | 
+	focos | enter | leave |
 	configure | resize | crossing |
 	button | left | middle | right | wheel | wheel_up | wheel_down |
 	wheel_left | wheel_right | close | destroyed | all | none.
 
--type epx_window_event_flags() :: epx_window_event_flag() | 
+-type epx_window_event_flags() :: epx_window_event_flag() |
 				 [epx_window_event_flag()].
 
 
@@ -236,14 +236,14 @@ init() ->
     Nif = filename:join([code:priv_dir(epx),"epx_nif"]),
     %% io:format("Loading: ~s\n", [Nif]),
     erlang:load_nif(Nif, 0).
-    
+
 %%
-%% 
+%%
 %%
 start() ->
     application:load(?MODULE), %% make sure command line env is loaded
     application:start(?MODULE).
-    
+
 old_start() ->
     Backend = epx_backend:assumed_backend(),
     old_start(Backend).
@@ -302,15 +302,15 @@ debug(_Level) ->
 	{ 'accel',     {epx_accel_type(),[epx_accel_type()]}} |
 	{ 'functions', [{Name::atom(), [epx_pixel_format()]}]}.
 
-%% @doc 
+%% @doc
 %%   Get a list of all simd info keys
 %% @end
 -spec simd_info_keys() -> [epx_simd_info_key()].
 
 simd_info_keys() ->
-    ['accel', 
-     'cpu_vendor_name', 
-     'cpu_features', 
+    ['accel',
+     'cpu_vendor_name',
+     'cpu_features',
      'cpu_cache_line_size',
      'functions'].
 
@@ -321,7 +321,7 @@ simd_info_keys() ->
 
 simd_info() ->
     [{K,simd_info(K)} || K <- simd_info_keys()].
-     
+
 %% @doc
 %%   Get information about SIMD support
 %% @end
@@ -338,7 +338,7 @@ simd_info(_Info) ->
 
 simd_set(_Accel) ->
     erlang:error(nif_not_loaded).
-    
+
 %% @doc
 %%   Create a pixmap of size WidthxHeight using the pixel format 'argb'
 %% @end
@@ -382,14 +382,14 @@ pixmap_sub_pixmap(_Src, _X, _Y, _Width, _Height) ->
     erlang:error(nif_not_loaded).
 
 -type epx_pixmap_info_key() ::
-	'width' | 
+	'width' |
 	'height' |
-	'bytes_per_row' | 
+	'bytes_per_row' |
 	'bits_per_pixel' |
 	'bytes_per_pixel' |
-	'pixel_format' | 
+	'pixel_format' |
 	'parent' |
-	'clip' | 
+	'clip' |
 	'backend'.
 
 -type epx_pixmap_info() ::
@@ -400,30 +400,30 @@ pixmap_sub_pixmap(_Src, _X, _Y, _Width, _Height) ->
 	{ 'bytes_per_pixel', unsigned() } |
 	{ 'pixel_format', epx_pixel_format() } |
 	{ 'parent',  epx_pixmap() } |
-	{ 'clip',    epx_rect() } | 
+	{ 'clip',    epx_rect() } |
 	{ 'backend', epx_backend() }.
 
 %% @doc
 %%   Return available pixmap information elements
 %% @end
 -spec pixmap_info_keys() -> [epx_pixmap_info()].
-			 
+
 pixmap_info_keys() ->
-    [width, 
-     height, 
-     bytes_per_row, 
-     bits_per_pixel, 
+    [width,
+     height,
+     bytes_per_row,
+     bits_per_pixel,
      bytes_per_pixel,
-     pixel_format, 
-     parent, 
-     clip, 
+     pixel_format,
+     parent,
+     clip,
      backend].
 
 %% @doc
 %%   Get all available pixmap information
 %% @end
 -spec pixmap_info(Pixmap::epx_pixmap()) -> [epx_pixmap_info()].
-			 
+
 pixmap_info(Pixmap) ->
     map(fun(Info) -> {Info,pixmap_info(Pixmap,Info)} end,
 	pixmap_info_keys()).
@@ -438,7 +438,7 @@ pixmap_info(_Pixmap, _Key) ->
     erlang:error(nif_not_loaded).
 
 %% @doc
-%%   Set the clipping Rectangle, pixels drawn outside the clipping 
+%%   Set the clipping Rectangle, pixels drawn outside the clipping
 %%   rectangle are ignored.
 %% @end
 -spec pixmap_set_clip(Pixmap::epx_pixmap(), Rect::epx_rect()) -> void().
@@ -458,7 +458,7 @@ pixmap_fill(_Dst, _Color) ->
 %%   Copy pixles from `Src' pixmap to `Dst' pixmap, ignoring clip rectangle
 %% @end
 -spec pixmap_copy_to(Src::epx_pixmap(),Dst::epx_pixmap()) -> void().
-    
+
 pixmap_copy_to(_Src, _Dst) ->
     erlang:error(nif_not_loaded).
 
@@ -471,13 +471,13 @@ pixmap_flip(_Pixmap) ->
     erlang:error(nif_not_loaded).
 
 %% @doc
-%%  Scale `Src' pixmap to size (`Width' and `Height') and put the result 
+%%  Scale `Src' pixmap to size (`Width' and `Height') and put the result
 %%  in the `Dst' pixmap.
-%% @end 
+%% @end
 -spec pixmap_scale(Src::epx_pixmap(),Dst::epx_pixmap(),
 		   Width::unsigned(), Height::unsigned()) -> void().
 pixmap_scale(_Src, _Dst, _Width, _Height) ->
-    erlang:error(nif_not_loaded).    
+    erlang:error(nif_not_loaded).
 
 %% @doc
 %%   Read the pixel value at position (`X',`Y') in pixmap `Src', return
@@ -486,10 +486,10 @@ pixmap_scale(_Src, _Dst, _Width, _Height) ->
 %% @end
 -spec pixmap_get_pixel(Src::epx_pixmap(), X::integer(), Y::integer()) ->
 			      epx_color4().
-pixmap_get_pixel(_Pixmap,_X,_Y) ->    
-    erlang:error(nif_not_loaded).    
+pixmap_get_pixel(_Pixmap,_X,_Y) ->
+    erlang:error(nif_not_loaded).
 %% @doc
-%%  Read the pixels in the rectangle given by (`X',`Y',`Width',`Height') 
+%%  Read the pixels in the rectangle given by (`X',`Y',`Width',`Height')
 %%  return the pixels data in a "native" form as a binary.
 %% @end
 -spec pixmap_get_pixels(Src::epx_pixmap(), X::integer(), Y::integer(),
@@ -524,7 +524,7 @@ pixmap_put_pixel(_Dst,_X,_Y,_Flags,_Value) ->
 			Width::unsigned(),Height::unsigned(),
 			Format::epx_pixel_format(), Data::iolist()) ->
 			       void().
-			
+
 pixmap_put_pixels(Dst,X,Y,Width,Height,Format,Data) ->
     pixmap_put_pixels(Dst,X,Y,Width,Height,Format,Data,[]).
 
@@ -549,7 +549,7 @@ pixmap_put_pixels(_Dst,_X,_Y,_Width,_Height,_Format,_Data,_Flags) ->
 
 -spec pixmap_copy_area(Src::epx_pixmap(),Dst::epx_pixmap(),
 		       XSrc::integer(),YSrc::integer(),
-		       XDst::integer(),YDst::integer(),		       
+		       XDst::integer(),YDst::integer(),
 		       Width::unsigned(),Height::unsigned()) ->
 			      void().
 
@@ -573,7 +573,7 @@ pixmap_copy_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
     erlang:error(nif_not_loaded).
 
 %% @doc
-%%   Blend `Src' rectangle (`XSrc',`YSrc',`Width',`Height') with 
+%%   Blend `Src' rectangle (`XSrc',`YSrc',`Width',`Height') with
 %%   `Dst' rectangle (`XDst',`YDst',`Width',`Height') using a fixed
 %%   alpha value of `Alpha'. If `Alpha' is 1.0 it means `Src' pixels only and
 %%   an `Alpha' of 0.0 means using `Dst' pixels only.<br/>
@@ -584,7 +584,7 @@ pixmap_copy_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
 			Alpha::fix8(),
 			XSrc::integer(),YSrc::integer(),
 			XDst::integer(),YDst::integer(),
-			Width::unsigned(),Height::unsigned()) -> void().    
+			Width::unsigned(),Height::unsigned()) -> void().
 
 pixmap_alpha_area(_Src,_Dst,_Alpha,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     erlang:error(nif_not_loaded).
@@ -598,7 +598,7 @@ pixmap_alpha_area(_Src,_Dst,_Alpha,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
 		       Fade::fix8(),
 		       XSrc::integer(),YSrc::integer(),
 		       XDst::integer(),YDst::integer(),
-		       Width::unsigned(),Height::unsigned()) -> void().    
+		       Width::unsigned(),Height::unsigned()) -> void().
 pixmap_fade_area(_Src,_Dst,_Fade,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     erlang:error(nif_not_loaded).
 
@@ -627,14 +627,14 @@ pixmap_shadow_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
 pixmap_add_color_area(Src,Dst,Fade,Color,XSrc,YSrc,XDst,YDst,Width,Height) ->
     pixmap_add_color_area(Src,Dst,Fade,Color,XSrc,YSrc,XDst,YDst,
 			  Width,Height,[]).
-    
+
 pixmap_add_color_area(_Src,_Dst,_Fade,_Color,_XSrc,_YSrc,_XDst,_YDst,
 		      _Width,_Height,_Flags) ->
     erlang:error(nif_not_loaded).
 
 pixmap_filter_area(Src,Dst,Filter,XSrc,YSrc,XDst,YDst,Width,Height) ->
     pixmap_filter_area(Src,Dst,Filter,XSrc,YSrc,XDst,YDst,Width,Height,[]).
-    
+
 pixmap_filter_area(_Src,_Dst,_Filter,
 		   _XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
     erlang:error(nif_not_loaded).
@@ -642,7 +642,7 @@ pixmap_filter_area(_Src,_Dst,_Filter,
 %% @doc
 %%    Rotate the `Src' pixels in rectangle (`XSrc',`YSrc',`Width',`Height')
 %%    around the point (`XCSrc',`YCSrc') with an of `Angle' radians.
-%%    The result is placed in the pixmap `Dst' at center poistion 
+%%    The result is placed in the pixmap `Dst' at center poistion
 %%    (`XCDest',`YCDest'). The pixels are blended according to `Flags'
 %% @end
 
@@ -666,7 +666,7 @@ pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
 
 pixmap_operation_area(_Src,_Dst,_Op,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     erlang:error(nif_not_loaded).
-    
+
 pixmap_scroll(_Src,_Dst,_Horizontal,_Vertical,_Rotate,_FillColor) ->
     erlang:error(nif_not_loaded).
 
@@ -700,22 +700,22 @@ pixmap_draw_ellipse(_Pixmap, _Gc, _X, _Y, _Width, _Height) ->
 
 animation_open(_File) ->
     erlang:error(nif_not_loaded).
-    
+
 animation_copy(_Anim, _Index, _Pixmap, _Gx,  _X, _Y) ->
-    erlang:error(nif_not_loaded).    
+    erlang:error(nif_not_loaded).
 
 animation_draw(_Anim, _Index, _Pixmap, _Gx,  _X, _Y) ->
-    erlang:error(nif_not_loaded).    
+    erlang:error(nif_not_loaded).
 
 animation_info_keys() ->
     [file_name, file_size, count, width, height, pixel_format].
 
 animation_info(Anim) ->
     map(fun(Info) -> {Info,animation_info(Anim,Info)} end,
-	animation_info_keys()).    
+	animation_info_keys()).
 
 animation_info(_Anim, _Key) ->
-    erlang:error(nif_not_loaded).        
+    erlang:error(nif_not_loaded).
 
 %%
 %% Dictionary context
@@ -727,7 +727,7 @@ dict_copy(_Dict) ->
     erlang:error(nif_not_loaded).
 
 dict_set(_Dict, _Key, _Value) ->
-    erlang:error(nif_not_loaded).    
+    erlang:error(nif_not_loaded).
 
 dict_get(_Dict, _Key) ->
     erlang:error(nif_not_loaded).
@@ -811,7 +811,7 @@ dict_from_list(Dict, []) ->
 -spec gc_create() -> epx_gc().
 
 gc_create() ->
-    erlang:error(nif_not_loaded).    
+    erlang:error(nif_not_loaded).
 
 %% @doc
 %%  Get the default graphic context
@@ -846,7 +846,7 @@ gc_set(_Gc, _Item, _Value) ->
 -spec gc_get(Gc::epx_gc(), Item::epx_gc_info_key()) -> term().
 
 gc_get(_Gc, _Item) ->
-    erlang:error(nif_not_loaded).    
+    erlang:error(nif_not_loaded).
 
 %% @doc
 %%   Get list of all available gc atributes
@@ -875,7 +875,7 @@ gc_info_keys() ->
      glyph_delta_y,
      glyph_fixed_width,
      glyph_dot_kern].
-     
+
 %% @doc
 %%   Return information about gc
 %% @end
@@ -884,7 +884,7 @@ gc_info_keys() ->
 
 gc_info(Gc) ->
     map(fun(Info) -> {Info,gc_info(Gc,Info)} end,
-	gc_info_keys()).        
+	gc_info_keys()).
 
 -spec gc_info(Gc::epx_gc(), Item::epx_gc_info_key) -> term().
 
@@ -893,13 +893,13 @@ gc_info(Gc, Item) ->
 
 %% Font
 font_open(_Filename) ->
-    erlang:error(nif_not_loaded).    
+    erlang:error(nif_not_loaded).
 
 font_load(_Font) ->
     erlang:error(nif_not_loaded).
 font_unload(_Font) ->
     erlang:error(nif_not_loaded).
-    
+
 font_map(_Font) ->
     erlang:error(nif_not_loaded).
 
@@ -907,14 +907,14 @@ font_unmap(_Font) ->
     erlang:error(nif_not_loaded).
 
 font_info_keys() ->
-    [file_name, file_size, foundry_name, family_name, 
+    [file_name, file_size, foundry_name, family_name,
      weight, slant, width, style, spacing, pixel_format,
      pixel_size, point_size, resolution_x, resolution_y,
      descent, ascent ].
-     
+
 font_info(Font) ->
     map(fun(Info) -> {Info,font_info(Font,Info)} end,
-	font_info_keys()).    
+	font_info_keys()).
 
 font_info(_Font, _Item) ->
     erlang:error(nif_not_loaded).
@@ -923,21 +923,21 @@ font_draw_glyph(_Pixmap,_Gc,_X, _Y, _C) ->
     erlang:error(nif_not_loaded).
 
 font_draw_string(_Pixmap, _Gc, _X, _Y, _String) ->
-    erlang:error(nif_not_loaded).    
+    erlang:error(nif_not_loaded).
 
 font_draw_utf8(_Pixmap,_Gc, _X, _Y, _IOList) ->
     erlang:error(nif_not_loaded).
 
 %% Backend
 backend_list() ->
-    erlang:error(nif_not_loaded).    
+    erlang:error(nif_not_loaded).
 
 backend_open(_Name, _Dict) ->
     erlang:error(nif_not_loaded).
 
 backend_info(_Backend, _Item) ->
     erlang:error(nif_not_loaded).
-    
+
 backend_adjust(_Backend, _Dict) ->
     erlang:error(nif_not_loaded).
 
@@ -945,7 +945,7 @@ backend_adjust(_Backend, _Dict) ->
 -spec window_create(X::integer(), Y::integer(),
 		    Width::non_neg_integer(),Height::non_neg_integer()) ->
 			   epx_window().
-		    
+
 window_create(_X,_Y,_Width,_Height) ->
     erlang:error(nif_not_loaded).
 
@@ -958,7 +958,7 @@ window_create(_X,_Y,_Width,_Height,_Mask) ->
     erlang:error(nif_not_loaded).
 
 %%
-%% window_info(Window::epx_window(), Item) 
+%% window_info(Window::epx_window(), Item)
 %%   Item =
 %%        x        integer()
 %%      | y        integer()
@@ -981,9 +981,9 @@ window_create(_X,_Y,_Width,_Height,_Mask) ->
 -spec window_info_keys() -> [epx_window_info_key()].
 
 window_info_keys() ->
-    [x, y, width, height, backend, event_mask].    
+    [x, y, width, height, backend, event_mask].
 
--spec window_info(Window::epx_window()) ->    
+-spec window_info(Window::epx_window()) ->
 			 [epx_window_info()].
 
 window_info(Window) ->
@@ -999,21 +999,21 @@ window_info(_Window, _Item) ->
 window_adjust(_Window, _Dict) ->
     erlang:error(nif_not_loaded).
 
--spec window_set_event_mask(Window::epx_window(), 
+-spec window_set_event_mask(Window::epx_window(),
 			    Events::epx_window_event_flags()) ->
 				   void().
-    
+
 window_set_event_mask(_Window, _Events) ->
     erlang:error(nif_not_loaded).
-    
--spec window_enable_events(Window::epx_window(), 
+
+-spec window_enable_events(Window::epx_window(),
 			   Events::epx_window_event_flags()) ->
 				  void().
 
 window_enable_events(_Window, _Events) ->
     erlang:error(nif_not_loaded).
 
--spec window_disable_events(Window::epx_window(), 
+-spec window_disable_events(Window::epx_window(),
 			    Events::epx_window_event_flags()) ->
 				   void().
 
@@ -1024,8 +1024,8 @@ window_attach(Window) ->
     window_attach(Window, epx_backend:default()).
 
 window_attach(_Window, _Backend) ->
-    erlang:error(nif_not_loaded).    
-    
+    erlang:error(nif_not_loaded).
+
 window_detach(_Window) ->
     erlang:error(nif_not_loaded).
 
