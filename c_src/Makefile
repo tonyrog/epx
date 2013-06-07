@@ -8,7 +8,7 @@ PRIVDIR := ../priv
 
 all : $(PRIVDIR)/epx_nif.so
 
-override CFLAGS += -DDLOG_DEFAULT=DLOG_NONE -msse2 -DFB -DHAVE_MTTR -fpic -shared
+override CFLAGS += -DDLOG_DEFAULT=DLOG_NONE -msse2 -DFB -DHAVE_MTRR -fpic -shared
 
 
 $(PRIVDIR)/epx_nif.so : epx_debug.o epx_hash.o epx_dict.o \
