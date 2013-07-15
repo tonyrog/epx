@@ -200,10 +200,10 @@
 
 -type epx_pixel_format() ::
 	%% FIXME fill with more formats(((((((
-	argb | a8r8g8b8 |
-	rgba | r8g8b8a8 |
-	abgr | a8b8g8r8 |
-	bgra | b8g8r8a8 |
+	argb | a8r8g8b8 | xrgb | x8r8g8b8 |
+	rgba | r8g8b8a8 | rgbx | r8g8b8x8 |
+	abgr | a8b8g8r8 | xbgr | x8b8g8r8 |
+	bgra | b8g8r8a8 | bgrx | b8g8r8x8 |
 	rgb  | r8g8b8 |
 	bgr  | b8g8r8 |
 	'565' | r5g6b5 | '565BE' | r5g6b5BE |
@@ -215,6 +215,12 @@
 	alpha8 |
 	gray8 |
 	efnt2.
+
+-type epx_pixmap_operation() :: 
+	clear | src | dst | src_over | dst_over | src_in | dst_in |
+	src_out | dst_out | src_atop | dst_atop | 'xor' | copy |
+	add | sub | src_blend | dst_blend.
+
 
 -type epx_window_event_flag() ::
 	key_press |
@@ -369,8 +375,8 @@ pixmap_copy(_Src) ->
 %% @doc
 %%   Create a sub-pixmap from Src refering to pixels in the
 %%   rectangluar area (X,Y,Width,Height). The sub-pixmap share
-%%   all pixels with the Src pixmap is is not SMP protected,
-%%   if multiple writers are used keep cachline distance to the
+%%   all pixels with the Src pixmap and is is not SMP protected,
+%%   if multiple writers are used, keep cachline distance to the
 %%   neighbouring pixels to be safe.
 %% @end
 -spec pixmap_sub_pixmap(Src::epx_pixmap(),
@@ -664,22 +670,73 @@ pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
     pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
 		       Width,Height,[]).
 
+%% @doc
+%%    Combine two pixmaps using Duff-Porter pixmap operation, and then some.
+%%    The possible operations are:
+%% <ul>
+%% <li> `clear' </li>
+%% <li> `src' </li>
+%% <li> `dst' </li>
+%% <li> `src_over' </li>
+%% <li> `dst_over' </li>
+%% <li> `src_in' </li>
+%% <li> `dst_in' </li>
+%% <li> `src_out' </li>
+%% <li> `dst_out' </li>
+%% <li> `src_atop' </li>
+%% <li> `dst_atop' </li>
+%% <li> `xor' </li>
+%% <li> `copy' </li>
+%% <li> `add' </li>
+%% <li> `sub' </li>
+%% <li> `src_blend' </li>
+%% <li> `dst_blend' </li>
+%% </ul>
+%% @end
+-spec pixmap_operation_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			    Op::epx_pixmap_operation(),
+			    XSrc::integer(),YSrc::integer(),
+			    XDst::integer(),YDst::integer(),
+			    Width::unsigned(),Height::unsigned()) -> void().
+
 pixmap_operation_area(_Src,_Dst,_Op,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     erlang:error(nif_not_loaded).
+
+-spec pixmap_scroll(Src::epx_pixmap(),Dst::epx_pixmap(),
+		    Horizontal::integer(), Vertical::integer(),
+		    Rotate::boolean(), FillColor::epx_color()) ->
+			   void().
 
 pixmap_scroll(_Src,_Dst,_Horizontal,_Vertical,_Rotate,_FillColor) ->
     erlang:error(nif_not_loaded).
 
+-spec pixmap_attach(Pixmap::epx_pixmap()) -> void().
+
 pixmap_attach(Pixmap) ->
     pixmap_attach(Pixmap, epx_backend:default()).
+
+-spec pixmap_attach(Pixmap::epx_pixmap(),Backend::epx_backend()) -> void().
 
 pixmap_attach(_Pixmap, _Backend) ->
     erlang:error(nif_not_loaded).
 
+-spec pixmap_detach(Pixmap::epx_pixmap()) -> void().
+
 pixmap_detach(_Pixmap) ->
     erlang:error(nif_not_loaded).
 
-pixmap_draw(_Pixmap, _Win, _SrxX, _SrcY, _DstX, _DstY, _Width, _Height) ->
+%% @doc
+%%   Draw pixels from the area (`XSrc',`YSrc',`Width',`Height') in `Pixmap'
+%%   pixmap to the area (`XDst',`YDst',`Width',`Height') on to the `Window'
+%%   window. Both the pixmap and the window must be "attached" for this 
+%%   operation to succeed.
+%% @end
+-spec pixmap_draw(Pixmap::epx_pixmap(), Win::epx_window(),
+		  XSrc::integer(),YSrc::integer(),
+		  XDst::integer(),YDst::integer(),
+		  Width::unsigned(),Height::unsigned()) -> void().
+
+pixmap_draw(_Pixmap, _Win, _XSrx, _YSrc, _XDst, _YDst, _Width, _Height) ->
     erlang:error(nif_not_loaded).
 
 pixmap_draw_point(_Pixmap, _Gc, _X, _Y) ->
