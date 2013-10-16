@@ -932,7 +932,7 @@ static int epx_thread_stop(epx_thread_t* thr, epx_thread_t* sender,
 
     m.type = EPX_MESSAGE_STOP;
     epx_message_send(thr, sender, &m);
-    if (thr->wake[1] >= 0) write(thr->wake[1], "W", 1);
+    if (thr->wake[1] >= 0) r=write(thr->wake[1], "W", 1);
     r=enif_thread_join(thr->tid, exit_value);
     EPX_DBGFMT("enif_thread_join: return=%d, exit_value=%p", r, *exit_value);
     epx_queue_destroy(&thr->q);
@@ -2002,7 +2002,7 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
 	return enif_make_int(env, epx_cpu_cache_line_size());
     }
     else if (argv[0] == ATOM(accel)) {
-	ERL_NIF_TERM type;
+        ERL_NIF_TERM type = ATOM(undefined);
 	ERL_NIF_TERM avail[5];
 	int accel;
 	int i = 0;
@@ -4062,8 +4062,10 @@ static void* backend_poll(void* arg)
 			do_poll = 0;
 		    }
 		    if ((nfd>1) && fds[1].revents & POLLIN) {
+		        int r;
+			(void) r;
 			char buf[1];
-			read(self->wake[0], &buf, 1); // consume
+			r=read(self->wake[0], &buf, 1); // consume
 			do_poll = 0;
 		    }
 		}

@@ -128,7 +128,7 @@ init(Args) ->
 	    {ok, #state { next_id = 2 }}
     catch
 	error:Error ->
-	    ?epx_info("backend_open no default backed, failed ~p", [Error]),
+	    ?epx_info("backend_open no default backend, failed ~p", [Error]),
 	    {ok, #state {}}
     end.
 
