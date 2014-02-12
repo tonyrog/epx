@@ -196,7 +196,7 @@ void make_screen_formats(Screen* screen)
 	    int nr    = bit_count(v->red_mask);
 	    int ng    = bit_count(v->green_mask);
 	    int nb    = bit_count(v->blue_mask);
-	    int ntot  = bit_count(v->red_mask|v->green_mask|v->blue_mask);
+	    // int ntot  = bit_count(v->red_mask|v->green_mask|v->blue_mask);
 	    int pr    = bit_pos(v->red_mask);
 	    int pg    = bit_pos(v->green_mask);
 	    int pb    = bit_pos(v->blue_mask);
@@ -252,11 +252,12 @@ void make_screen_formats(Screen* screen)
 	    if (k == efmt_table_size) {
 		if (efmt_table_size < 
 		    (int)(sizeof(efmt_table)/sizeof(efmt_table[0]))) {
-		    char* pt_name;
+		    // char* pt_name;
 		    efmt_table[k] = efmt;
 		    efmt_table_size++;
 		    // construct epx_format_t value and remove duplicates
 		    // ignore glx variants for now
+		    /*
 		    if ((pt_name = epx_pixel_format_to_name(efmt)) != NULL)
 			printf("epx_format = %s\n", pt_name);
 		    else {
@@ -264,6 +265,7 @@ void make_screen_formats(Screen* screen)
 			       nr,ng,nb,ntot,d->depth,
 			       pr,pg,pb);
 		    }
+		    */
 		}
 	    }
 	}

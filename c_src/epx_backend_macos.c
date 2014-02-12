@@ -27,13 +27,14 @@
 // This code does not build under 64bit How do you do it?
 
 #include <Carbon/Carbon.h>
+#include <QuickTime/QuickTime.h>
 #include <machine/endian.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <assert.h>
 
 
-#include "epx_backend.h"
+#include "../include/epx_backend.h"
 #ifdef HAVE_OPENGL
 #include <AGL/agl.h>
 #include <GL/glu.h>
@@ -43,8 +44,9 @@ extern int epx_gl_load_texture(epx_pixmap_t* pic, GLuint* textureName,
 			       unsigned int width,unsigned int height);
 #endif
 
-#include <Cocoa/Cocoa.h>
 #include <objc/objc-runtime.h>
+#include <Cocoa/Cocoa.h>
+
 
 #define kEpxEventNew 1
 #define kEpxEventDel 2
@@ -685,11 +687,11 @@ static int carbon_pic_draw(epx_backend_t* backend, epx_pixmap_t* pic,
 static int carbon_win_swap(epx_backend_t* backend, epx_window_t* ewin)
 {
     (void) backend;
-    CarbonWindow* cwin = (CarbonWindow*) ewin->opaque;
     // CarbonBackend* be = (CarbonBackend*) backend;
 
     if (ewin->opengl) {
 #ifdef HAVE_OPENGL
+	CarbonWindow* cwin = (CarbonWindow*) ewin->opaque;
 	AGLContext save;
 	if (!cwin || !cwin->winRef || !cwin->aglContext)
 	    return -1;

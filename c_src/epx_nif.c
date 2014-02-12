@@ -2002,15 +2002,13 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
 	return enif_make_int(env, epx_cpu_cache_line_size());
     }
     else if (argv[0] == ATOM(accel)) {
-	ERL_NIF_TERM type;
+	ERL_NIF_TERM type = ATOM(none);
 	ERL_NIF_TERM avail[5];
 	int accel;
 	int i = 0;
 
 	accel = epx_simd_accel();
-	if (epx_simd == NULL) 
-	    type = ATOM(none);
-	else {
+	if (epx_simd != NULL) {
 	    if (epx_simd->type == EPX_SIMD_EMU) 	 type = ATOM(emu);
 	    else if (epx_simd->type == EPX_SIMD_ALTIVEC) type = ATOM(altivec);
 	    else if (epx_simd->type == EPX_SIMD_MMX)     type = ATOM(mmx);

@@ -35,6 +35,7 @@
 -export([attribute/2, attribute/3, set_attribute/3]).
 -export([extensions/1]).
 -export([write_info/3]).
+-export([pixmaps/1]).
 
 -export([behaviour_info/1]).
 
@@ -117,7 +118,8 @@ magic_info(File) ->
 	Error -> Error
     end.
 
-
+pixmaps(IMG) ->
+    IMG#epx_image.pixmaps.
 
 mime_type(IMG) ->
     apply(IMG#epx_image.type, mime_type, []).
