@@ -932,7 +932,7 @@ static int epx_thread_stop(epx_thread_t* thr, epx_thread_t* sender,
 
     m.type = EPX_MESSAGE_STOP;
     epx_message_send(thr, sender, &m);
-    if (thr->wake[1] >= 0) write(thr->wake[1], "W", 1);
+    if (thr->wake[1] >= 0) r=write(thr->wake[1], "W", 1);
     r=enif_thread_join(thr->tid, exit_value);
     EPX_DBGFMT("enif_thread_join: return=%d, exit_value=%p", r, *exit_value);
     epx_queue_destroy(&thr->q);
@@ -1958,6 +1958,7 @@ static ERL_NIF_TERM make_event(ErlNifEnv* env, epx_event_t* e)
 static ERL_NIF_TERM debug(ErlNifEnv* env, int argc,
 			  const ERL_NIF_TERM argv[])
 {
+    (void) argc;
     if (argv[0] == ATOM(debug))        epx_set_debug(DLOG_DEBUG);
     else if (argv[0] == ATOM(info))    epx_set_debug(DLOG_INFO);
     else if (argv[0] == ATOM(notice))  epx_set_debug(DLOG_NOTICE);
@@ -4060,8 +4061,10 @@ static void* backend_poll(void* arg)
 			do_poll = 0;
 		    }
 		    if ((nfd>1) && fds[1].revents & POLLIN) {
+		        int r;
+			(void) r;
 			char buf[1];
-			read(self->wake[0], &buf, 1); // consume
+			r=read(self->wake[0], &buf, 1); // consume
 			do_poll = 0;
 		    }
 		}
