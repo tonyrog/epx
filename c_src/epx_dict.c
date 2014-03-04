@@ -121,7 +121,8 @@ static u_int8_t* edata_copy(epx_dict_data_t* b, epx_dict_data_t* a, u_int8_t* pt
 {
     switch(a->type) {
     case EPX_DICT_STRING:
-	memcpy(ptr, a->u.v_string.ptr, a->u.v_string.len+1);
+	memcpy(ptr, a->u.v_string.ptr, a->u.v_string.len);
+	ptr[a->u.v_string.len] = '\0';
 	b->type = a->type;
 	b->u.v_string.len = a->u.v_string.len;
 	b->u.v_string.ptr = (char*) ptr;
