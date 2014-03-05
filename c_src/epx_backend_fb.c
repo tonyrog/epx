@@ -32,7 +32,12 @@
 #include <linux/fb.h>
 #include <linux/vt.h>
 #include <linux/kd.h>
+
+#ifdef HAVE_INPUT_EVENT
+#include <sys/epoll.h>
 #include <linux/input.h>
+#endif 
+
 #include <errno.h>
 #include <unistd.h>
 #include <string.h>
@@ -58,7 +63,9 @@ typedef struct {
     struct fb_var_screeninfo vinfo;   /* Current screeen paramters */
     struct fb_fix_screeninfo finfo;   /* Current display paramters */
     int fb_fd;                        /* Frame buffer fd */
+#ifdef HAVE_MTRR
     int mtrr_fd;                      /* File descriptor for MTRR */
+#endif
     int dbuf;                         /* Double buffer enabled */
     int cbuf;                         /* Current buffer displayed */
     epx_pixmap_t screen[2];                /* The screen/off-screen as a pixmap */
@@ -66,18 +73,13 @@ typedef struct {
 
     unsigned char *org_pixmap_data; /* Place holder for pixmap->data if direct draw */
 
-    char input_mouse_dev[128];
-    int mouse_fd;
+#ifdef HAVE_INPUT_EVENT
+#define MAX_INPUT_SOURCE 16
+    int poll_fd;
+    int input_fd[MAX_INPUT_SOURCE];
+    size_t input_fd_sz;
+#endif    
 
-    /* State for events. Will be changed as things clarify */
-    struct {
-	uint32_t button; /* EPX_EVENT_BUTTON_*/
-	int32_t x;
-	int32_t y;
-	int32_t z;
-    } pointer;
-
-    
 } FbBackend;
 
 
@@ -100,7 +102,8 @@ static int fb_evt_detach(epx_backend_t*);
 static int fb_evt_read(epx_backend_t*, epx_event_t*);
 static int fb_adjust(epx_backend_t *backend, epx_dict_t* param);
 static int fb_win_adjust(epx_window_t *win, epx_dict_t* param);
-static int setup_input_system(FbBackend* be, epx_dict_t *param);
+
+
 
 static epx_callbacks_t fb_callbacks =
 {
@@ -119,7 +122,7 @@ static epx_callbacks_t fb_callbacks =
     fb_end,
     fb_win_adjust
 };
-
+#ifdef HAVE_INPUT_EVENT
 /* Array indexed by struct input_event.type */
 typedef 
 int (*input_event_callback_t)(struct timeval ts,
@@ -135,6 +138,7 @@ int (*input_event_callback_t)(struct timeval ts,
 #endif
 
 static input_event_callback_t callbacks[EV_MAX];
+static int setup_input_system(FbBackend* be, epx_dict_t *param);
 static int setup_input_event_callbacks(input_event_callback_t*, int);
 
 static int process_input_event_relative(struct timeval ts,
@@ -157,68 +161,69 @@ static int process_input_event_key(struct timeval ts,
 				   __s32 value, 
 				   FbBackend* be, 
 				   epx_event_t* ev);
+#endif /* HAVE_INPUT_EVENT */
 
 void fb_dump_vinfo(char *header, struct fb_var_screeninfo *vinfo)
 {
     (void) vinfo; // For make relaease
     (void) header;// For make relaease
-    EPX_DBGFMT("fb: %s", header);
-    EPX_DBGFMT("fb: vinfo.xres            %lu", vinfo->xres);
-    EPX_DBGFMT("fb: vinfo.yres            %lu", vinfo->yres);
-    EPX_DBGFMT("fb: vinfo.xres_virtual    %lu", vinfo->xres_virtual);
-    EPX_DBGFMT("fb: vinfo.yres_virtual    %lu", vinfo->yres_virtual);
-    EPX_DBGFMT("fb: vinfo.xoffset         %lu", vinfo->xoffset);
-    EPX_DBGFMT("fb: vinfo.yoffset         %lu", vinfo->yoffset);
-    EPX_DBGFMT("fb: vinfo.bits_per_pixel  %lu", vinfo->bits_per_pixel);
-    EPX_DBGFMT("fb: vinfo.grayscale       %lu", vinfo->grayscale);
-    EPX_DBGFMT("fb: vinfo.red%s", "");
-    EPX_DBGFMT("fb:          .offset      %lu", vinfo->red.offset);
-    EPX_DBGFMT("fb:          .length      %lu", vinfo->red.length);
-    EPX_DBGFMT("fb:          .msb_right   %lu", vinfo->red.msb_right);
-    EPX_DBGFMT("fb: vinfo.green%s", "");
-    EPX_DBGFMT("fb:          .offset      %lu", vinfo->green.offset);
-    EPX_DBGFMT("fb:          .length      %lu", vinfo->green.length);
-    EPX_DBGFMT("fb:          .msb_right   %lu", vinfo->green.msb_right);
-    EPX_DBGFMT("fb: vinfo.blue%s", "");
-    EPX_DBGFMT("fb:          .offset      %lu", vinfo->blue.offset);
-    EPX_DBGFMT("fb:          .length      %lu", vinfo->blue.length);
-    EPX_DBGFMT("fb:          .msb_right   %lu", vinfo->blue.msb_right);
-    EPX_DBGFMT("fb: vinfo.transp%s", "");
-    EPX_DBGFMT("fb:          .offset      %lu", vinfo->transp.offset);
-    EPX_DBGFMT("fb:          .length      %lu", vinfo->transp.length);
-    EPX_DBGFMT("fb:          .msb_right   %lu", vinfo->transp.msb_right);
-    EPX_DBGFMT("fb: vinfo.nonstd          %lu", vinfo->nonstd);
-    EPX_DBGFMT("fb: vinfo.activate        %lu", vinfo->activate);
-    EPX_DBGFMT("fb: vinfo.height          %lu", vinfo->height);
-    EPX_DBGFMT("fb: vinfo.width           %lu", vinfo->width);
-    EPX_DBGFMT("fb: vinfo.pixclock        %lu", vinfo->pixclock);
-    EPX_DBGFMT("fb: vinfo.left_margin     %lu", vinfo->left_margin);
-    EPX_DBGFMT("fb: vinfo.upper_margin    %lu", vinfo->upper_margin);
-    EPX_DBGFMT("fb: vinfo.lower_margin    %lu", vinfo->lower_margin);
-    EPX_DBGFMT("fb: vinfo.hsync_len       %lu", vinfo->hsync_len);
-    EPX_DBGFMT("fb: vinfo.vsync_len       %lu", vinfo->vsync_len);
-    EPX_DBGFMT("fb: vinfo.sync            %lu", vinfo->sync);
-    EPX_DBGFMT("fb: vinfo.rotate          %lu\n", vinfo->rotate);
+    DEBUGF("fb: %s", header);
+    DEBUGF("fb: vinfo.xres            %lu", vinfo->xres);
+    DEBUGF("fb: vinfo.yres            %lu", vinfo->yres);
+    DEBUGF("fb: vinfo.xres_virtual    %lu", vinfo->xres_virtual);
+    DEBUGF("fb: vinfo.yres_virtual    %lu", vinfo->yres_virtual);
+    DEBUGF("fb: vinfo.xoffset         %lu", vinfo->xoffset);
+    DEBUGF("fb: vinfo.yoffset         %lu", vinfo->yoffset);
+    DEBUGF("fb: vinfo.bits_per_pixel  %lu", vinfo->bits_per_pixel);
+    DEBUGF("fb: vinfo.grayscale       %lu", vinfo->grayscale);
+    DEBUGF("fb: vinfo.red%s", "");
+    DEBUGF("fb:          .offset      %lu", vinfo->red.offset);
+    DEBUGF("fb:          .length      %lu", vinfo->red.length);
+    DEBUGF("fb:          .msb_right   %lu", vinfo->red.msb_right);
+    DEBUGF("fb: vinfo.green%s", "");
+    DEBUGF("fb:          .offset      %lu", vinfo->green.offset);
+    DEBUGF("fb:          .length      %lu", vinfo->green.length);
+    DEBUGF("fb:          .msb_right   %lu", vinfo->green.msb_right);
+    DEBUGF("fb: vinfo.blue%s", "");
+    DEBUGF("fb:          .offset      %lu", vinfo->blue.offset);
+    DEBUGF("fb:          .length      %lu", vinfo->blue.length);
+    DEBUGF("fb:          .msb_right   %lu", vinfo->blue.msb_right);
+    DEBUGF("fb: vinfo.transp%s", "");
+    DEBUGF("fb:          .offset      %lu", vinfo->transp.offset);
+    DEBUGF("fb:          .length      %lu", vinfo->transp.length);
+    DEBUGF("fb:          .msb_right   %lu", vinfo->transp.msb_right);
+    DEBUGF("fb: vinfo.nonstd          %lu", vinfo->nonstd);
+    DEBUGF("fb: vinfo.activate        %lu", vinfo->activate);
+    DEBUGF("fb: vinfo.height          %lu", vinfo->height);
+    DEBUGF("fb: vinfo.width           %lu", vinfo->width);
+    DEBUGF("fb: vinfo.pixclock        %lu", vinfo->pixclock);
+    DEBUGF("fb: vinfo.left_margin     %lu", vinfo->left_margin);
+    DEBUGF("fb: vinfo.upper_margin    %lu", vinfo->upper_margin);
+    DEBUGF("fb: vinfo.lower_margin    %lu", vinfo->lower_margin);
+    DEBUGF("fb: vinfo.hsync_len       %lu", vinfo->hsync_len);
+    DEBUGF("fb: vinfo.vsync_len       %lu", vinfo->vsync_len);
+    DEBUGF("fb: vinfo.sync            %lu", vinfo->sync);
+    DEBUGF("fb: vinfo.rotate          %lu\n", vinfo->rotate);
 }
 
 void fb_dump_finfo(char *header, struct fb_fix_screeninfo *finfo)
 {
     (void) finfo; // For make relaease
     (void) header;// For make relaease
-    EPX_DBGFMT("fb: %s", header);
-    EPX_DBGFMT("fb: finfo.id              %s", finfo->id);
-    EPX_DBGFMT("fb: finfo.smem_start      0x%X", finfo->smem_start);
-    EPX_DBGFMT("fb: finfo.smem_len        %lu", finfo->smem_len);
-    EPX_DBGFMT("fb: finfo.type            0x%X", finfo->type);
-    EPX_DBGFMT("fb: finfo.type_aux        %lu", finfo->type_aux);
-    EPX_DBGFMT("fb: finfo.visual          %lu", finfo->visual);
-    EPX_DBGFMT("fb: finfo.xpanstep        %hu", finfo->xpanstep);
-    EPX_DBGFMT("fb: finfo.ypanstep        %hu", finfo->ypanstep);
-    EPX_DBGFMT("fb: finfo.ywrapstep       %hu", finfo->ywrapstep);
-    EPX_DBGFMT("fb: finfo.line_length     %lu", finfo->line_length);
-    EPX_DBGFMT("fb: finfo.mmio_start      %lu", finfo->mmio_start);
-    EPX_DBGFMT("fb: finfo.mmio_len        %lu", finfo->mmio_len);
-    EPX_DBGFMT("fb: finf.accel            %lu", finfo->accel);
+    DEBUGF("fb: %s", header);
+    DEBUGF("fb: finfo.id              %s", finfo->id);
+    DEBUGF("fb: finfo.smem_start      0x%X", finfo->smem_start);
+    DEBUGF("fb: finfo.smem_len        %lu", finfo->smem_len);
+    DEBUGF("fb: finfo.type            0x%X", finfo->type);
+    DEBUGF("fb: finfo.type_aux        %lu", finfo->type_aux);
+    DEBUGF("fb: finfo.visual          %lu", finfo->visual);
+    DEBUGF("fb: finfo.xpanstep        %hu", finfo->xpanstep);
+    DEBUGF("fb: finfo.ypanstep        %hu", finfo->ypanstep);
+    DEBUGF("fb: finfo.ywrapstep       %hu", finfo->ywrapstep);
+    DEBUGF("fb: finfo.line_length     %lu", finfo->line_length);
+    DEBUGF("fb: finfo.mmio_start      %lu", finfo->mmio_start);
+    DEBUGF("fb: finfo.mmio_len        %lu", finfo->mmio_len);
+    DEBUGF("fb: finf.accel            %lu", finfo->accel);
 }
 
 
@@ -330,34 +335,38 @@ epx_backend_t* fb_init(epx_dict_t* param)
     be->b.pixmap_list = NULL;
     be->b.window_list = NULL;
     be->b.event = EPX_INVALID_HANDLE;
+#ifdef HAVE_MTRR
     be->mtrr_fd = -1;
-    be->input_mouse_dev[0] = 0;
-    be->mouse_fd = -1;
+#endif
 
-    be->pointer.button = 0;
-    be->pointer.x = 0;
-    be->pointer.y = 0;
-    be->pointer.z = 0;
+#ifdef HAVE_INPUT_EVENT
+    be->poll_fd = -1;
+    be->input_fd_sz = 0;
+
+    r = sizeof(be->input_fd) / sizeof(be->input_fd[0]);
+    while(r--)
+	be->input_fd[r] = -1;
 
     setup_input_event_callbacks(callbacks, sizeof(callbacks) / sizeof(callbacks[0]));
 
     if (!setup_input_system(be, param)) 
-	EPX_DBGFMT("Failed to setup input system. Disabled");
+	DEBUGF("Failed to setup input system. Disabled");
+#endif
     
     if (epx_dict_lookup_string(param, "framebuffer_device", &string_param, NULL) == -1) {
-	EPX_DBGFMT("missing framebuffer_device paramter. Defaulting to /dev/fb%d",
+	DEBUGF("missing framebuffer_device paramter. Defaulting to /dev/fb%d",
 		0);
 	string_param = "/dev/fb0";
     }
 
     if ((be->fb_fd = open(string_param, O_RDWR)) == -1) {
-	EPX_DBGFMT("Could not open frame buffer [%s]: [%s]", string_param, strerror(errno));
+	DEBUGF("Could not open frame buffer [%s]: [%s]", string_param, strerror(errno));
 	goto error;
     }
 
     
     if (ioctl(be->fb_fd, FBIOGET_VSCREENINFO, &be->ovinfo) == -1) {
-	EPX_DBGFMT("ioctl:FBIOGET_VSCREENINFO failed: [%s]", strerror(errno));
+	DEBUGF("ioctl:FBIOGET_VSCREENINFO failed: [%s]", strerror(errno));
 	goto error;
     }
 
@@ -367,7 +376,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     if (r < 0)
 	r = write(2, blankoff_str, strlen(blankoff_str));
     if (r < 0) {
-	EPX_DBGFMT("write failed: [%s]", strerror(errno));
+	DEBUGF("write failed: [%s]", strerror(errno));
     }
 
     be->vinfo  = be->ovinfo;
@@ -402,7 +411,7 @@ static int fb_adjust(epx_backend_t *backend, epx_dict_t* param)
     // Retrieve info.
     //
     if (ioctl(be->fb_fd, FBIOGET_VSCREENINFO, &be->vinfo) == -1) {
-	EPX_DBGFMT("ioctl:FBIOGET_VSCREENINFO failed: [%s]", strerror(errno));
+	DEBUGF("ioctl:FBIOGET_VSCREENINFO failed: [%s]", strerror(errno));
 	return 0;
     }
 
@@ -416,7 +425,7 @@ static int fb_adjust(epx_backend_t *backend, epx_dict_t* param)
     fb_dump_vinfo("Adjusted values to be set.", &be->vinfo);
 
     if (ioctl(be->fb_fd, FBIOPUT_VSCREENINFO, &be->vinfo) < 0) {
-	EPX_DBGFMT("ioctl:FBIOPUT_VSCREENINFO/ACTIVATE) failed [%s]", strerror(errno));
+	DEBUGF("ioctl:FBIOPUT_VSCREENINFO/ACTIVATE) failed [%s]", strerror(errno));
 	return 0;
     }
 
@@ -426,32 +435,25 @@ static int fb_adjust(epx_backend_t *backend, epx_dict_t* param)
 
 
 /* return the backend event handle */
+#ifdef HAVE_INPUT_EVENT
 static EPX_HANDLE_T fb_evt_attach(epx_backend_t* backend)
 {
     FbBackend* be = (FbBackend*) backend;
-    /* FIXME:
-       We must actually return two descriptors, one for kbd and one for mouse.
-       This needs to be fixed in epx_nif.c:pbackend_poll() so that 
-       it can handle multiple descrptors.
-       We also need to add 
 
-         int (*evt_attach_multiple)(epx_backend_t*, int*result, int *res_size)
-
-       -and-
-
-         int (*evt_detach_multiple)(epx_backend_t*)
-
-       to epx_callback_t.
-    
-       For now we just do mouse events.
-    */ 
-
-    if (be->mouse_fd != -1)
-	return (EPX_HANDLE_T)((long) be->mouse_fd);
+    /* Return the epoll file descriptor that we use as
+       a multiplexor */
+    if (be->poll_fd != -1)
+	return (EPX_HANDLE_T)((long) be->poll_fd);
 
     return EPX_INVALID_HANDLE;
 }
-
+#else
+static EPX_HANDLE_T fb_evt_attach(epx_backend_t* backend)
+{
+    (void) backend;
+    return EPX_INVALID_HANDLE;
+}
+#endif /* HAVE_INPUT_EVENT */
 
 static int fb_evt_detach(epx_backend_t* backend)
 {
@@ -465,9 +467,26 @@ static int fb_finish(epx_backend_t* backend)
 
     munmap(be->screen[0].data, be->finfo.smem_len);
     close(be->fb_fd);
-    close(be->mouse_fd);
+
+#ifdef HAVE_INPUT_EVENT
+    /* Close all open input event files */
+    while(be->input_fd_sz--) {
+	close(be->input_fd[be->input_fd_sz]);
+	be->input_fd[be->input_fd_sz] = -1;
+    }
+    be->input_fd_sz = 0;
+
+    /* Close the poll descriptor */
+    if (be->poll_fd != -1) {
+	close(be->poll_fd);
+	be->poll_fd = -1;
+    }
+#endif
+
+#ifdef HAVE_MTRR
     if (be->mtrr_fd != -1)
 	close(be->mtrr_fd);
+#endif
     free(be);
     return 0;
 }
@@ -593,7 +612,7 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 
     fb_dump_vinfo("Modified values to be set.", &be->vinfo);
     if (ioctl(be->fb_fd, FBIOPUT_VSCREENINFO, &be->vinfo) < 0) {
-	EPX_DBGFMT("ioctl:FBIOPUT_VSCREENINFO/ACTIVATE) failed [%s]", strerror(errno));
+	DEBUGF("ioctl:FBIOPUT_VSCREENINFO/ACTIVATE) failed [%s]", strerror(errno));
 	return -1;
     }
 
@@ -601,13 +620,13 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     if (be->dbuf) {
 	be->vinfo.yres_virtual = be->vinfo.yres*2;
 	if (ioctl(be->fb_fd, FBIOPUT_VSCREENINFO, &be->vinfo) < 0) {
-	    EPX_DBGFMT("double buffer test failed [%s]", strerror(errno));
+	    DEBUGF("double buffer test failed [%s]", strerror(errno));
 	    be->dbuf = 0;
 	}
     }
 
     if (ioctl(be->fb_fd, FBIOGET_FSCREENINFO, &be->finfo) == -1) {
-	EPX_DBGFMT("ioctl:FBIOGET_FSCREENINFO failed: [%s]", strerror(errno));
+	DEBUGF("ioctl:FBIOGET_FSCREENINFO failed: [%s]", strerror(errno));
 	return -1;
     }
 
@@ -616,7 +635,7 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 
     be->screen[0].data = (unsigned char *) mmap (0, be->finfo.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, be->fb_fd, 0);
     if (!be->screen[0].data) {
-	EPX_DBGFMT("mmap of screen memory failed [%s].", strerror(errno));
+	DEBUGF("mmap of screen memory failed [%s].", strerror(errno));
 	return -1;
     }
 
@@ -625,9 +644,9 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     if ((be->mtrr_fd = open("/proc/mtrr", O_WRONLY, 0)) == -1)
     {
 	if (errno == ENOENT) {
-	    EPX_DBGFMT("/proc/mtrr not found: MTRR not enabled %s", "");
+	    DEBUGF("/proc/mtrr not found: MTRR not enabled %s", "");
 	}  else {
-	    EPX_DBGFMT("Error opening /proc/mtrr: [%s], Disabled.", strerror(errno));
+	    DEBUGF("Error opening /proc/mtrr: [%s], Disabled.", strerror(errno));
 	}
     }
     else {
@@ -638,13 +657,13 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	sentry.type = MTRR_TYPE_WRCOMB;
 
 	if ( ioctl(be->mtrr_fd, MTRRIOC_ADD_ENTRY, &sentry) == -1 ) {
-	    EPX_DBGFMT("MTRRIOC_ADD_ENTRY(%p, %d): [%s] Disabled",
+	    DEBUGF("MTRRIOC_ADD_ENTRY(%p, %d): [%s] Disabled",
 		   sentry.base, sentry.size, strerror(errno));
 	    close(be->mtrr_fd);
 	    be->mtrr_fd = -1;
 	}
 	else
-	    EPX_DBGFMT("MTRR enabled at [%p] size[%d] type[MTRR_TYPE_WRCOMB]", sentry.base, sentry.size);
+	    DEBUGF("MTRR enabled at [%p] size[%d] type[MTRR_TYPE_WRCOMB]", sentry.base, sentry.size);
     }
 #endif
 
@@ -653,7 +672,7 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     // Also used to test out double buffering,.
     //
     if (ioctl(be->fb_fd, FBIOPAN_DISPLAY, &be->vinfo) == -1) {
-	EPX_DBGFMT("Initial pan failed [%s]. Giving up on double buffering (if active)", strerror(errno));
+	DEBUGF("Initial pan failed [%s]. Giving up on double buffering (if active)", strerror(errno));
 
 	// Reset double buffering.
 	if (be->dbuf) {
@@ -704,7 +723,7 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     al = be->vinfo.transp.length;
     ao = be->vinfo.transp.offset;
 
-    EPX_DBGFMT("epx_fb: bpp=%d,red(%d,%d),green(%d,%d),blue(%d,%d),alpha(%d,%d)",
+    DEBUGF("epx_fb: bpp=%d,red(%d,%d),green(%d,%d),blue(%d,%d),alpha(%d,%d)",
 	   be->vinfo.bits_per_pixel,rl,ro,gl,go,bl,bo,al,ao);
 
     pt = 0;
@@ -744,9 +763,9 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     {
 	char* pt_name = epx_pixel_format_to_name(pt);
 	if (pt_name != NULL)
-	    EPX_DBGFMT("epx_fb: pixel format = %s", pt_name);
+	    DEBUGF("epx_fb: pixel format = %s", pt_name);
 	else {
-	    EPX_DBGFMT("epx_fb: pixel format %d = unknown", pt);
+	    DEBUGF("epx_fb: pixel format %d = unknown", pt);
 	    pt = EPX_FORMAT_RGB; // guess
 	}
     }
@@ -788,26 +807,44 @@ static int fb_win_detach(epx_backend_t* backend, epx_window_t* ewin)
  *         and so on
  */
 
+#ifdef HAVE_INPUT_EVENT
 static int fb_evt_read(epx_backend_t* backend, epx_event_t* e)
 {
     FbBackend* be = (FbBackend*) backend;
     struct input_event buf; /* Read all events sequentially with no buffering*/
-
-
+    int nfds = 0;
+    struct epoll_event ev[MAX_INPUT_SOURCE];
 
     /* If no mouse is open, return 0 */
-    if (be->mouse_fd == -1)
+    if (be->poll_fd == -1)
 	return 0;
 
-    if (read(be->mouse_fd, (char*) &buf, sizeof(buf))== sizeof(buf)) {
-	EPX_DBGFMT("Got[%d] code[%.4X] value[%d]", 
-		   buf.type, buf.code, buf.value);
+    /* Locate the descriptor in the epoll set that is ready to read */
+    nfds = epoll_wait(be->poll_fd, ev, MAX_INPUT_SOURCE, -1);
+
+    /*
+       Since we can only process a single event at the time, we will
+       just read the first event descriptor and return.  be->poll_fd
+       will trigger immediately again, and call fb_evt_read.  Not very
+       efficient, but it kind of works.
+       
+       What we really want is a way to return multiple events in one go.
+    */
+    DEBUGF("nfds[%d] Descriptor[%d]", nfds, ev[nfds-1].data.fd);
+
+    if (ev[nfds-1].data.fd == -1)
+	exit(0);
+    
+    if (read(ev[nfds-1].data.fd, (char*) &buf, sizeof(buf))== sizeof(buf)) {
+	DEBUGF("Descriptor[%d] - Got Type[%d] code[%.4X] value[%d]", 
+		   ev[nfds-1].data.fd, buf.type, buf.code, buf.value);
+	
 	/* If we have no windows attached, we cannot set e->window, 
 	   which will trigger core.
 	   return 0.
 	*/
 	if (!be->b.window_list) {
-	    EPX_DBGFMT("No window attached. Will return 0");
+	    DEBUGF("No window attached. Will return 0");
 	    return 0;
 	}
 
@@ -817,16 +854,23 @@ static int fb_evt_read(epx_backend_t* backend, epx_event_t* e)
 	    e->window = be->b.window_list;  /* FIXME: Multiple windows?? */
 	    return (*callbacks[buf.type])(buf.time, buf.type, buf.code, buf.value, be, e);
 	}
-	EPX_DBGFMT("Unknown event type[%d] code[%.4X] value[%d]", 
+	DEBUGF("Unknown event type[%d] code[%.4X] value[%d]", 
 		   buf.type, buf.code, buf.value);
     }
     else
-	EPX_DBGFMT("Short read");
-
+	DEBUGF("Short read");
 	
 
     return 0;
 }
+#else
+static int fb_evt_read(epx_backend_t* backend, epx_event_t* e)
+{
+    (void) backend;
+    (void) e;
+    return -1;
+}
+#endif /* HAVE_INPUT_EVENT */
 
 static int fb_win_adjust(epx_window_t *win, epx_dict_t* param)
 {
@@ -835,40 +879,74 @@ static int fb_win_adjust(epx_window_t *win, epx_dict_t* param)
     return 1;
 }
 
+#ifdef HAVE_INPUT_EVENT
 static int setup_input_system(FbBackend* be, epx_dict_t *param)
 {
-    char* string_param;
-    if (be->mouse_fd != -1) {
-	close(be->mouse_fd);
-	be->mouse_fd = -1;
+    static char *input_param_keys[] = {
+	"input_mouse_device",
+	"input_keyboard_device",
+	"input_absolute_device",
+	"input_relative_device"
+	/* More? */
+    };
+    char val[256];
+    char *string_param;
+    int param_ind = sizeof(input_param_keys)/sizeof(input_param_keys[0]);
+
+    /* Close off any open descriptors */
+    if (be->poll_fd != -1) {
+	close(be->poll_fd);
+	be->poll_fd = -1;
     }
 
-    if (epx_dict_lookup_string(param, "input_mouse_device", &string_param, NULL) != -1) {
-	strncpy(be->input_mouse_dev, string_param, sizeof(be->input_mouse_dev) - 1);
-	be->input_mouse_dev[sizeof(be->input_mouse_dev)-1] = 0;
-    } 	
-
-    EPX_DBGFMT("Mouse device[%s]", be->input_mouse_dev);
-
-
-    if (strlen(be->input_mouse_dev) > 0) {
-	EPX_DBGFMT("Opening mouse input event device[%s]", 
-		   be->input_mouse_dev);
-
-	if (be->input_mouse_dev[0] && 
-	    (be->mouse_fd = open(be->input_mouse_dev, O_RDONLY | O_NONBLOCK)) == -1) {
-	    EPX_DBGFMT("Error opening mouse input event device[%s]: [%s]", 
-		       be->input_mouse_dev, strerror(errno));
-	    return 0;
+    while(be->input_fd_sz--) {
+	if (be->input_fd[be->input_fd_sz] != -1) {
+	    DEBUGF("Closing [%d/%d]", be->input_fd_sz, be->input_fd[be->input_fd_sz]);
+	    close(be->input_fd[be->input_fd_sz]);
+	    be->input_fd[be->input_fd_sz] = -1;
 	}
+    }
+    be->input_fd_sz = 0;
 
-	EPX_DBGFMT("input_mouse_device[%s] is opened as descripto[%d]",  be->input_mouse_dev, be->mouse_fd);
-	return 1;
-    
-	EPX_DBGFMT("input_mouse_device is empty, will not open");
+    /* Go through the input_params array and try to retrieve their values */
+    while(param_ind--) {
+	struct epoll_event ev;
+	
+	/* Extract the value for the current parameter key */
+	if (epx_dict_lookup_string(param, 
+				   input_param_keys[param_ind], 
+				   &string_param, 
+				   NULL) != -1) {
+
+	    /* Ensure that retrieved string is null terminated */
+	    strncpy(val, string_param, sizeof(val) - 1);
+	    val[sizeof(val)-1] = 0;
+
+	    DEBUGF("Opening input event file[%s]in slot [%d]", val, be->input_fd_sz);
+	    /* Open input  */
+	    if ((be->input_fd[be->input_fd_sz] = open(val, O_RDONLY | O_NONBLOCK)) == -1) {
+		WARNINGF("Error opening mouse input event file[%s]: [%s]", 
+			   val, strerror(errno));
+		continue;
+	    }
+	    DEBUGF("Input event file[%s] got descriptor [%d]", val, be->input_fd[be->input_fd_sz]);
+
+
+	    /* Setup an epoll for all input file descriptors */
+	    DEBUGF("poll_fd is [%d]",be->poll_fd);
+	    if (be->poll_fd == -1)  {
+		be->poll_fd = epoll_create(MAX_INPUT_SOURCE);
+		DEBUGF("Created pollset as [%d]", be->poll_fd);
+	    }
+
+	    ev.events = EPOLLIN;
+	    ev.data.fd = be->input_fd[be->input_fd_sz];
+	    DEBUGF("Adding [%d] to [%d]", ev.data.fd, be->poll_fd);
+	    epoll_ctl(be->poll_fd, EPOLL_CTL_ADD, ev.data.fd, &ev);
+	    be->input_fd_sz++;
+	}    
     }
     return 1;
-
 }
 
 static int process_input_event_key(struct timeval ts, 
@@ -876,7 +954,7 @@ static int process_input_event_key(struct timeval ts,
 				   FbBackend* be, 
 				   epx_event_t* e)
 {
-    EPX_DBGFMT("Keystroke type[%d] code[%d] val[%d]", type, code, value);
+    DEBUGF("Keystroke type[%d] code[%d] val[%d]", type, code, value);
     (void) ts;
     (void) be;
     switch(code) {
@@ -921,7 +999,7 @@ static int process_input_event_relative(struct timeval ts,
 					epx_event_t* e)
 {
     (void) be;
-    EPX_DBGFMT("Relative type[%d] code[%d] val[%d] ", type, code, value);
+    DEBUGF("Relative type[%d] code[%d] val[%d] ", type, code, value);
     (void) ts;
 
     switch(code) {
@@ -956,7 +1034,7 @@ static int process_input_event_absolute(struct timeval ts,
     (void) ts;
     (void) be;
     (void) e;
-    EPX_DBGFMT("Abs type[%d] code[%d] val[%d]", type, code, value);
+    DEBUGF("Abs type[%d] code[%d] val[%d]", type, code, value);
     return 0;
 }
 
@@ -983,3 +1061,4 @@ static int setup_input_event_callbacks(input_event_callback_t* cb, int max_sz)
     return 1;
 }
 
+#endif /* HAVE_INPUT_EVENT */
