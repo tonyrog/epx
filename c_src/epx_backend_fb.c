@@ -78,6 +78,8 @@ typedef struct {
     int poll_fd;
     int input_fd[MAX_INPUT_SOURCE];
     size_t input_fd_sz;
+    u16 mouse_buttons; /* Current buttons pressed by mouse EPX_BUTTON_* */
+    u16 keyboard_mods; /* Current keyboard mods EPX_KBD_MOD_* */
 #endif    
 
 } FbBackend;
@@ -342,6 +344,8 @@ epx_backend_t* fb_init(epx_dict_t* param)
 #ifdef HAVE_INPUT_EVENT
     be->poll_fd = -1;
     be->input_fd_sz = 0;
+    be->mouse_buttons = 0;
+    be->keyboard_mods = 0;
 
     r = sizeof(be->input_fd) / sizeof(be->input_fd[0]);
     while(r--)
@@ -723,9 +727,6 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     al = be->vinfo.transp.length;
     ao = be->vinfo.transp.offset;
 
-    DEBUGF("epx_fb: bpp=%d,red(%d,%d),green(%d,%d),blue(%d,%d),alpha(%d,%d)",
-	   be->vinfo.bits_per_pixel,rl,ro,gl,go,bl,bo,al,ao);
-
     pt = 0;
     // FIXME: Buggy reversed condition ! do not know why
     if (!(bo > go)) pt |= EPX_F_Bgr;         // BGR else RGB
@@ -830,15 +831,10 @@ static int fb_evt_read(epx_backend_t* backend, epx_event_t* e)
        
        What we really want is a way to return multiple events in one go.
     */
-    DEBUGF("nfds[%d] Descriptor[%d]", nfds, ev[nfds-1].data.fd);
-
     if (ev[nfds-1].data.fd == -1)
 	exit(0);
     
     if (read(ev[nfds-1].data.fd, (char*) &buf, sizeof(buf))== sizeof(buf)) {
-	DEBUGF("Descriptor[%d] - Got Type[%d] code[%.4X] value[%d]", 
-		   ev[nfds-1].data.fd, buf.type, buf.code, buf.value);
-	
 	/* If we have no windows attached, we cannot set e->window, 
 	   which will trigger core.
 	   return 0.
@@ -854,7 +850,7 @@ static int fb_evt_read(epx_backend_t* backend, epx_event_t* e)
 	    e->window = be->b.window_list;  /* FIXME: Multiple windows?? */
 	    return (*callbacks[buf.type])(buf.time, buf.type, buf.code, buf.value, be, e);
 	}
-	DEBUGF("Unknown event type[%d] code[%.4X] value[%d]", 
+	DEBUGF("Unknown event type[%d] code[%.4X] value[%d]. Ignored.", 
 		   buf.type, buf.code, buf.value);
     }
     else
@@ -954,8 +950,10 @@ static int process_input_event_key(struct timeval ts,
     (void) ts;
     (void) be;
 
+    /* Check if we are to report keys */
     e->key.mod = 0;
     e->key.code = 0;
+    e->key.sym = 0;
     switch(code) {
     case KEY_ESC: e->key.sym = '\e'; break;
     case KEY_1:   e->key.sym = '1'; break;
@@ -1048,37 +1046,60 @@ static int process_input_event_key(struct timeval ts,
 	goto mouse_button;
 	break;
     }
-    
+
     if (value == 0) 
 	e->type = EPX_EVENT_KEY_RELEASE;
     else 
 	e->type = EPX_EVENT_KEY_PRESS;
 
+    if ((e->type & e->window->mask) == 0)
+	return 0;
+
     return 1;
 
 mouse_button:
+    e->pointer.button = 0;
     switch(code) {
     case BTN_LEFT: 
-	e->pointer.button = EPX_EVENT_BUTTON_LEFT;
+	e->pointer.button = EPX_BUTTON_LEFT;
+	if (value == 0)  {
+	    e->type = EPX_EVENT_BUTTON_RELEASE;
+	    be->mouse_buttons &= ~EPX_BUTTON_LEFT;
+	} else {
+	    e->type = EPX_EVENT_BUTTON_PRESS;
+	    be->mouse_buttons |= EPX_BUTTON_LEFT;
+	}
 	break;
 
     case BTN_MIDDLE: 
-	e->pointer.button = EPX_EVENT_BUTTON_MIDDLE;
+	e->pointer.button = EPX_BUTTON_MIDDLE;
+	if (value == 0)  {
+	    e->type = EPX_EVENT_BUTTON_RELEASE;
+	    be->mouse_buttons &= ~EPX_BUTTON_MIDDLE;
+	} else {
+	    e->type = EPX_EVENT_BUTTON_PRESS;
+	    be->mouse_buttons |= EPX_BUTTON_MIDDLE;
+	}
+
 	break;
 
     case BTN_RIGHT: 
-	e->pointer.button = EPX_EVENT_BUTTON_RIGHT;
+	e->pointer.button = EPX_BUTTON_RIGHT;
+	if (value == 0)  {
+	    e->type = EPX_EVENT_BUTTON_RELEASE;
+	    be->mouse_buttons &= ~EPX_BUTTON_RIGHT;
+	} else {
+	    e->type = EPX_EVENT_BUTTON_PRESS;
+	    be->mouse_buttons |= EPX_BUTTON_RIGHT;
+	}
 	break;
 
     default:
 	return 0;
     }
 
-    if (value == 0) 
-	e->type = EPX_EVENT_BUTTON_RELEASE;
-    else 
-	e->type = EPX_EVENT_BUTTON_PRESS;
-	
+    if ((e->type & e->window->mask) == 0)
+	return 0;
 
     return 1;
 }
@@ -1111,6 +1132,9 @@ static int process_input_event_relative(struct timeval ts,
     default:
 	return 0;
     }
+
+    if ((e->type & e->window->mask) == 0)
+	return 0;
     return 1;
 }
 
@@ -1128,6 +1152,7 @@ static int process_input_event_absolute(struct timeval ts,
     DEBUGF("Abs type[%d] code[%d] val[%d]", type, code, value);
     return 0;
 }
+
 
 
 
