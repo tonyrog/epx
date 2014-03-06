@@ -922,26 +922,22 @@ static int setup_input_system(FbBackend* be, epx_dict_t *param)
 	    strncpy(val, string_param, sizeof(val) - 1);
 	    val[sizeof(val)-1] = 0;
 
-	    DEBUGF("Opening input event file[%s]in slot [%d]", val, be->input_fd_sz);
+	    DEBUGF("Opening input event file[%s]", val);
 	    /* Open input  */
 	    if ((be->input_fd[be->input_fd_sz] = open(val, O_RDONLY | O_NONBLOCK)) == -1) {
 		WARNINGF("Error opening mouse input event file[%s]: [%s]", 
 			   val, strerror(errno));
 		continue;
 	    }
-	    DEBUGF("Input event file[%s] got descriptor [%d]", val, be->input_fd[be->input_fd_sz]);
 
 
 	    /* Setup an epoll for all input file descriptors */
-	    DEBUGF("poll_fd is [%d]",be->poll_fd);
 	    if (be->poll_fd == -1)  {
 		be->poll_fd = epoll_create(MAX_INPUT_SOURCE);
-		DEBUGF("Created pollset as [%d]", be->poll_fd);
 	    }
 
 	    ev.events = EPOLLIN;
 	    ev.data.fd = be->input_fd[be->input_fd_sz];
-	    DEBUGF("Adding [%d] to [%d]", ev.data.fd, be->poll_fd);
 	    epoll_ctl(be->poll_fd, EPOLL_CTL_ADD, ev.data.fd, &ev);
 	    be->input_fd_sz++;
 	}    
@@ -957,37 +953,132 @@ static int process_input_event_key(struct timeval ts,
     DEBUGF("Keystroke type[%d] code[%d] val[%d]", type, code, value);
     (void) ts;
     (void) be;
+
+    e->key.mod = 0;
+    e->key.code = 0;
+    switch(code) {
+    case KEY_ESC: e->key.sym = '\e'; break;
+    case KEY_1:   e->key.sym = '1'; break;
+    case KEY_2:   e->key.sym = '2'; break;
+    case KEY_3: e->key.sym = '3'; break;
+    case KEY_4: e->key.sym = '4'; break;
+    case KEY_5: e->key.sym = '5'; break;
+    case KEY_6: e->key.sym = '6'; break;
+    case KEY_7: e->key.sym = '7'; break;
+    case KEY_8: e->key.sym = '8'; break;
+    case KEY_9: e->key.sym = '9'; break;
+    case KEY_0: e->key.sym = '0'; break;
+    case KEY_MINUS: e->key.sym = '-'; break;
+    case KEY_EQUAL: e->key.sym = '='; break;
+    case KEY_BACKSPACE: e->key.sym = '\b'; break;
+    case KEY_TAB: e->key.sym = '\t'; break;
+    case KEY_Q: e->key.sym = 'q'; break;
+    case KEY_W: e->key.sym = 'w'; break;
+    case KEY_E: e->key.sym = 'e'; break;
+    case KEY_R: e->key.sym = 'r'; break;
+    case KEY_T: e->key.sym = 't'; break;
+    case KEY_Y: e->key.sym = 'y'; break;
+    case KEY_U: e->key.sym = 'u'; break;
+    case KEY_I: e->key.sym = 'i'; break;
+    case KEY_O: e->key.sym = 'o'; break;
+    case KEY_P: e->key.sym = 'p'; break;
+    case KEY_LEFTBRACE: e->key.sym = '['; break;
+    case KEY_RIGHTBRACE: e->key.sym = ']'; break;
+    case KEY_ENTER: e->key.sym = '\r'; break;
+    case KEY_A: e->key.sym = 'a'; break;
+    case KEY_S: e->key.sym = 's'; break;
+    case KEY_D: e->key.sym = 'd'; break;
+    case KEY_F: e->key.sym = 'f'; break;
+    case KEY_G: e->key.sym = 'g'; break;
+    case KEY_H: e->key.sym = 'h'; break;
+    case KEY_J: e->key.sym = 'j'; break;
+    case KEY_K: e->key.sym = 'k'; break;
+    case KEY_L: e->key.sym = 'l'; break;
+    case KEY_SEMICOLON: e->key.sym = ';'; break;
+    case KEY_APOSTROPHE: e->key.sym = '\''; break;
+    case KEY_GRAVE: e->key.sym = '`'; break;
+    case KEY_Z: e->key.sym = 'z'; break;
+    case KEY_X: e->key.sym = 'x'; break;
+    case KEY_C: e->key.sym = 'c'; break;
+    case KEY_V: e->key.sym = 'v'; break;
+    case KEY_B: e->key.sym = 'b'; break;
+    case KEY_N: e->key.sym = 'n'; break;
+    case KEY_M: e->key.sym = 'm'; break;
+    case KEY_COMMA: e->key.sym = '.'; break;
+    case KEY_DOT: e->key.sym = '.'; break;
+    case KEY_SLASH: e->key.sym = '/'; break;
+    case KEY_KPASTERISK: e->key.sym = '*'; break;
+    case KEY_SPACE: e->key.sym = ' '; break;
+    case KEY_F1 : e->key.sym = EPX_KBD_KEY_F1; break;
+    case KEY_F2:  e->key.sym = EPX_KBD_KEY_F2; break;
+    case KEY_F3:  e->key.sym = EPX_KBD_KEY_F3; break;
+    case KEY_F4:  e->key.sym = EPX_KBD_KEY_F4; break;
+    case KEY_F5:  e->key.sym = EPX_KBD_KEY_F5; break;
+    case KEY_F6:  e->key.sym = EPX_KBD_KEY_F6; break;
+    case KEY_F7:  e->key.sym = EPX_KBD_KEY_F7; break;
+    case KEY_F8:  e->key.sym = EPX_KBD_KEY_F8; break;
+    case KEY_F9:  e->key.sym = EPX_KBD_KEY_F9; break;
+    case KEY_F10: e->key.sym = EPX_KBD_KEY_F10; break;
+    case KEY_F11: e->key.sym = EPX_KBD_KEY_F11; break;
+    case KEY_F12: e->key.sym = EPX_KBD_KEY_F12; break;
+    case KEY_KP7: e->key.sym = EPX_KBD_KEY_KP7; break;
+    case KEY_KP8: e->key.sym = EPX_KBD_KEY_KP8; break;
+    case KEY_KP9: e->key.sym = EPX_KBD_KEY_KP9; break;
+    case KEY_KPMINUS: e->key.sym = EPX_KBD_KEY_KP_MINUS; break;
+    case KEY_KP4: e->key.sym = EPX_KBD_KEY_KP4; break;
+    case KEY_KP5: e->key.sym = EPX_KBD_KEY_KP5; break;
+    case KEY_KP6: e->key.sym = EPX_KBD_KEY_KP6; break;
+    case KEY_KPPLUS: e->key.sym = EPX_KBD_KEY_KP_PLUS; break;
+    case KEY_KP1: e->key.sym = EPX_KBD_KEY_KP1; break;
+    case KEY_KP2: e->key.sym = EPX_KBD_KEY_KP2; break;
+    case KEY_KP3: e->key.sym = EPX_KBD_KEY_KP3; break;
+    case KEY_KP0: e->key.sym = EPX_KBD_KEY_KP0; break;
+    case KEY_KPDOT: e->key.sym = EPX_KBD_KEY_KP_PERIOD; break;
+    case KEY_HOME: e->key.sym = EPX_KBD_KEY_HOME; break;
+    case KEY_UP: e->key.sym = EPX_KBD_KEY_UP; break;
+    case KEY_PAGEUP: e->key.sym = EPX_KBD_KEY_PAGEUP; break;
+    case KEY_LEFT: e->key.sym = EPX_KBD_KEY_LEFT; break;
+    case KEY_RIGHT: e->key.sym = EPX_KBD_KEY_RIGHT; break;
+    case KEY_END: e->key.sym = EPX_KBD_KEY_END; break;
+    case KEY_DOWN: e->key.sym = EPX_KBD_KEY_DOWN; break;
+    case KEY_PAGEDOWN: e->key.sym = EPX_KBD_KEY_PAGEDOWN; break;
+    case KEY_INSERT: e->key.sym = EPX_KBD_KEY_INSERT; break;
+    case KEY_DELETE: e->key.sym = EPX_KBD_KEY_DELETE; break;
+    default:
+	goto mouse_button;
+	break;
+    }
+    
+    if (value == 0) 
+	e->type = EPX_EVENT_KEY_RELEASE;
+    else 
+	e->type = EPX_EVENT_KEY_PRESS;
+
+    return 1;
+
+mouse_button:
     switch(code) {
     case BTN_LEFT: 
-	if (value == 0) 
-	    e->type = EPX_EVENT_BUTTON_RELEASE;
-	else 
-	    e->type = EPX_EVENT_BUTTON_PRESS;
-	
 	e->pointer.button = EPX_EVENT_BUTTON_LEFT;
 	break;
 
     case BTN_MIDDLE: 
-	if (value == 0) 
-	    e->type = EPX_EVENT_BUTTON_RELEASE;
-	else 
-	    e->type = EPX_EVENT_BUTTON_PRESS;
-	
 	e->pointer.button = EPX_EVENT_BUTTON_MIDDLE;
 	break;
 
     case BTN_RIGHT: 
-	if (value == 0) 
-	    e->type = EPX_EVENT_BUTTON_RELEASE;
-	else 
-	    e->type = EPX_EVENT_BUTTON_PRESS;
-	
 	e->pointer.button = EPX_EVENT_BUTTON_RIGHT;
 	break;
 
     default:
 	return 0;
     }
+
+    if (value == 0) 
+	e->type = EPX_EVENT_BUTTON_RELEASE;
+    else 
+	e->type = EPX_EVENT_BUTTON_PRESS;
+	
 
     return 1;
 }
