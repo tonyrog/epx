@@ -69,7 +69,6 @@ typedef struct {
     int dbuf;                         /* Double buffer enabled */
     int cbuf;                         /* Current buffer displayed */
     int lcd_pi32;                     /* poll lcd_pi32 keys */
-    unsigned char lcd_pi32_keys;      /* old keys */
     epx_pixmap_t screen[2];           /* The screen/off-screen as a pixmap */
     char direct_pixmap_draw;   /* Shall we map fb directly into pixmap? */
 
@@ -82,6 +81,8 @@ typedef struct {
     size_t input_fd_sz;
     u16 mouse_buttons; /* Current buttons pressed by mouse EPX_BUTTON_* */
     u16 keyboard_mods; /* Current keyboard mods EPX_KBD_MOD_* */
+    unsigned char lcd_pi32_keys;   /* old keys */
+    epx_event_t ev;                /* Current event (sync by EV_SYN) */
 #endif    
 
 } FbBackend;
@@ -139,6 +140,13 @@ int (*input_event_callback_t)(struct timeval ts,
 
 static input_event_callback_t ev_callbacks[EV_CNT];
 static int setup_input_system(FbBackend* be, epx_dict_t *param);
+
+static int process_input_event_syn(struct timeval ts,
+				   __u16 type,
+				   __u16 code, 
+				   __s32 value, 
+				   FbBackend* be, 
+				   epx_event_t* ev);
 
 static int process_input_event_relative(struct timeval ts,
 					__u16 type,
@@ -343,6 +351,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     be->input_fd_sz = 0;
     be->mouse_buttons = 0;
     be->keyboard_mods = 0;
+    memset(&be->ev, 0, sizeof(be->ev));
 
     r = sizeof(be->input_fd) / sizeof(be->input_fd[0]);
     while(r--)
@@ -353,6 +362,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     ev_callbacks[EV_KEY] = process_input_event_key;
     ev_callbacks[EV_REL] = process_input_event_relative;
     ev_callbacks[EV_ABS] = process_input_event_absolute;
+    ev_callbacks[EV_SYN] = process_input_event_syn;
     
     if (!setup_input_system(be, param)) 
 	DEBUGF("Failed to setup input system. Disabled");
@@ -853,8 +863,16 @@ static int fb_evt_read(epx_backend_t* backend, epx_event_t* e)
 	}
 
 	if ((buf.type < EV_CNT) && (ev_callbacks[buf.type] != NULL)) {
+	    int r;
 	    e->window = be->b.window_list;  /* FIXME: Multiple windows?? */
-	    return (*ev_callbacks[buf.type])(buf.time, buf.type, buf.code, buf.value, be, e);
+	    r = (*ev_callbacks[buf.type])(buf.time, buf.type, buf.code,
+					  buf.value, be, &be->ev);
+	    if (r) {  // normally only by EV_SYN
+		memcpy(e, &be->ev, sizeof(be->ev));
+		be->ev.type = 0;
+		return 1;
+	    }
+	    return 0;
 	}
 	DEBUGF("Unknown event type[%d] code[%.4X] value[%d]. Ignored.", 
 		   buf.type, buf.code, buf.value);
@@ -954,7 +972,7 @@ static int process_input_event_key(struct timeval ts,
 				   FbBackend* be, 
 				   epx_event_t* e)
 {
-    DEBUGF("Keystroke type[%d] code[%d] val[%d]", type, code, value);
+    DEBUGF("EV_KEY type[%d] code[%d] val[%d]", type, code, value);
     (void) ts;
     (void) be;
 
@@ -985,8 +1003,8 @@ static int process_input_event_key(struct timeval ts,
     }
     switch(code) {
     case KEY_ESC: e->key.sym = '\e'; break;
-    case KEY_1:   e->key.sym = '1'; break;
-    case KEY_2:   e->key.sym = '2'; break;
+    case KEY_1: e->key.sym = '1'; break;
+    case KEY_2: e->key.sym = '2'; break;
     case KEY_3: e->key.sym = '3'; break;
     case KEY_4: e->key.sym = '4'; break;
     case KEY_5: e->key.sym = '5'; break;
@@ -1128,11 +1146,7 @@ mouse_button:
     default:
 	return 0;
     }
-
-    if ((e->type & e->window->mask) == 0)
-	return 0;
-
-    return 1;
+    return 0;
 }
 
 
@@ -1142,31 +1156,27 @@ static int process_input_event_relative(struct timeval ts,
 					epx_event_t* e)
 {
     (void) be;
-    DEBUGF("Relative type[%d] code[%d] val[%d] ", type, code, value);
+    DEBUGF("EV_REL type[%d] code[%d] val[%d] ", type, code, value);
     (void) ts;
 
     switch(code) {
     case REL_X:
-	e->type = EPX_EVENT_POINTER_MOTION;
 	e->pointer.x += value;
 	break;
 
     case REL_Y:
-	e->type = EPX_EVENT_POINTER_MOTION;
 	e->pointer.y += value;
 	break;
 
     case REL_Z:
-	e->type = EPX_EVENT_POINTER_MOTION;
 	e->pointer.z += value;
 	break;
+
     default:
 	return 0;
     }
-
-    if ((e->type & e->window->mask) == 0)
-	return 0;
-    return 1;
+    if (!e->type) e->type = EPX_EVENT_POINTER_MOTION;
+    return 0;
 }
 
 
@@ -1179,9 +1189,50 @@ static int process_input_event_absolute(struct timeval ts,
 {
     (void) ts;
     (void) be;
-    (void) e;
-    DEBUGF("Abs type[%d] code[%d] val[%d]", type, code, value);
+    DEBUGF("EV_ABS type[%d] code[%d] val[%d]", type, code, value);
+
+    switch(code) {
+    case ABS_X:
+	e->pointer.x = value;
+	break;
+
+    case ABS_Y:
+	e->pointer.y = value;
+	break;
+
+    case REL_Z:
+	e->pointer.z = value;
+	break;
+
+    case ABS_PRESSURE:
+	e->pointer.z = value;
+	break;
+    default:
+	return 0;
+    }
+    if (!e->type) e->type = EPX_EVENT_POINTER_MOTION;
     return 0;
 }
+
+static int process_input_event_syn(struct timeval ts,
+				   __u16 type,
+				   __u16 code, 
+				   __s32 value, 
+				   FbBackend* be, 
+				   epx_event_t* e)
+{
+    (void) ts;
+    (void) be;
+    DEBUGF("EV_SYN type[%d] code[%d] val[%d]", type, code, value);
+    if (e->type) {
+	if ((e->type & e->window->mask) == 0) {
+	    e->type = 0;  // needed ?
+	    return 0;
+	}
+	return 1;
+    }
+    return 0;
+}
+
 
 #endif /* HAVE_INPUT_EVENT */
