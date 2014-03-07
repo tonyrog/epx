@@ -68,7 +68,9 @@ typedef struct {
 #endif
     int dbuf;                         /* Double buffer enabled */
     int cbuf;                         /* Current buffer displayed */
-    epx_pixmap_t screen[2];                /* The screen/off-screen as a pixmap */
+    int lcd_pi32;                     /* poll lcd_pi32 keys */
+    unsigned char lcd_pi32_keys;      /* old keys */
+    epx_pixmap_t screen[2];           /* The screen/off-screen as a pixmap */
     char direct_pixmap_draw;   /* Shall we map fb directly into pixmap? */
 
     unsigned char *org_pixmap_data; /* Place holder for pixmap->data if direct draw */
@@ -135,13 +137,8 @@ int (*input_event_callback_t)(struct timeval ts,
 			      epx_event_t* ev);
 
 
-#ifndef EV_MAX
-#define EV_MAX 0x1f
-#endif
-
-static input_event_callback_t callbacks[EV_MAX];
+static input_event_callback_t ev_callbacks[EV_CNT];
 static int setup_input_system(FbBackend* be, epx_dict_t *param);
-static int setup_input_event_callbacks(input_event_callback_t*, int);
 
 static int process_input_event_relative(struct timeval ts,
 					__u16 type,
@@ -351,8 +348,12 @@ epx_backend_t* fb_init(epx_dict_t* param)
     while(r--)
 	be->input_fd[r] = -1;
 
-    setup_input_event_callbacks(callbacks, sizeof(callbacks) / sizeof(callbacks[0]));
-
+    // setup event type callbacks 
+    memset(ev_callbacks, 0, sizeof(ev_callbacks));
+    ev_callbacks[EV_KEY] = process_input_event_key;
+    ev_callbacks[EV_REL] = process_input_event_relative;
+    ev_callbacks[EV_ABS] = process_input_event_absolute;
+    
     if (!setup_input_system(be, param)) 
 	DEBUGF("Failed to setup input system. Disabled");
 #endif
@@ -400,6 +401,9 @@ epx_backend_t* fb_init(epx_dict_t* param)
     be->dbuf = 1;
     if (epx_dict_lookup_integer(param, "double_buffer", &int_param) != -1)
 	be->dbuf = int_param;
+
+    if (epx_dict_lookup_integer(param, "lcd_pi32", &int_param) != -1)
+	be->lcd_pi32 = int_param;
 
     return (epx_backend_t*) &(be->b);
 error:
@@ -844,11 +848,9 @@ static int fb_evt_read(epx_backend_t* backend, epx_event_t* e)
 	    return 0;
 	}
 
-	if (buf.type < sizeof(callbacks) / sizeof(callbacks[0]) &&
-	    callbacks[buf.type] != 0) {
-	    
+	if ((buf.type < EV_CNT) && (ev_callbacks[buf.type] != NULL)) {
 	    e->window = be->b.window_list;  /* FIXME: Multiple windows?? */
-	    return (*callbacks[buf.type])(buf.time, buf.type, buf.code, buf.value, be, e);
+	    return (*ev_callbacks[buf.type])(buf.time, buf.type, buf.code, buf.value, be, e);
 	}
 	DEBUGF("Unknown event type[%d] code[%.4X] value[%d]. Ignored.", 
 		   buf.type, buf.code, buf.value);
@@ -941,6 +943,8 @@ static int setup_input_system(FbBackend* be, epx_dict_t *param)
     return 1;
 }
 
+#define SSD1289_GET_KEYS _IOR('K', 1, unsigned char *)
+
 static int process_input_event_key(struct timeval ts, 
 				   __u16 type, __u16 code, __s32 value, 
 				   FbBackend* be, 
@@ -954,6 +958,27 @@ static int process_input_event_key(struct timeval ts,
     e->key.mod = 0;
     e->key.code = 0;
     e->key.sym = 0;
+
+    if (be->lcd_pi32) {
+	unsigned char keys;
+	if (ioctl(be->fb_fd, SSD1289_GET_KEYS, &keys) == -1)
+	    perror("_apps ioctl get");
+	else {
+	    int i;
+	    unsigned char changed = be->lcd_pi32_keys ^ keys;
+	    be->lcd_pi32_keys = keys;
+
+	    for (i = 0; i < 7; i++) {
+		if (changed & 0x1) {
+		    e->key.sym = EPX_KBD_KEY_F1 + i;
+		    value = (keys & 0x01) == 0x01;
+		    goto key_value;
+		}
+		changed >>= 1;
+		keys >>= 1;
+	    }
+	}
+    }
     switch(code) {
     case KEY_ESC: e->key.sym = '\e'; break;
     case KEY_1:   e->key.sym = '1'; break;
@@ -1047,6 +1072,7 @@ static int process_input_event_key(struct timeval ts,
 	break;
     }
 
+key_value:
     if (value == 0) 
 	e->type = EPX_EVENT_KEY_RELEASE;
     else 
@@ -1060,6 +1086,7 @@ static int process_input_event_key(struct timeval ts,
 mouse_button:
     e->pointer.button = 0;
     switch(code) {
+    case BTN_TOUCH: // simulate as left button 
     case BTN_LEFT: 
 	e->pointer.button = EPX_BUTTON_LEFT;
 	if (value == 0)  {
@@ -1151,30 +1178,6 @@ static int process_input_event_absolute(struct timeval ts,
     (void) e;
     DEBUGF("Abs type[%d] code[%d] val[%d]", type, code, value);
     return 0;
-}
-
-
-
-
-static int setup_input_event_callbacks(input_event_callback_t* cb, int max_sz)
-{
-    int i = max_sz;
-    /* Nil out the array */
-    while(i--)
-	cb[i] = 0;
-
-    /* Make sure that we will not overflow the array */
-    if (EV_SYN >= max_sz || EV_KEY >= max_sz || EV_REL >= max_sz || EV_ABS >= max_sz ||
-	EV_MSC >= max_sz || EV_SW >= max_sz || EV_LED >= max_sz || EV_SND >= max_sz ||
-	EV_REP >= max_sz || EV_FF >= max_sz || EV_PWR >= max_sz || EV_FF_STATUS >= max_sz)
-	return 0;
-
-    /* Setup callbacks for supported events type */
-    cb[EV_KEY] = process_input_event_key;
-    cb[EV_REL] = process_input_event_relative;
-    cb[EV_ABS] = process_input_event_absolute;
-    /* TODO: Add more handlers here */
-    return 1;
 }
 
 #endif /* HAVE_INPUT_EVENT */
