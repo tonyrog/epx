@@ -1440,7 +1440,7 @@ static int get_color(ErlNifEnv* env, const ERL_NIF_TERM term,
     unsigned int a, r, g, b;
 
     if (enif_get_uint(env, term, &value)) {
-	pixel->px = value;
+	pixel->px = U32BE(value);
 	return 1;
     }
 

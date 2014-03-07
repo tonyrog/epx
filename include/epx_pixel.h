@@ -244,8 +244,8 @@ static inline uint32_t u32REV(uint32_t x)
 
 #define I16LE(x)  ((int16_t) u16REV(x))
 #define I32LE(x)  ((int32_t) u32REV(x))
-#define U16LE(x)  U16REV(x)
-#define U32LE(x)  U32REV(x)
+#define U16LE(x)  u16REV(x)
+#define U32LE(x)  u32REV(x)
 
 #define I16BE(x)  ((int16_t)(x))
 #define I32BE(x)  ((int32_t)(x))
@@ -261,8 +261,8 @@ static inline uint32_t u32REV(uint32_t x)
 
 #define I16BE(x)  ((int16_t) u16REV(x))
 #define I32BE(x)  ((int32_t) u32REV(x))
-#define U16BE(x)  U16REV(x)
-#define U32BE(x)  U32REV(x)
+#define U16BE(x)  u16REV(x)
+#define U32BE(x)  u32REV(x)
 
 #endif
 
