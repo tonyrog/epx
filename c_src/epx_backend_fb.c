@@ -1197,7 +1197,7 @@ static int process_input_event_absolute(struct timeval ts,
 	e->pointer.y = value;
 	break;
 
-    case REL_Z:
+    case ABS_Z:
 	e->pointer.z = value;
 	break;
 
