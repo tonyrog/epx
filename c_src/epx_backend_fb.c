@@ -1099,11 +1099,7 @@ key_value:
 	e->type = EPX_EVENT_KEY_RELEASE;
     else 
 	e->type = EPX_EVENT_KEY_PRESS;
-
-    if ((e->type & e->window->mask) == 0)
-	return 0;
-
-    return 1;
+    return 0;
 
 mouse_button:
     e->pointer.button = 0;
