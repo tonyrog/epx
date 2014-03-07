@@ -1,5 +1,4 @@
 /***************************************************************************
-
  *
  * Copyright (C) 2007 - 2012, Rogvall Invest AB, <tony@rogvall.se>
  *
@@ -76,6 +75,14 @@ typedef struct {
 
 #ifdef HAVE_INPUT_EVENT
 #define MAX_INPUT_SOURCE 16
+    int ax_valid;
+    int ay_valid;
+    int az_valid;
+    int ap_valid;
+    struct input_absinfo ax;
+    struct input_absinfo ay;
+    struct input_absinfo az;
+    struct input_absinfo ap;
     int poll_fd;
     int input_fd[MAX_INPUT_SOURCE];
     size_t input_fd_sz;
@@ -901,6 +908,20 @@ static int fb_win_adjust(epx_window_t *win, epx_dict_t* param)
 }
 
 #ifdef HAVE_INPUT_EVENT
+
+static void abs_dump(char* axis, int valid, struct input_absinfo* aptr)
+{
+    DEBUGF("fb: abs: %s%s", axis, valid ? "" : "INVALID");
+    if (valid) {
+      DEBUGF("fb:   %s.value: %d", axis, aptr->value);
+      DEBUGF("fb: %s.minimum: %d", axis, aptr->minimum);
+      DEBUGF("fb: %s.maximum: %d", axis, aptr->maximum);
+      DEBUGF("fb:    %s.fuzz: %d", axis, aptr->fuzz);
+      DEBUGF("fb:    %s.flat: %d", axis, aptr->flat);
+      DEBUGF("fb:     %s.res: %d", axis, aptr->resolution);
+    }
+}
+
 static int setup_input_system(FbBackend* be, epx_dict_t *param)
 {
     static char *input_param_keys[] = {
@@ -913,6 +934,11 @@ static int setup_input_system(FbBackend* be, epx_dict_t *param)
     char val[256];
     char *string_param;
     int param_ind = sizeof(input_param_keys)/sizeof(input_param_keys[0]);
+
+    be->ax_valid = 0;
+    be->ay_valid = 0;
+    be->az_valid = 0;
+    be->ap_valid = 0;
 
     /* Close off any open descriptors */
     if (be->poll_fd != -1) {
@@ -938,35 +964,67 @@ static int setup_input_system(FbBackend* be, epx_dict_t *param)
 				   input_param_keys[param_ind], 
 				   &string_param, 
 				   NULL) != -1) {
-
+	    int fd;
 	    /* Ensure that retrieved string is null terminated */
 	    strncpy(val, string_param, sizeof(val) - 1);
 	    val[sizeof(val)-1] = 0;
 
 	    DEBUGF("Opening input event file[%s]", val);
 	    /* Open input  */
-	    if ((be->input_fd[be->input_fd_sz] = open(val, O_RDONLY | O_NONBLOCK)) == -1) {
+	    if ((fd = open(val, O_RDONLY | O_NONBLOCK)) == -1) {
 		WARNINGF("Error opening mouse input event file[%s]: [%s]", 
 			   val, strerror(errno));
 		continue;
 	    }
 
-
+	    if (param_ind == 0) { // input_mouse_device
+	      int r;
+	      // query scale info about absolute coordinates
+	      r = ioctl(fd, EVIOCGABS(ABS_X), &be->ax);
+	      be->ax_valid = (r >= 0);
+	      abs_dump("ABS_X", be->ax_valid, &be->ax);
+	      r = ioctl(fd, EVIOCGABS(ABS_Y), &be->ay);
+	      be->ay_valid = (r >= 0);
+	      abs_dump("ABS_Y", be->ay_valid, &be->ay);
+	      r = ioctl(fd, EVIOCGABS(ABS_Z), &be->az);
+	      be->az_valid = (r >= 0);
+	      abs_dump("ABS_Z", be->az_valid, &be->az);
+	      r = ioctl(fd, EVIOCGABS(ABS_PRESSURE), &be->ap);
+	      be->ap_valid = (r >= 0);
+	      abs_dump("ABS_P", be->ap_valid, &be->ap);
+	    }
 	    /* Setup an epoll for all input file descriptors */
 	    if (be->poll_fd == -1)  {
 		be->poll_fd = epoll_create(MAX_INPUT_SOURCE);
 	    }
-
 	    ev.events = EPOLLIN;
-	    ev.data.fd = be->input_fd[be->input_fd_sz];
+	    ev.data.fd = fd;
 	    epoll_ctl(be->poll_fd, EPOLL_CTL_ADD, ev.data.fd, &ev);
-	    be->input_fd_sz++;
+	    be->input_fd[be->input_fd_sz++] = fd;
 	}    
     }
     return 1;
 }
 
-#define SSD1289_GET_KEYS _IOR('K', 1, unsigned char *)
+static void modify(FbBackend* be, __s32 value, uint16_t mod)
+{
+  if (value) 
+    be->keyboard_mods |= mod;
+  else
+    be->keyboard_mods &= ~mod;
+}
+
+static void toggle(FbBackend* be, __s32 value, uint16_t mod)
+{
+  if (value)
+    be->keyboard_mods ^= mod;
+}
+
+static int ascii(FbBackend* be, int lower)
+{
+  return (be->keyboard_mods & (EPX_KBD_MOD_CAPS|EPX_KBD_MOD_SHIFT))
+    ? lower - 32 : lower;
+}
 
 static int process_input_event_key(struct timeval ts, 
 				   __u16 type, __u16 code, __s32 value, 
@@ -977,30 +1035,28 @@ static int process_input_event_key(struct timeval ts,
     (void) ts;
     (void) be;
 
-    /* Check if we are to report keys */
-    e->key.mod = 0;
-    e->key.code = 0;
-    e->key.sym = 0;
-
     if (be->lcd_pi32) {
+#define SSD1289_GET_KEYS _IOR('K', 1, unsigned char *)
 	unsigned char keys;
 	if (ioctl(be->fb_fd, SSD1289_GET_KEYS, &keys) == -1)
 	    perror("_apps ioctl get");
 	else {
-	    int i;
 	    unsigned char changed = be->lcd_pi32_keys ^ keys;
-	    be->lcd_pi32_keys = keys;
-
-	    for (i = 0; i < 7; i++) {
+	    if (changed) {
+	      int i;
+	      be->lcd_pi32_keys = keys;
+	      for (i = 0; i < 7; i++) {
 		if (changed & 0x1) {
-		    e->key.sym = EPX_KBD_KEY_F1 + i;
-		    value = (keys & 0x01) == 0x01;
-		    goto key_value;
+		  e->key.sym = EPX_KBD_KEY_F1 + i;
+		  value = (keys & 0x01) == 0x01;
+		  goto key_value;
 		}
 		changed >>= 1;
 		keys >>= 1;
+	      }
 	    }
 	}
+#undef SSD1289_GET_KEYS
     }
     switch(code) {
     case KEY_ESC: e->key.sym = '\e'; break;
@@ -1018,38 +1074,38 @@ static int process_input_event_key(struct timeval ts,
     case KEY_EQUAL: e->key.sym = '='; break;
     case KEY_BACKSPACE: e->key.sym = '\b'; break;
     case KEY_TAB: e->key.sym = '\t'; break;
-    case KEY_Q: e->key.sym = 'q'; break;
-    case KEY_W: e->key.sym = 'w'; break;
-    case KEY_E: e->key.sym = 'e'; break;
-    case KEY_R: e->key.sym = 'r'; break;
-    case KEY_T: e->key.sym = 't'; break;
-    case KEY_Y: e->key.sym = 'y'; break;
-    case KEY_U: e->key.sym = 'u'; break;
-    case KEY_I: e->key.sym = 'i'; break;
-    case KEY_O: e->key.sym = 'o'; break;
-    case KEY_P: e->key.sym = 'p'; break;
+    case KEY_Q: e->key.sym = ascii(be,'q'); break;
+    case KEY_W: e->key.sym = ascii(be,'w'); break;
+    case KEY_E: e->key.sym = ascii(be,'e'); break;
+    case KEY_R: e->key.sym = ascii(be,'r'); break;
+    case KEY_T: e->key.sym = ascii(be,'t'); break;
+    case KEY_Y: e->key.sym = ascii(be,'y'); break;
+    case KEY_U: e->key.sym = ascii(be,'u'); break;
+    case KEY_I: e->key.sym = ascii(be,'i'); break;
+    case KEY_O: e->key.sym = ascii(be,'o'); break;
+    case KEY_P: e->key.sym = ascii(be,'p'); break;
     case KEY_LEFTBRACE: e->key.sym = '['; break;
     case KEY_RIGHTBRACE: e->key.sym = ']'; break;
     case KEY_ENTER: e->key.sym = '\r'; break;
-    case KEY_A: e->key.sym = 'a'; break;
-    case KEY_S: e->key.sym = 's'; break;
-    case KEY_D: e->key.sym = 'd'; break;
-    case KEY_F: e->key.sym = 'f'; break;
-    case KEY_G: e->key.sym = 'g'; break;
-    case KEY_H: e->key.sym = 'h'; break;
-    case KEY_J: e->key.sym = 'j'; break;
-    case KEY_K: e->key.sym = 'k'; break;
-    case KEY_L: e->key.sym = 'l'; break;
+    case KEY_A: e->key.sym = ascii(be,'a'); break;
+    case KEY_S: e->key.sym = ascii(be,'s'); break;
+    case KEY_D: e->key.sym = ascii(be,'d'); break;
+    case KEY_F: e->key.sym = ascii(be,'f'); break;
+    case KEY_G: e->key.sym = ascii(be,'g'); break;
+    case KEY_H: e->key.sym = ascii(be,'h'); break;
+    case KEY_J: e->key.sym = ascii(be,'j'); break;
+    case KEY_K: e->key.sym = ascii(be,'k'); break;
+    case KEY_L: e->key.sym = ascii(be,'l'); break;
     case KEY_SEMICOLON: e->key.sym = ';'; break;
     case KEY_APOSTROPHE: e->key.sym = '\''; break;
     case KEY_GRAVE: e->key.sym = '`'; break;
-    case KEY_Z: e->key.sym = 'z'; break;
-    case KEY_X: e->key.sym = 'x'; break;
-    case KEY_C: e->key.sym = 'c'; break;
-    case KEY_V: e->key.sym = 'v'; break;
-    case KEY_B: e->key.sym = 'b'; break;
-    case KEY_N: e->key.sym = 'n'; break;
-    case KEY_M: e->key.sym = 'm'; break;
+    case KEY_Z: e->key.sym = ascii(be,'z'); break;
+    case KEY_X: e->key.sym = ascii(be,'x'); break;
+    case KEY_C: e->key.sym = ascii(be,'c'); break;
+    case KEY_V: e->key.sym = ascii(be,'v'); break;
+    case KEY_B: e->key.sym = ascii(be,'b'); break;
+    case KEY_N: e->key.sym = ascii(be,'n'); break;
+    case KEY_M: e->key.sym = ascii(be,'m'); break;
     case KEY_COMMA: e->key.sym = '.'; break;
     case KEY_DOT: e->key.sym = '.'; break;
     case KEY_SLASH: e->key.sym = '/'; break;
@@ -1090,10 +1146,24 @@ static int process_input_event_key(struct timeval ts,
     case KEY_PAGEDOWN: e->key.sym = EPX_KBD_KEY_PAGEDOWN; break;
     case KEY_INSERT: e->key.sym = EPX_KBD_KEY_INSERT; break;
     case KEY_DELETE: e->key.sym = EPX_KBD_KEY_DELETE; break;
-    default:
-	goto mouse_button;
-	break;
+      // modifier keys
+
+    case KEY_LEFTSHIFT:  modify(be,value,EPX_KBD_MOD_LSHIFT); return 0;
+    case KEY_RIGHTSHIFT: modify(be,value,EPX_KBD_MOD_RSHIFT);  return 0;
+    case KEY_LEFTALT:    modify(be,value,EPX_KBD_MOD_LALT);  return 0;
+    case KEY_RIGHTALT:   modify(be,value,EPX_KBD_MOD_RALT);  return 0;
+    case KEY_LEFTCTRL:   modify(be,value,EPX_KBD_MOD_LCTRL); return 0;
+    case KEY_RIGHTCTRL:  modify(be,value,EPX_KBD_MOD_RCTRL); return 0;
+    case KEY_LEFTMETA:   modify(be,value,EPX_KBD_MOD_LMETA); return 0;
+    case KEY_RIGHTMETA:  modify(be,value,EPX_KBD_MOD_RMETA); return 0;
+      // KEY_ALTGR: ? modify(be,value,EPX_KBD_MOD_ALTGR);  return 0;
+    case KEY_CAPSLOCK:   toggle(be,value,EPX_KBD_MOD_CAPS); return 0;
+    case KEY_NUMLOCK:    toggle(be,value,EPX_KBD_MOD_NUM); return 0;
+    case KEY_SCREENLOCK: toggle(be,value,EPX_KBD_MOD_SCR); return 0;
+    default: goto mouse_button;
     }
+    e->key.mod  = be->keyboard_mods;
+    e->key.code = code;
 
 key_value:
     if (value == 0) 
@@ -1176,8 +1246,22 @@ static int process_input_event_relative(struct timeval ts,
     return 0;
 }
 
-
-
+int map_abs_value(int valid, struct input_absinfo* aptr, int vres, int value)
+{
+  __s32 size;
+  if (valid) {
+    __s32 vmin = aptr->minimum;
+    __s32 vmax = aptr->maximum;
+    if ((size = vmax - vmin) == 0) {
+      if ((size = vres) == 0)
+	size = 1;
+    }
+    if (value < vmin) value = vmin;
+    if (value > vmax) value = vmax;
+    return ((value - vmin) * vres) / size;
+  }
+  return value;
+}
 
 static int process_input_event_absolute(struct timeval ts, 
 					__u16 type, __u16 code, __s32 value, 
@@ -1190,19 +1274,23 @@ static int process_input_event_absolute(struct timeval ts,
 
     switch(code) {
     case ABS_X:
-	e->pointer.x = value;
+        e->pointer.x = map_abs_value(be->ax_valid,&be->ax,
+				     be->vinfo.xres, value);
 	break;
 
     case ABS_Y:
-	e->pointer.y = value;
+        e->pointer.y = map_abs_value(be->ay_valid,&be->ay,
+				     be->vinfo.yres, value);
 	break;
 
     case ABS_Z:
-	e->pointer.z = value;
+        e->pointer.z = map_abs_value(be->az_valid,&be->az,
+				     256, value); // res?
 	break;
 
     case ABS_PRESSURE:
-	e->pointer.z = value;
+        e->pointer.z = map_abs_value(be->ap_valid,&be->ap,
+				     256, value);  // res?
 	break;
     default:
 	return 0;
