@@ -864,7 +864,8 @@ static int fb_evt_read(epx_backend_t* backend, epx_event_t* e)
 
 	if ((buf.type < EV_CNT) && (ev_callbacks[buf.type] != NULL)) {
 	    int r;
-	    e->window = be->b.window_list;  /* FIXME: Multiple windows?? */
+
+	    be->ev.window = be->b.window_list;
 	    r = (*ev_callbacks[buf.type])(buf.time, buf.type, buf.code,
 					  buf.value, be, &be->ev);
 	    if (r) {  // normally only by EV_SYN
