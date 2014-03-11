@@ -306,6 +306,36 @@ static int load_pixel_format(epx_backend_t* backend,
     return 1;
 }
 
+static void send_cursor_off(int fd)
+{
+    const char cursoroff_str[] = "\033[?25l\033[?1c\033[25m";
+    const char blankoff_str[] = "\033[9;0]";
+    int r;
+    r = write(fd, cursoroff_str, strlen(cursoroff_str));
+    if (r < 0)
+	r = write(fd, blankoff_str, strlen(blankoff_str));
+    if (r < 0) {
+	DEBUGF("write failed: %s", strerror(errno));
+    }
+}
+
+static void cursor_off(int use_stderr)
+{
+    if (use_stderr) {
+        send_cursor_off(2);      
+    }
+    else {
+        int fd;
+	if ((fd = open("/dev/console", O_RDWR)) < 0) {
+	  DEBUGF("failed to open /dev/console: %s", strerror(errno));
+	  return;
+	}
+	send_cursor_off(fd);
+	close(fd);
+    }
+}
+
+
 static void fb_mod_vinfo(epx_dict_t *param, struct fb_var_screeninfo *vinfo)
 {
     int   int_param;
@@ -392,11 +422,6 @@ static void fb_mod_vinfo(epx_dict_t *param, struct fb_var_screeninfo *vinfo)
 
 epx_backend_t* fb_init(epx_dict_t* param)
 {
-    //
-    // Strings to disable blanking and cursor.
-    //
-    const char cursoroff_str[] = "\033[?25l\033[?1c\033[25m";
-    const char blankoff_str[] = "\033[9;0]";
     FbBackend* be;
     char* string_param;
     int   int_param;
@@ -467,13 +492,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
 
     fb_dump_vinfo("Retrieved values.", &be->ovinfo);
 
-    // FIXME. Check that this is the correct terminal!
-    r = write(2, cursoroff_str, strlen(cursoroff_str));
-    if (r < 0)
-	r = write(2, blankoff_str, strlen(blankoff_str));
-    if (r < 0) {
-	DEBUGF("write failed: [%s]", strerror(errno));
-    }
+    cursor_off(0);
 
     be->vinfo  = be->ovinfo;
     be->vinfo.bits_per_pixel = EPX_PIXEL_SIZE(EPX_FORMAT_ARGB) * 8; // Default
@@ -1253,14 +1272,21 @@ static int process_input_event_relative(struct timeval ts,
     switch(code) {
     case REL_X:
 	e->pointer.x += value;
+	if (e->pointer.x < 0) e->pointer.x = 0;
+	else if (e->pointer.x >= be->b.width) 
+	  e->pointer.x = be->b.width-1;
 	break;
 
     case REL_Y:
 	e->pointer.y += value;
+	if (e->pointer.y < 0) e->pointer.y = 0;
+	else if (e->pointer.y >= be->b.height) 
+	  e->pointer.y = be->b.height-1;
 	break;
 
     case REL_Z:
 	e->pointer.z += value;
+	if (e->pointer.z < 0) e->pointer.z = 0;
 	break;
 
     default:
