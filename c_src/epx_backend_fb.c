@@ -264,17 +264,14 @@ static int load_pixel_format(epx_backend_t* backend,
     a_size = vinfo->transp.length;
     a_offs = vinfo->transp.offset;
 
-    pt = 0;
 #if BYTE_ORDER == LITTLE_ENDIAN
     little_endian = 1;  // stored in native format
 #endif
     bgr = (b_offs > g_offs);
-
-
     alpha = (a_size > 0);   // alpha channel present 
     alpha_first = alpha && (a_offs < r_offs);
-    bits_per_bixel = vinfo->bits_per_pixel;
-    if (vinfo->grayscale) fmt = EPX_FMR_GRAY;
+    bits_per_pixel = vinfo->bits_per_pixel;
+    if (vinfo->grayscale) fmt = EPX_FMT_GRAY;
     else if ((r_size==g_size) && (g_size==b_size)) {
 	switch(r_size) {
 	case 4: fmt = EPX_FMT_RGB4; break;
@@ -298,9 +295,14 @@ static int load_pixel_format(epx_backend_t* backend,
 	fmt = EPX_FMT_GREEN;
     else if ((r_size==0) && (g_size==0) && (b_size>0))
 	fmt = EPX_FMT_BLUE;
+
+    // Work-around handling the "native" pixel format
+    if (little_endian && (bits_per_pixel == 32)) {
+      little_endian = 0;  // why is this?
+    }
     f = EPX_FMT(fmt,bgr,alpha,alpha_first,little_endian,bits_per_pixel);
-    be->format[0] = f;
-    be->nformats = 1;
+    backend->formats[0] = f;
+    backend->nformats = 1;
     return 1;
 }
 
@@ -461,7 +463,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     }
     be->b.width = be->ovinfo.xres;
     be->b.height = be->ovinfo.yres;
-    load_pixel_format(be, &be->ovinfo);
+    load_pixel_format(&be->b, &be->ovinfo);
 
     fb_dump_vinfo("Retrieved values.", &be->ovinfo);
 
@@ -491,6 +493,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     if (epx_dict_lookup_integer(param, "double_buffer", &int_param) != -1)
 	be->dbuf = int_param;
 
+    be->lcd_pi32 = 0;
     if (epx_dict_lookup_integer(param, "lcd_pi32", &int_param) != -1)
 	be->lcd_pi32 = int_param;
 
@@ -816,9 +819,9 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     else
 	be->screen[1].data = NULL;
 
-    if (load_pixel_format(be, &be->vinfo) > 0) {
-	be->screen[0].pixel_format = be->formats[0];
-	be->screen[1].pixel_format = be->formats[0];
+    if (load_pixel_format(&be->b, &be->vinfo) > 0) {
+	be->screen[0].pixel_format = be->b.formats[0];
+	be->screen[1].pixel_format = be->b.formats[0];
     }
     return 0;
 }
