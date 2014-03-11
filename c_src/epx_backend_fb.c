@@ -19,6 +19,7 @@
  */
 
 #include "../include/epx_backend.h"
+#include "../include/epx_colors.h"
 #include "../include/epx_debug.h"
 // FIXME configure
 #include <fcntl.h>
@@ -86,10 +87,21 @@ typedef struct {
     int poll_fd;
     int input_fd[MAX_INPUT_SOURCE];
     size_t input_fd_sz;
-    u16 mouse_buttons; /* Current buttons pressed by mouse EPX_BUTTON_* */
-    u16 keyboard_mods; /* Current keyboard mods EPX_KBD_MOD_* */
+    struct timeval mouse_ts;  // last mouse movement time
+    int mouse_x;        // mouse position x
+    int mouse_y;        // mouse position y
+    int mouse_z;        // mouse position z
+    int mouse_moved;    // any movement since last time
+    u16 mouse_buttons;  // Current buttons pressed by mouse EPX_BUTTON_*
+    u16 keyboard_mods;  // Current keyboard mods EPX_KBD_MOD_*
     unsigned char lcd_pi32_keys;   /* old keys */
     epx_event_t ev;                /* Current event (sync by EV_SYN) */
+    epx_pixmap_t* cursor;  // cursor image
+    int save_x;
+    int save_y;
+    epx_pixmap_t* save;    // backing store for cursor
+    int hotspot_x;         // offset-x
+    int hotspot_y;         // offset-y
 #endif    
 
 } FbBackend;
@@ -306,6 +318,156 @@ static int load_pixel_format(epx_backend_t* backend,
     return 1;
 }
 
+#ifdef HAVE_INPUT_EVENT
+
+static uint32_t const cursorb[33][24] = {
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x01000000,0x03000000,0x03000000,0x01000000,0x01000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x02000000,0x07000000,0x10000000,0x13000000,0x0f000000,0x07000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x04000000,0x13000000,0x26000000,0xffffffff,0xf3f9f9f9,0x245c5c5c,0x09000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x07000000,0x1d000000,0x3f000000,0xe2dddddd,0xfaa4a4a4,0xdde8e8e8,0x2a5b5b5b,0x09000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x24000000,0x50000000,0xe7d8d8d8,0xff3c3c3c,0xfa959595,0xdee7e7e7,0x2a5b5b5b,0x09000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x57000000,0xead6d6d6,0xff3c3c3c,0xff000000,0xfa959595,0xdee7e7e7,0x2a5b5b5b,0x09000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x57000000,0xebd5d5d5,0xff3c3c3c,0xff000000,0xff000000,0xfa959595,0xdee7e7e7,0x2a5b5b5b,0x09000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x58000000,0xebd5d5d5,0xff3c3c3c,0xff000000,0xff000000,0xff000000,0xfa959595,0xdee7e7e7,0x2a5b5b5b,0x09000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x58000000,0xebd5d5d5,0xff3c3c3c,0xff000000,0xff000000,0xff000000,0xff000000,0xfa959595,0xdee7e7e7,0x2a5b5b5b,0x09000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x58000000,0xebd5d5d5,0xff3c3c3c,0xff000000,0xff000000,0xff000000,0xff000000,0xff000000,0xfa959595,0xdee7e7e7,0x2a5b5b5b,0x09000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x58000000,0xebd5d5d5,0xff3c3c3c,0xff000000,0xff000000,0xff000000,0xff000000,0xff000000,0xff000000,0xfa959595,0xdee7e7e7,0x2a5b5b5b,0x09000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x58000000,0xebd5d5d5,0xff3c3c3c,0xff000000,0xff000000,0xff000000,0xff000000,0xff000000,0xff000000,0xff000000,0xfa959595,0xdee7e7e7,0x2a5b5b5b,0x09000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x58000000,0xebd5d5d5,0xff3c3c3c,0xff000000,0xff000000,0xff000000,0xff000000,0xff000000,0xff000000,0xff000000,0xff000000,0xfa959595,0xdde8e8e8,0x295d5d5d,0x08000000,0x01000000,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x58000000,0xebd5d5d5,0xff3c3c3c,0xff000000,0xff000000,0xff000000,0xff000000,0xff060606,0xfc6d6d6d,0xfaa8a8a8,0xf9a9a9a9,0xf7aaaaaa,0xffffffff,0xcdeaeaea,0x0e000000,0x03000000,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x58000000,0xebd5d5d5,0xff3c3c3c,0xff000000,0xff000000,0xff080808,0xff333333,0xff000000,0xfde0e0e0,0xc89f9f9f,0xad868686,0x9d949494,0x8ba7a7a7,0x4e939393,0x10000000,0x03000000,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x57000000,0xebd5d5d5,0xff3c3c3c,0xff000000,0xff212121,0xfce4e4e4,0xffffffff,0xff0d0d0d,0xff3b3b3b,0xf2eaeaea,0x58060606,0x3d000000,0x2a000000,0x18000000,0x09000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x26000000,0x57000000,0xead6d6d6,0xff3c3c3c,0xff494949,0xfbededed,0xc58d8d8d,0xe1b9b9b9,0xfd747474,0xff000000,0xf7c8c8c8,0x83adadad,0x22000000,0x11000000,0x08000000,0x03000000,0x01000000,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x08000000,0x24000000,0x52000000,0xe8d7d7d7,0xfc909090,0xf6ececec,0x8e686868,0x70000000,0x9f555555,0xfae3e3e3,0xff020202,0xff494949,0xe6e9e9e9,0x1b000000,0x06000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x07000000,0x1d000000,0x42000000,0xdddcdcdc,0xe5e3e3e3,0x5d3f3f3f,0x3d000000,0x46000000,0x69000000,0xedd8d8d8,0xff4d4d4d,0xff000000,0xf7d7d7d7,0x6ab4b4b4,0x0d000000,0x02000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x05000000,0x13000000,0x2a000000,0x54707070,0x38121212,0x25000000,0x19000000,0x26000000,0x4e000000,0xad898989,0xfabdbdbd,0xff000000,0xff565656,0xdde3e3e3,0x1a000000,0x06000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x02000000,0x08000000,0x12000000,0x17000000,0x14000000,0x0a000000,0x07000000,0x14000000,0x39000000,0x6d0e0e0e,0xf9f0f0f0,0xff262626,0xff020202,0xf8e8e8e8,0x59b5b5b5,0x09000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x01000000,0x04000000,0x05000000,0x04000000,0x01000000,0x01000000,0x0a000000,0x26000000,0x51000000,0xc2acacac,0xfca3a3a3,0xfa989898,0xffffffff,0x48919191,0x0a000000,0x01000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x04000000,0x16000000,0x37000000,0x62222222,0xfcfcfcfc,0xb9c0c0c0,0x4b444444,0x1a000000,0x07000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x01000000,0x0a000000,0x1c000000,0x30000000,0x40282828,0x31000000,0x1e000000,0x0c000000,0x03000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x02000000,0x09000000,0x11000000,0x15000000,0x11000000,0x09000000,0x03000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x02000000,0x02000000,0x01000000,0x01000000,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff},
+  {0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff,0x00ffffff}
+};
+
+#define CURSOR_HOTSPOT_X 0
+#define CURSOR_HOTSPOT_Y 0
+#define CURSOR_HEIGHT    33
+#define CURSOR_WIDTH     24
+#define CURSOR_TIMEOUT   4
+
+static int load_cursor(FbBackend* be)
+{
+  int x, y;
+  epx_pixmap_t* def;
+  struct timeval t, t1;
+  DEBUGF("load_cursor %lux%lu", CURSOR_WIDTH, CURSOR_HEIGHT);
+
+  be->hotspot_x = CURSOR_HOTSPOT_X;
+  be->hotspot_y = CURSOR_HOTSPOT_Y;
+  be->cursor = NULL;
+  be->save   = NULL;
+  be->save_x = -1;
+  be->save_y = -1;
+  
+  gettimeofday(&t, NULL);
+  t1.tv_sec = (CURSOR_TIMEOUT+1);
+  t1.tv_usec = 0;
+  timersub(&t, &t1, &be->mouse_ts);
+
+  def = epx_pixmap_create(CURSOR_WIDTH, CURSOR_HEIGHT, EPX_FORMAT_ARGB);
+  if (def) {
+    for (y = 0; y < (int)CURSOR_HEIGHT; y++) {
+      for (x = 0; x < (int)CURSOR_WIDTH; x++) {
+	epx_pixel_t color;
+	uint32_t px = cursorb[y][x];
+	// color.px = cursorb[y][x];
+	color.a = (px>>24) & 0xff;
+	color.r = (px>>16) & 0xff;
+	color.g = (px>>8) & 0xff;
+	color.b = px & 0xff;
+	epx_pixmap_put_pixel(def, x, y, 0, color);
+      }
+    }
+  }
+  be->cursor = def;
+  be->save = epx_pixmap_create(CURSOR_WIDTH, CURSOR_HEIGHT, EPX_FORMAT_ARGB);
+  return 0;
+}
+
+static epx_pixmap_t* screen_pixels(FbBackend* be, int active)
+{
+  if (be->dbuf)
+    return (be->cbuf == active) ? &be->screen[1] : &be->screen[0];
+  else
+    return &be->screen[0];
+}
+
+
+static int hide_cursor(FbBackend* be)
+{
+  epx_pixmap_t* scr;
+  int x, y;
+
+  if ((be->cursor == NULL) || (be->save == NULL))
+    return -1;
+  if (((x=be->save_x) < 0) || ((y=be->save_y) < 0))
+    return 0;
+  DEBUGF("hide_cursor (%d,%d)", x, y);
+
+  scr = screen_pixels(be, 1);
+  epx_pixmap_copy_area(be->save, scr,
+		       0, 0, x, y,
+		       be->save->width,
+		       be->save->height,
+		       EPX_FLAG_NONE);
+  return 1;
+}
+
+
+static int show_cursor(FbBackend* be, int timeout)
+{
+  epx_pixmap_t* scr;
+  int x, y;
+
+  if ((be->cursor == NULL) || (be->save == NULL))
+    return -1;
+  
+  if (timeout) {
+    struct timeval t;
+    gettimeofday(&t, NULL);
+    timersub(&t, &be->mouse_ts, &t);
+    if (t.tv_sec >= timeout)
+      return 0;
+  }
+  x = be->mouse_x;
+  y = be->mouse_y;
+  DEBUGF("show_cursor (%d,%d)", x,  y);
+  scr = screen_pixels(be, 1);
+  epx_pixmap_copy_area(scr, be->save,
+		       x, y, 0, 0,
+		       be->save->width,
+		       be->save->height,
+		       EPX_FLAG_NONE);
+  be->save_x = x;
+  be->save_y = y;
+  epx_pixmap_copy_area(be->cursor, scr,
+		       0, 0, x, y,
+		       be->cursor->width,
+		       be->cursor->height,
+		       EPX_FLAG_BLEND);
+  return 1;
+}
+
+#endif
+
+
 static void send_cursor_off(int fd)
 {
     const char cursoroff_str[] = "\033[?25l\033[?1c\033[25m";
@@ -451,10 +613,14 @@ epx_backend_t* fb_init(epx_dict_t* param)
 #ifdef HAVE_INPUT_EVENT
     be->poll_fd = -1;
     be->input_fd_sz = 0;
+    be->mouse_x = 0;
+    be->mouse_y = 0;
+    be->mouse_z = 0;
+    be->mouse_moved = 0;
     be->mouse_buttons = 0;
     be->keyboard_mods = 0;
     memset(&be->ev, 0, sizeof(be->ev));
-
+    load_cursor(be);
     r = sizeof(be->input_fd) / sizeof(be->input_fd[0]);
     while(r--)
 	be->input_fd[r] = -1;
@@ -468,6 +634,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     
     if (!setup_input_system(be, param)) 
 	DEBUGF("Failed to setup input system. Disabled");
+
 #endif
     
     if (epx_dict_lookup_string(param, "framebuffer_device", &string_param, NULL) == -1) {
@@ -491,6 +658,10 @@ epx_backend_t* fb_init(epx_dict_t* param)
     load_pixel_format(&be->b, &be->ovinfo);
 
     fb_dump_vinfo("Retrieved values.", &be->ovinfo);
+#ifdef HAVE_INPUT_EVENT
+    be->mouse_x = be->b.width / 2;
+    be->mouse_y = be->b.height / 2;
+#endif
 
     cursor_off(0);
 
@@ -676,13 +847,15 @@ static int fb_pic_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
 
     /* If we do not draw directly to pixmap. Copy it */
     if (!be->direct_pixmap_draw) {
-      epx_pixmap_t* scr;
-      if (be->dbuf)
-	scr = (be->cbuf==0) ? &be->screen[1] : &be->screen[0];
-      else
-	scr = &be->screen[0];
+      epx_pixmap_t* scr = screen_pixels(be, 0);
+#ifdef HAVE_INPUT_EVENT
+      hide_cursor(be);
+#endif
       epx_pixmap_copy_area(pixmap, scr, src_x, src_y, dst_x, dst_y,
 			   width, height, 0);
+#ifdef HAVE_INPUT_EVENT
+      show_cursor(be,CURSOR_TIMEOUT);
+#endif
     }
     nwin->dcount++;
     return 0;
@@ -691,7 +864,12 @@ static int fb_pic_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
 static int fb_win_swap(epx_backend_t* backend, epx_window_t* ewin)
 {
   FbBackend* be = (FbBackend*) backend;
+  int r = 0;
   (void) ewin;
+
+#ifdef HAVE_INPUT_EVENT
+  hide_cursor(be);
+#endif
 
   if (be->dbuf) {
     if (be->cbuf==0) {
@@ -702,9 +880,14 @@ static int fb_win_swap(epx_backend_t* backend, epx_window_t* ewin)
       be->vinfo.yoffset = 0;
       be->cbuf = 0;
     }
-    return ioctl(be->fb_fd, FBIOPAN_DISPLAY, &be->vinfo);
+    r = ioctl(be->fb_fd, FBIOPAN_DISPLAY, &be->vinfo);
   }
-  return 0;
+
+#ifdef HAVE_INPUT_EVENT
+  show_cursor(be,CURSOR_TIMEOUT);
+#endif
+
+  return r;
 }
 
 static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
@@ -739,6 +922,11 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     }
     be->b.width = be->vinfo.xres;
     be->b.height = be->vinfo.yres;
+
+#ifdef HAVE_INPUT_EVENT
+    be->mouse_x = be->b.width / 2;
+    be->mouse_y = be->b.height / 2;
+#endif
 
     /* Can we double buffer? */
     if (be->dbuf) {
@@ -898,6 +1086,11 @@ static int fb_evt_read(epx_backend_t* backend, epx_event_t* e)
        efficient, but it kind of works.
        
        What we really want is a way to return multiple events in one go.
+
+       You can actually read process and buffer all events you want,
+       but you need to maintain a queue and set the pending flag and
+       return number of pending events (like x11 is processed)
+       see return value in function description.
     */
     if (ev[nfds-1].data.fd == -1)
 	exit(0);
@@ -1271,22 +1464,31 @@ static int process_input_event_relative(struct timeval ts,
 
     switch(code) {
     case REL_X:
-	e->pointer.x += value;
-	if (e->pointer.x < 0) e->pointer.x = 0;
-	else if (e->pointer.x >= be->b.width) 
-	  e->pointer.x = be->b.width-1;
+        be->mouse_ts = ts;
+        be->mouse_x += value;
+	if (value) be->mouse_moved = 1;
+	if (be->mouse_x < 0) be->mouse_x = 0;
+	else if (be->mouse_x >= be->b.width)
+	  be->mouse_x = be->b.width-1;
+	e->pointer.x = be->mouse_x + be->hotspot_x;
 	break;
 
     case REL_Y:
-	e->pointer.y += value;
-	if (e->pointer.y < 0) e->pointer.y = 0;
-	else if (e->pointer.y >= be->b.height) 
-	  e->pointer.y = be->b.height-1;
+        be->mouse_ts = ts;
+        be->mouse_y += value;
+	if (value) be->mouse_moved = 1;
+	if (be->mouse_y < 0) be->mouse_y = 0;
+	else if (be->mouse_y >= be->b.height)
+	  be->mouse_y = be->b.height-1;
+	e->pointer.y = be->mouse_y + be->hotspot_y;
 	break;
 
     case REL_Z:
-	e->pointer.z += value;
-	if (e->pointer.z < 0) e->pointer.z = 0;
+        be->mouse_ts = ts;
+        be->mouse_z += value;
+	if (value) be->mouse_moved = 1;
+	if (be->mouse_z < 0) be->mouse_z = 0;
+	e->pointer.z = be->mouse_z;
 	break;
 
     default:
@@ -1360,6 +1562,11 @@ static int process_input_event_syn(struct timeval ts,
     (void) be;
     DEBUGF("EV_SYN type[%d] code[%d] val[%d]", type, code, value);
     if (e->type) {
+        if (be->mouse_moved) {
+	  hide_cursor(be);
+	  show_cursor(be,CURSOR_TIMEOUT);
+	  be->mouse_moved = 1;
+	}
 	if ((e->type & e->window->mask) == 0) {
 	    e->type = 0;  // needed ?
 	    return 0;
