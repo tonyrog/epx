@@ -241,6 +241,68 @@ void fb_dump_finfo(char *header, struct fb_fix_screeninfo *finfo)
     DEBUGF("fb: finf.accel            %lu", finfo->accel);
 }
 
+// load backend pixel type info rfrom vinfo
+static int load_pixel_format(epx_backend_t* backend,
+			     struct fb_var_screeninfo *vinfo)
+{
+    int r_size, g_size, b_size, a_size;
+    int r_offs, g_offs, b_offs, a_offs;
+    int fmt = 0;
+    int bgr = 0;
+    int alpha = 0;
+    int alpha_first = 0;
+    int little_endian = 0;
+    int bits_per_pixel = 0;
+    epx_format_t f;
+
+    r_size = vinfo->red.length;
+    r_offs = vinfo->red.offset;
+    g_size = vinfo->green.length;
+    g_offs = vinfo->green.offset;
+    b_size = vinfo->blue.length;
+    b_offs = vinfo->blue.offset;
+    a_size = vinfo->transp.length;
+    a_offs = vinfo->transp.offset;
+
+    pt = 0;
+#if BYTE_ORDER == LITTLE_ENDIAN
+    little_endian = 1;  // stored in native format
+#endif
+    bgr = (b_offs > g_offs);
+
+
+    alpha = (a_size > 0);   // alpha channel present 
+    alpha_first = alpha && (a_offs < r_offs);
+    bits_per_bixel = vinfo->bits_per_pixel;
+    if (vinfo->grayscale) fmt = EPX_FMR_GRAY;
+    else if ((r_size==g_size) && (g_size==b_size)) {
+	switch(r_size) {
+	case 4: fmt = EPX_FMT_RGB4; break;
+	case 5: fmt = EPX_FMT_RGB5; break;
+	case 8: fmt = EPX_FMT_RGB8; break;
+	case 10: fmt = EPX_FMT_RGB10; break;
+	case 12: fmt = EPX_FMT_RGB12; break;
+	case 16: fmt = EPX_FMT_RGB16; break;
+	default: break;
+	}
+    }
+    else if ((r_size==3)&&(g_size==3)&&(b_size==2))
+	fmt = EPX_FMT_RGB332;
+    else if ((r_size==2)&&(g_size==3)&&(b_size==2))
+	fmt = EPX_FMT_RGB232;
+    else if ((r_size==5)&&(g_size==6)&&(b_size==5))
+	fmt = EPX_FMT_RGB565;
+    else if ((r_size>0) && (g_size==0) && (b_size==0))
+	fmt = EPX_FMT_RED;
+    else if ((r_size==0) && (g_size>0) && (b_size==0))
+	fmt = EPX_FMT_GREEN;
+    else if ((r_size==0) && (g_size==0) && (b_size>0))
+	fmt = EPX_FMT_BLUE;
+    f = EPX_FMT(fmt,bgr,alpha,alpha_first,little_endian,bits_per_pixel);
+    be->format[0] = f;
+    be->nformats = 1;
+    return 1;
+}
 
 static void fb_mod_vinfo(epx_dict_t *param, struct fb_var_screeninfo *vinfo)
 {
@@ -399,6 +461,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     }
     be->b.width = be->ovinfo.xres;
     be->b.height = be->ovinfo.yres;
+    load_pixel_format(be, &be->ovinfo);
 
     fb_dump_vinfo("Retrieved values.", &be->ovinfo);
 
@@ -624,9 +687,6 @@ static int fb_win_swap(epx_backend_t* backend, epx_window_t* ewin)
 
 static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 {
-    int rl, gl, bl, al;
-    int ro, go, bo, ao;
-    epx_format_t pt;
     FbBackend* be = (FbBackend*) backend;
     FbWindow*  nwin;
 
@@ -643,7 +703,6 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     ewin->opaque  = (void*) nwin;
     ewin->backend = (epx_backend_t*) be;
 
-
     //
     // Do some tests
     //
@@ -656,6 +715,8 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	DEBUGF("ioctl:FBIOPUT_VSCREENINFO/ACTIVATE) failed [%s]", strerror(errno));
 	return -1;
     }
+    be->b.width = be->vinfo.xres;
+    be->b.height = be->vinfo.yres;
 
     /* Can we double buffer? */
     if (be->dbuf) {
@@ -751,70 +812,14 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     be->screen[1].clip.wh.width=be->screen[1].width;
     be->screen[1].clip.wh.height=be->screen[1].height;
     if (be->dbuf)
-      be->screen[1].data = be->screen[0].data + be->screen[0].sz;
+	be->screen[1].data = be->screen[0].data + be->screen[0].sz;
     else
-      be->screen[1].data = NULL;
+	be->screen[1].data = NULL;
 
-    rl = be->vinfo.red.length;
-    ro = be->vinfo.red.offset;
-    gl = be->vinfo.green.length;
-    go = be->vinfo.green.offset;
-    bl = be->vinfo.blue.length;
-    bo = be->vinfo.blue.offset;
-    al = be->vinfo.transp.length;
-    ao = be->vinfo.transp.offset;
-
-    pt = 0;
-#if BYTE_ORDER == LITTLE_ENDIAN
-    pt |= EPX_F_Little;   // stored in native format
-#endif
-    // FIXME: Buggy reversed condition ! do not know why
-    // if (!(bo > go)) pt |= EPX_F_Bgr;      // BGR else RGB
-    if ((bo > go)) pt |= EPX_F_Bgr;          // BGR else RGB
-    if (al > 0)  pt |= EPX_F_Alpha;          // Alpha available
-    if ((al>0)&&(ao<ro)) pt |= EPX_F_AFirst; // Alpha first
-    pt |= ((be->vinfo.bits_per_pixel-1) & EPX_M_Size);  // pixel size
-    if (be->vinfo.grayscale)
-	pt |= (EPX_FMT_GRAY<<12);
-    else if ((rl==gl) && (gl==bl)) {
-	switch(rl) {
-	case 4: pt |= (EPX_FMT_RGB4<<12); break;
-	case 5: pt |= (EPX_FMT_RGB5<<12); break;
-	case 8: pt |= (EPX_FMT_RGB8<<12); break;
-	case 10: pt |= (EPX_FMT_RGB10<<12); break;
-	case 12: pt |= (EPX_FMT_RGB12<<12); break;
-	case 16: pt |= (EPX_FMT_RGB16<<12); break;
-	default: break;
-	}
+    if (load_pixel_format(be, &be->vinfo) > 0) {
+	be->screen[0].pixel_format = be->formats[0];
+	be->screen[1].pixel_format = be->formats[0];
     }
-    else if ((rl==3)&&(gl==3)&&(bl==2))
-	pt |= (EPX_FMT_RGB332<<12);
-    else if ((rl==2)&&(gl==3)&&(bl==2))
-	pt |= (EPX_FMT_RGB232<<12);
-    else if ((rl==5)&&(gl==6)&&(bl==5))
-	pt |= (EPX_FMT_RGB565<<12);
-    else if (rl && !gl && !bl)
-	pt |= (EPX_FMT_RED<<12);
-    else if (!rl && gl && !bl)
-	pt |= (EPX_FMT_GREEN<<12);
-    else if (!rl && !gl && bl)
-	pt |= (EPX_FMT_BLUE<<12);
-    else
-	pt = EPX_FORMAT_INVALID;
-
-    {
-	char* pt_name = epx_pixel_format_to_name(pt);
-	if (pt_name != NULL)
-	    DEBUGF("epx_fb: pixel format = %s", pt_name);
-	else {
-	    DEBUGF("epx_fb: pixel format %d = unknown", pt);
-	    pt = EPX_FORMAT_RGB; // guess
-	}
-    }
-
-    be->screen[0].pixel_format = pt;
-    be->screen[1].pixel_format = pt;
-
     return 0;
 }
 
