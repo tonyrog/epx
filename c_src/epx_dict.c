@@ -26,7 +26,7 @@
 
 #define EPX_DICT_ENTRY_CHUNK 32
 
-static int edata_cmp(epx_dict_data_t* a, epx_dict_data_t* b)
+static int edata_cmp(const epx_dict_data_t* a, const epx_dict_data_t* b)
 {
     int i;
 
@@ -158,20 +158,63 @@ static u_int8_t* edata_copy(epx_dict_data_t* b, epx_dict_data_t* a, u_int8_t* pt
     }
 }
 
-
-static int edict_bcmp(const void* k, const void* e)
+static int edict_kcmp(const epx_dict_data_t* key, const epx_dict_entry_t* b)
 {
-    epx_dict_data_t* key = (epx_dict_data_t*) k;
-    epx_dict_entry_t* ent = *((epx_dict_entry_t**)e);
-    return edata_cmp(key, &ent->key);
+    return edata_cmp(key, &b->key);
 }
 
-static int edict_cmp(const void* a0, const void* b0)
+static int edict_cmp(const epx_dict_entry_t* a, const epx_dict_entry_t* b) 
 {
-    epx_dict_entry_t* a = *((epx_dict_entry_t**)a0);
-    epx_dict_entry_t* b = *((epx_dict_entry_t**)b0);
     return edata_cmp(&a->key, &b->key);
 }
+
+// search for match with bsearch in sorted dictionary
+static int edict_bsearch(epx_dict_t* dict, epx_dict_data_t* key, int* ix)
+{
+    int l = 0;
+    int h = dict->used-1;
+
+    while(l <= h) {
+	int m = (h + l) >> 1;
+	int cmp = edict_kcmp(key, dict->entry[m]);
+	if (cmp < 0)
+	    h = m-1;
+	else if (cmp > 0)
+	    l = m+1;
+	else {
+	    *ix = m;
+	    return 1;
+	}
+    }
+    *ix = l;
+    return 0;
+}
+
+static int edict_qsort(epx_dict_entry_t** v, size_t n)
+{
+    while(n >= 2) {
+	int n1 = (n >> 2);
+	epx_dict_entry_t* p = v[n1];
+	epx_dict_entry_t** l = v;
+	epx_dict_entry_t** r = v + (n-1);
+
+	while(l <= r) {
+	    if (edict_cmp(*l, p) < 0)
+		l++;
+	    else if (edict_cmp(*r, p) > 0)
+		r--;
+	    else {
+		epx_dict_entry_t* t = *l;
+		*l++ = *r;
+		*r-- = t;
+	    }
+	}
+	edict_qsort(v+n1, n-n1-1); // sort the top half recursive
+	n = n1;
+    }
+    return 0;
+}
+
 
 static void edata_set_none(epx_dict_data_t* d)
 {
@@ -312,10 +355,11 @@ epx_dict_t* epx_dict_copy(epx_dict_t* dict)
     return copy;
 }
 
+
 void epx_dict_sort(epx_dict_t* dict)
 {
     if (!dict->is_sorted) {
-	qsort(dict->entry, dict->used, sizeof(epx_dict_entry_t**), edict_cmp);
+	edict_qsort(dict->entry, dict->used);
 	dict->is_sorted = 1;
     }
 }
@@ -340,7 +384,7 @@ static int edict_add_ent(epx_dict_t* dict, epx_dict_entry_t* ent)
 	int i = dict->used++;
 	dict->entry[i] = ent;
 	if (dict->is_sorted && (dict->used > 1) &&
-	    (edict_cmp(&dict->entry[i], &dict->entry[i-1]) < 0))
+	    (edict_cmp(dict->entry[i], dict->entry[i-1]) < 0))
 	    dict->is_sorted = 0;
     }
     else if (dict->entry == NULL) {
@@ -375,16 +419,14 @@ int epx_dict_lookup_ix(epx_dict_t* dict, epx_dict_data_t* key)
     if (!dict)
 	return -1;
     if (dict->is_sorted) {
-	epx_dict_entry_t** ep = (epx_dict_entry_t**) 
-	    bsearch(key, dict->entry, dict->used,
-		    sizeof(epx_dict_entry_t*), edict_bcmp);
-	if (ep)
-	    return (ep - dict->entry);
+	int ix;
+	if (dict->used && edict_bsearch(dict, key, &ix))
+	    return ix;
     }
     else {
 	int i;
 	for (i = 0; i < (int) dict->used; i++) {
-	    if (edict_bcmp(key, &dict->entry[i]) == 0)
+	    if (edict_kcmp(key, dict->entry[i]) == 0)
 		return i;
 	}
     }
@@ -492,7 +534,7 @@ int epx_dict_lookup_boolean(epx_dict_t* dict, char* key, int* value)
 
 int epx_dict_lookup_integer(epx_dict_t* dict, char* key, int* value)
 {
-    epx_dict_data_t k;    
+    epx_dict_data_t k;
     int ix;
 
     edata_set_string(&k, key);
@@ -548,7 +590,7 @@ int epx_dict_lookup_string(epx_dict_t* dict, char* key, char** value, size_t* le
 
 int epx_dict_lookup_binary(epx_dict_t* dict, char* key, void** value, size_t* len)
 {
-    epx_dict_data_t k;    
+    epx_dict_data_t k;
     int ix;
 
     edata_set_string(&k, key);
@@ -626,4 +668,64 @@ int epx_dict_set_sequence(epx_dict_t* dict, char* key, epx_dict_data_t* value, s
     edata_set_string(&k, key);
     edata_set_sequence(&d, value, len);
     return epx_dict_set_ent(dict, &k, &d);
+}
+
+int epx_dict_is_key(epx_dict_t* dict, char* key)
+{
+    epx_dict_data_t k;
+
+    edata_set_string(&k, key);
+    if (epx_dict_lookup_ix(dict, &k) < 0)
+	return 0;
+    return 1;
+}
+
+size_t epx_dict_size(epx_dict_t* dict)
+{
+    return dict->used;
+}
+
+int epx_dict_first(epx_dict_t* dict, char** key, size_t* len)
+{
+    if (dict->used == 0)
+	return -1;
+    if (dict->entry[0]->key.type == EPX_DICT_STRING) {
+	if (key)
+	    *key = (char*) dict->entry[0]->key.u.v_string.ptr;
+	if (len)
+	    *len = dict->entry[0]->key.u.v_string.len;
+	return 0;
+    }
+    return -1;
+}
+
+int epx_dict_next(epx_dict_t* dict, char** key, size_t* len)
+{
+    epx_dict_data_t k;
+    int ix, r;
+
+    if (dict->used == 0)
+	return -1;
+    edata_set_string(&k, *key);
+    if (dict->is_sorted) {
+	r = edict_bsearch(dict, &k, &ix);
+	if (r) ix++;
+    }
+    else {
+	for (ix = 0; ix < (int) dict->used; ix++) {
+	    if (edict_kcmp(&k, dict->entry[ix]) == 0)
+		break;
+	}
+	ix++;
+    }
+    if (ix >= (int)dict->used)
+	return -1;
+    if (dict->entry[ix]->key.type == EPX_DICT_STRING) {
+	if (key)
+	    *key = (char*) dict->entry[ix]->key.u.v_string.ptr;
+	if (len)
+	    *len = dict->entry[ix]->key.u.v_string.len;
+	return 0;
+    }
+    return -1;
 }

@@ -114,25 +114,26 @@ static int fb_evt_detach(epx_backend_t*);
 static int fb_evt_read(epx_backend_t*, epx_event_t*);
 static int fb_adjust(epx_backend_t *backend, epx_dict_t* param);
 static int fb_win_adjust(epx_window_t *win, epx_dict_t* param);
-
+static int fb_info(epx_backend_t *backend, epx_dict_t* param);
 
 
 static epx_callbacks_t fb_callbacks =
 {
-    fb_finish,
-    fb_pic_attach,
-    fb_pic_detach,
-    fb_pic_draw,
-    fb_win_attach,
-    fb_win_detach,
-    fb_evt_attach,
-    fb_evt_detach,
-    fb_evt_read,
-    fb_adjust,
-    fb_win_swap,
-    fb_begin,
-    fb_end,
-    fb_win_adjust
+    .finish     = fb_finish,
+    .pix_attach = fb_pic_attach,
+    .pix_detach = fb_pic_detach,
+    .pix_draw   = fb_pic_draw,
+    .win_attach = fb_win_attach,
+    .win_detach = fb_win_detach,
+    .evt_attach = fb_evt_attach,
+    .evt_detach = fb_evt_detach,
+    .evt_read   = fb_evt_read,
+    .adjust     = fb_adjust,
+    .win_swap   = fb_win_swap,
+    .begin      = fb_begin,
+    .end        = fb_end,
+    .win_adjust = fb_win_adjust,
+    .info       = fb_info
 };
 #ifdef HAVE_INPUT_EVENT
 /* Array indexed by struct input_event.type */
@@ -341,10 +342,15 @@ epx_backend_t* fb_init(epx_dict_t* param)
 	return NULL;
 
     EPX_OBJECT_INIT((epx_backend_t*)be, EPX_BACKEND_TYPE);
+    be->b.name = "fb";
     be->b.on_heap = 1;
     be->b.refc = 1;
     be->b.pending = 0;
     be->b.opengl = 0;
+    be->b.use_opengl = 0;
+    be->b.width = 0;
+    be->b.height = 0;
+    be->b.nformats = 0;
     be->b.cb = &fb_callbacks;
     be->b.pixmap_list = NULL;
     be->b.window_list = NULL;
@@ -391,9 +397,12 @@ epx_backend_t* fb_init(epx_dict_t* param)
 	DEBUGF("ioctl:FBIOGET_VSCREENINFO failed: [%s]", strerror(errno));
 	goto error;
     }
+    be->b.width = be->ovinfo.xres;
+    be->b.height = be->ovinfo.yres;
 
     fb_dump_vinfo("Retrieved values.", &be->ovinfo);
 
+    // FIXME. Check that this is the correct terminal!
     r = write(2, cursoroff_str, strlen(cursoroff_str));
     if (r < 0)
 	r = write(2, blankoff_str, strlen(blankoff_str));
@@ -457,6 +466,13 @@ static int fb_adjust(epx_backend_t *backend, epx_dict_t* param)
     return 1;
 }
 
+
+static int fb_info(epx_backend_t *backend, epx_dict_t* param)
+{
+    (void) backend;
+    (void) param;
+    return 0;
+}
 
 
 /* return the backend event handle */

@@ -126,4 +126,10 @@ extern int epx_dict_set_sequence(epx_dict_t* dict, char* key,
 				 epx_dict_data_t* value, size_t len);
 extern int epx_dict_set_dict(epx_dict_t*, char* key, epx_dict_t* value);
 
+extern size_t epx_dict_size(epx_dict_t* dict);
+extern int epx_dict_is_key(epx_dict_t* dict, char* key);
+
+extern int epx_dict_first(epx_dict_t* dict, char** key, size_t* len);
+extern int epx_dict_next(epx_dict_t* dict, char** key, size_t* len);
+
 #endif

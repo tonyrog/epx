@@ -127,7 +127,7 @@ static int pixmap_backend_detach(epx_pixmap_t* pixmap)
 {
     epx_backend_t* be = pixmap->backend;
     if (be)
-	return be->cb->pic_detach(be, pixmap);
+	return be->cb->pix_detach(be, pixmap);
     return -1;
 }
 
@@ -135,7 +135,7 @@ int epx_backend_pixmap_attach(epx_backend_t* be, epx_pixmap_t* pixmap)
 {
     if (pixmap->backend)
 	return -1;
-    if (be->cb->pic_attach(be, pixmap) < 0)
+    if (be->cb->pix_attach(be, pixmap) < 0)
 	return -1;
     pixmap->detach = pixmap_backend_detach;
     return 0;

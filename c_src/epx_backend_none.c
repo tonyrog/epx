@@ -34,11 +34,11 @@ typedef struct {
 epx_backend_t* none_init(epx_dict_t* param);
 
 static int none_finish(epx_backend_t*);
-static int none_pic_attach(epx_backend_t*, epx_pixmap_t*);
-static int none_pic_detach(epx_backend_t*, epx_pixmap_t*);
+static int none_pix_attach(epx_backend_t*, epx_pixmap_t*);
+static int none_pix_detach(epx_backend_t*, epx_pixmap_t*);
 static int none_begin(epx_window_t*);
 static int none_end(epx_window_t*, int);
-static int none_pic_draw(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
+static int none_pix_draw(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
 			 int src_x, int src_y, int dst_x, int dst_y,
 			 unsigned int width,
 			 unsigned int height);
@@ -49,25 +49,27 @@ static EPX_HANDLE_T none_evt_attach(epx_backend_t*);
 static int none_evt_detach(epx_backend_t*);
 static int none_evt_read(epx_backend_t*, epx_event_t*);
 static int none_adjust(epx_backend_t *backend, epx_dict_t* param);
-static int none_win_adjust(epx_window_t *backend, epx_dict_t* param);
+static int none_win_adjust(epx_window_t *window, epx_dict_t* param);
+static int none_info(epx_backend_t *backend, epx_dict_t* param);
 
 
 static epx_callbacks_t none_callbacks =
 {
-    none_finish,
-    none_pic_attach,
-    none_pic_detach,
-    none_pic_draw,
-    none_win_attach,
-    none_win_detach,
-    none_evt_attach,
-    none_evt_detach,
-    none_evt_read,
-    none_adjust,
-    none_win_swap,
-    none_begin,
-    none_end,
-    none_win_adjust
+    .finish       = none_finish,
+    .pix_attach   = none_pix_attach,
+    .pix_detach   = none_pix_detach,
+    .pix_draw     = none_pix_draw,
+    .win_attach   = none_win_attach,
+    .win_detach   = none_win_detach,
+    .evt_attach   = none_evt_attach,
+    .evt_detach   = none_evt_detach,
+    .evt_read     = none_evt_read,
+    .adjust       = none_adjust,
+    .win_swap     = none_win_swap,
+    .begin        = none_begin,
+    .end          = none_end,
+    .win_adjust   = none_win_adjust,
+    .info         = none_info
 };
 
 
@@ -80,10 +82,15 @@ epx_backend_t* none_init(epx_dict_t* param)
     if (!(be = (none_backend_t*) malloc(sizeof(none_backend_t))))
 	return 0;
     EPX_OBJECT_INIT((epx_backend_t*)be, EPX_BACKEND_TYPE);
+    be->b.name = "none";
     be->b.on_heap = 1;
     be->b.refc = 1;
     be->b.pending = 0;
     be->b.opengl = 0;
+    be->b.use_opengl = 0;
+    be->b.width = 0;
+    be->b.height = 0;
+    be->b.nformats = 0;
     be->b.cb = &none_callbacks;
     be->b.pixmap_list = NULL;
     be->b.window_list = NULL;
@@ -113,7 +120,7 @@ static int none_finish(epx_backend_t* backend)
     return 0;
 }
 
-static int none_pic_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int none_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     none_backend_t* none = (none_backend_t*) backend;
 
@@ -125,7 +132,7 @@ static int none_pic_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
     return 0;
 }
 
-static int none_pic_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int none_pix_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     epx_object_unlink(&backend->pixmap_list, pixmap);
     pixmap->opaque = NULL;
@@ -146,7 +153,7 @@ static int none_end(epx_window_t* ewin, int off_screen)
     return 0;
 }
 
-static int none_pic_draw(epx_backend_t* backend, epx_pixmap_t* pixmap, epx_window_t* ewin,
+static int none_pix_draw(epx_backend_t* backend, epx_pixmap_t* pixmap, epx_window_t* ewin,
 			 int src_x, int src_y, int dst_x, int dst_y,
 			 unsigned int width,
 			 unsigned int height)
@@ -222,16 +229,23 @@ static int none_evt_read(epx_backend_t* backend, epx_event_t* e)
     return -1;
 }
 
-int none_adjust(epx_backend_t *be, epx_dict_t*dict)
+int none_adjust(epx_backend_t *be, epx_dict_t* param)
 {
     (void) be;
-    (void) dict;
+    (void) param;
     return 1;
 }
 
-int none_win_adjust(epx_window_t *win, epx_dict_t*dict)
+int none_win_adjust(epx_window_t *win, epx_dict_t* param)
 {
     (void) win;
-    (void) dict;
+    (void) param;
     return 1;
+}
+
+int none_info(epx_backend_t *be, epx_dict_t* param)
+{
+    (void) be;
+    (void) param;
+    return 0;
 }

@@ -92,6 +92,7 @@ static int x11_evt_detach(epx_backend_t*);
 static int x11_evt_read(epx_backend_t*, epx_event_t*);
 static int x11_adjust(epx_backend_t *backend, epx_dict_t* param);
 static int x11_win_adjust(epx_window_t*, epx_dict_t* param);
+static int x11_info(epx_backend_t*, epx_dict_t* param);
 /* util */
 static void x11_grab(epx_backend_t* backend, epx_window_t* window, int toggle);
 static int  x11_error(Display * dpy, XErrorEvent * ev);
@@ -99,20 +100,21 @@ static int  x11_error(Display * dpy, XErrorEvent * ev);
 
 static epx_callbacks_t x11_callbacks =
 {
-    x11_finish,
-    x11_pic_attach,
-    x11_pic_detach,
-    x11_pic_draw,
-    x11_win_attach,
-    x11_win_detach,
-    x11_evt_attach,
-    x11_evt_detach,
-    x11_evt_read,
-    x11_adjust,
-    x11_win_swap,
-    x11_begin,
-    x11_end,
-    x11_win_adjust
+    .finish     = x11_finish,
+    .pix_attach = x11_pic_attach,
+    .pix_detach = x11_pic_detach,
+    .pix_draw   = x11_pic_draw,
+    .win_attach = x11_win_attach,
+    .win_detach = x11_win_detach,
+    .evt_attach = x11_evt_attach,
+    .evt_detach = x11_evt_detach,
+    .evt_read   = x11_evt_read,
+    .adjust     = x11_adjust,
+    .win_swap   = x11_win_swap,
+    .begin      = x11_begin,
+    .end        = x11_end,
+    .win_adjust = x11_win_adjust,
+    .info       = x11_info
 };
 
 #define NUM_LOCK_MASK    0x00000002
@@ -183,9 +185,10 @@ epx_format_t efmt_table[64];
 // Not used right now but it's a fixme
 #define DBG(...) printf(__VA_ARGS__)
 /* scan trough a screen and locate a "nice" visual  */
-void make_screen_formats(Screen* screen)
+int make_screen_formats(Screen* screen, epx_format_t* efmt, size_t efmt_size)
 {
     int i;
+    size_t efmt_loaded = 0;
 
     for (i = 0; i < screen->ndepths; i++) {
 	int j;
@@ -193,20 +196,19 @@ void make_screen_formats(Screen* screen)
 
 	for (j = 0; j < d->nvisuals; j++) {
 	    Visual* v = &d->visuals[j];
-	    int nr    = bit_count(v->red_mask);
-	    int ng    = bit_count(v->green_mask);
-	    int nb    = bit_count(v->blue_mask);
-	    // int ntot  = bit_count(v->red_mask|v->green_mask|v->blue_mask);
-	    int pr    = bit_pos(v->red_mask);
-	    int pg    = bit_pos(v->green_mask);
-	    int pb    = bit_pos(v->blue_mask);
+	    int r_size = bit_count(v->red_mask);
+	    int g_size = bit_count(v->green_mask);
+	    int b_size = bit_count(v->blue_mask);
+	    int r_offs = bit_pos(v->red_mask);
+	    int g_offs = bit_pos(v->green_mask);
+	    int b_offs = bit_pos(v->blue_mask);
 	    int fmt = 0;
 	    int bgr = 0;
 	    int alpha = 0;
 	    int alpha_first = 0;
 	    int little_endian = 0;
 	    int bits_per_pixel = 0;
-	    epx_format_t efmt;
+	    epx_format_t f;
 	    int c;
 	    int k;
 
@@ -217,59 +219,50 @@ void make_screen_formats(Screen* screen)
 #endif
 	    if (((c != TrueColor) && (c != DirectColor))) 
 		continue;
-
-	    bgr = !((pr>pg) && (pg>pb));
+#if BYTE_ORDER == LITTLE_ENDIAN
+	    little_endian = 1;  // stored in native format
+#endif
+	    bgr = (b_offs > g_offs);
 	    if ((v->bits_per_rgb == 5) && (d->depth == 15)) {
 		fmt = EPX_FMT_RGB5;
 		bits_per_pixel = 16;
 	    }
 	    else if ((v->bits_per_rgb == 5) && (d->depth == 16)) {
-		if ((nr == 5) && (ng == 5) && (nb == 5)) {
+		if ((r_size == 5) && (g_size == 5) && (b_size == 5)) {
 		    fmt = EPX_FMT_RGB5;
 		    alpha = 1;
-		    alpha_first = (pr == 14);
+		    alpha_first = (r_offs == 14);
 		}
-		else if ((nr == 5) && (ng == 6) && (nb == 5))
+		else if ((r_size == 5) && (g_size == 6) && (b_size == 5))
 		    fmt = EPX_FMT_RGB565;
 		bits_per_pixel = 16;
 	    }
 	    else if ((v->bits_per_rgb == 8) && (d->depth == 24)) {
 		fmt = EPX_FMT_RGB8;
+		little_endian = 0;  // ignore endian in this case?
 		bits_per_pixel = 24;
 	    }
 	    else if ((v->bits_per_rgb == 8) && (d->depth == 32)) {
 		fmt = EPX_FMT_RGB8;
 		alpha = 1;
-		alpha_first = (pr == 23);
+		alpha_first = (r_offs == 23);
 		bits_per_pixel = 32;
 	    }
 
-	    efmt = EPX_FMT(fmt,bgr,alpha,alpha_first,little_endian,bits_per_pixel);
-	    for (k = 0; k < efmt_table_size; k++) {
-		if (efmt_table[k] == efmt)
+	    f = EPX_FMT(fmt,bgr,alpha,alpha_first,little_endian,bits_per_pixel);
+	    for (k = 0; k < (int)efmt_loaded; k++) {
+		if (efmt[k] == f)
 		    break;
 	    }
-	    if (k == efmt_table_size) {
-		if (efmt_table_size < 
-		    (int)(sizeof(efmt_table)/sizeof(efmt_table[0]))) {
-		    // char* pt_name;
-		    efmt_table[k] = efmt;
-		    efmt_table_size++;
-		    // construct epx_format_t value and remove duplicates
-		    // ignore glx variants for now
-		    /*
-		    if ((pt_name = epx_pixel_format_to_name(efmt)) != NULL)
-			printf("epx_format = %s\n", pt_name);
-		    else {
-			printf("#r=%d,#g=%d,#b=%d,bit=%d,depth=%d,.r=%d,.g=%d,.b=%d\r\n",
-			       nr,ng,nb,ntot,d->depth,
-			       pr,pg,pb);
-		    }
-		    */
+	    if (k == (int)efmt_loaded) {
+		if (efmt_loaded < efmt_size) {
+		    efmt[k] = f;
+		    efmt_loaded++;
 		}
 	    }
 	}
     }
+    return (int) efmt_loaded;
 }
 // #endif
 
@@ -289,14 +282,18 @@ epx_backend_t* x11_init(epx_dict_t* param)
     if ((be = (X11Backend*) malloc(sizeof(X11Backend))) == NULL)
 	return NULL;
     EPX_OBJECT_INIT((epx_backend_t*)be, EPX_BACKEND_TYPE);
+    be->b.name = "x11";
     be->b.on_heap = 1;
     be->b.refc = 1;
     be->b.cb = &x11_callbacks;
     be->b.pending = 0;
     be->b.opengl = 0;
     be->b.use_opengl = 0;
+    be->b.width = 0;
+    be->b.height = 0;
     be->b.pixmap_list = 0;
     be->b.window_list = 0;
+    be->b.nformats = 0;
     be->b.event = EPX_INVALID_HANDLE;
 
     epx_dict_lookup_string(param, "x11_display", &display_name, &len);
@@ -310,8 +307,12 @@ epx_backend_t* x11_init(epx_dict_t* param)
 	be->b.use_opengl = int_param;
     
     be->screen = DefaultScreen(be->display);
+    be->b.width  = DisplayWidth(be->display, be->screen);
+    be->b.height = DisplayHeight(be->display, be->screen);
 
-    make_screen_formats(ScreenOfDisplay(be->display,be->screen));
+    be->b.nformats = 
+	make_screen_formats(ScreenOfDisplay(be->display,be->screen),
+			    be->b.formats, EPX_BACKEND_MAX_FORMATS);
 
     if (be->b.use_opengl) {
 #ifdef HAVE_OPENGL
@@ -1281,10 +1282,18 @@ int x11_adjust(epx_backend_t* backend, epx_dict_t* param)
     return 1;
 }
 
-int x11_win_adjust(epx_window_t *win, epx_dict_t*dict)
+int x11_info(epx_backend_t* backend, epx_dict_t*param)
+{
+    (void) backend;
+    (void) param;
+    return 0;
+}
+
+int x11_win_adjust(epx_window_t *win, epx_dict_t*param)
 {
     (void) win;
-    (void) dict;
+    (void) param;
     return 1;
 }
+
 

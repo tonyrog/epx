@@ -30,16 +30,26 @@
 #endif
 
 #define EPX_INVALID_HANDLE ((EPX_HANDLE_T)-1)
-
+#define EPX_BACKEND_MAX_FORMATS 64
 // backend interface
 typedef struct _epx_backend_t {
     EPX_OBJECT_MEMBERS(struct _epx_backend_t);
+    /* !Name of backed type */
+    char* name;
     /*! Number of pending events */
     int pending;
     /*! OpenGL supported? */
     int opengl;
     /*! Use OpenGL ? */
     int use_opengl;
+    /*! Display width */
+    int width;
+    /*! Display height */
+    int height;
+    /*! Number of used display formats */
+    int nformats;
+    /*! Display formats */
+    epx_format_t formats[EPX_BACKEND_MAX_FORMATS];
     /*! List of attached windows */
     epx_window_t*  window_list;
     /*! List of attached pixmaps */
@@ -53,9 +63,9 @@ typedef struct _epx_backend_t {
 // backend methods
 typedef struct _epx_callbacks_t {
     int (*finish)(epx_backend_t*);
-    int (*pic_attach)(epx_backend_t*, epx_pixmap_t*);
-    int (*pic_detach)(epx_backend_t*, epx_pixmap_t*);
-    int (*pic_draw)(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
+    int (*pix_attach)(epx_backend_t*, epx_pixmap_t*);
+    int (*pix_detach)(epx_backend_t*, epx_pixmap_t*);
+    int (*pix_draw)(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
 		    int, int, int, int, unsigned int, unsigned int);
     int (*win_attach)(epx_backend_t*, epx_window_t*);
     int (*win_detach)(epx_backend_t*, epx_window_t*);
@@ -67,6 +77,7 @@ typedef struct _epx_callbacks_t {
     int (*begin)(epx_window_t*);
     int (*end)(epx_window_t*, int);
     int (*win_adjust)(epx_window_t*, epx_dict_t*);
+    int (*info)(epx_backend_t*, epx_dict_t*);
 } epx_callbacks_t;
 
 extern char*          epx_backend_name(int i);
@@ -77,14 +88,15 @@ extern void epx_backend_destroy(epx_backend_t* be);
 
 #define epx_backend_draw_begin(be,win)   ((be)->cb->begin((win)))
 #define epx_backend_draw_end(be,win,os)  ((be)->cb->end((win),(os)))
-#define epx_backend_pixmap_draw(be,pic,win,xs,ys,xd,yd,w,h)		\
-    ((be)->cb->pic_draw((be),(pic),(win),(xs),(ys),(xd),(yd),(w),(h)))
+#define epx_backend_pixmap_draw(be,pix,win,xs,ys,xd,yd,w,h)		\
+    ((be)->cb->pix_draw((be),(pix),(win),(xs),(ys),(xd),(yd),(w),(h)))
 
 #define epx_backend_window_swap(be,win)   ((be)->cb->win_swap((be),(win)))
 #define epx_backend_event_attach(be)    ((be)->cb->evt_attach((be)))
 #define epx_backend_event_detach(be)    ((be)->cb->evt_detach((be)))
 #define epx_backend_event_read(be,e)    ((be)->cb->evt_read((be),(e)))
 #define epx_backend_window_adjust(be,win,param) ((be)->cb->win_adjust((win),(param)))
+#define epx_backend_info(be,param) ((be)->cb->info((be),(param)))
 
 extern int epx_backend_adjust(epx_backend_t *be, epx_dict_t *param);
 
@@ -95,12 +107,12 @@ extern int epx_backend_window_attach(epx_backend_t* be, epx_window_t* win);
 extern int epx_window_detach(epx_window_t* win);
 
 // Render (attached) pixmap on attached win
-extern int epx_pixmap_draw_window(epx_pixmap_t* pic, epx_window_t* win,
+extern int epx_pixmap_draw_window(epx_pixmap_t* pix, epx_window_t* win,
 				  int x_src, int y_src, int x_dst, int y_dst,
 				  unsigned int width, unsigned int height);
 
-extern int epx_backend_pixmap_attach(epx_backend_t* be, epx_pixmap_t* pic);
-extern int epx_pixmap_detach(epx_pixmap_t* pic);
+extern int epx_backend_pixmap_attach(epx_backend_t* be, epx_pixmap_t* pix);
+extern int epx_pixmap_detach(epx_pixmap_t* pix);
 
 
 

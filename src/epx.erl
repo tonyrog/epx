@@ -75,12 +75,17 @@
 -export([dict_copy/1]).
 -export([dict_set/3]).
 -export([dict_get/2]).
+-export([dict_is_key/2]).
+-export([dict_first/1]).
+-export([dict_next/2]).
 -export([dict_get_boolean/2]).
 -export([dict_get_integer/2]).
 -export([dict_get_float/2]).
 -export([dict_get_string/2]).
 -export([dict_get_binary/2]).
 -export([dict_from_list/1]).
+-export([dict_info/1, dict_info/2]).
+-export([dict_info_keys/0]).
 
 %% Grapic context access
 -export([gc_create/0]).
@@ -89,7 +94,7 @@
 -export([gc_set/3]).
 -export([gc_get/2]).
 -export([gc_info/1, gc_info/2]).
--exprot([gc_info_keys/0]).
+-export([gc_info_keys/0]).
 
 %% Font
 -export([font_open/1]).
@@ -106,8 +111,9 @@
 %% Backend
 -export([backend_list/0]).
 -export([backend_open/2]).
--export([backend_info/2]).
+-export([backend_info/1,backend_info/2]).
 -export([backend_adjust/2]).
+-export([backend_info_keys/0]).
 
 %% Window
 -export([window_create/4]).
@@ -789,6 +795,15 @@ dict_set(_Dict, _Key, _Value) ->
 dict_get(_Dict, _Key) ->
     erlang:error(nif_not_loaded).
 
+dict_is_key(_Dict, _Key) ->
+    erlang:error(nif_not_loaded).
+
+dict_first(_Dict) ->
+    erlang:error(nif_not_loaded).
+
+dict_next(_Dict, _Key) ->
+    erlang:error(nif_not_loaded).
+
 dict_get_boolean(_Dict, _Key) ->
     erlang:error(nif_not_loaded).
 
@@ -813,6 +828,15 @@ dict_from_list(Dict, [{Key,Value}|List]) ->
     dict_from_list(Dict, List);
 dict_from_list(Dict, []) ->
     Dict.
+
+dict_info(_Dict, _Info) ->
+    erlang:error(nif_not_loaded).
+
+dict_info_keys() ->
+    ['size', 'sorted'].
+
+dict_info(Dict) ->
+    [{K,dict_info(Dict,K)} || K <- dict_info_keys()].
 
 -type epx_gc_info_key() ::
 	'fill_style' |
@@ -994,6 +1018,14 @@ backend_open(_Name, _Dict) ->
 
 backend_info(_Backend, _Item) ->
     erlang:error(nif_not_loaded).
+
+backend_info(Backend) ->
+    [{K,backend_info(Backend,K)} || K <- backend_info_keys()].
+
+backend_info_keys() ->
+    [name, pending, opengl, use_opengl, width, height,
+     windows, pixmaps, pixel_formats, epx_pixel_formats].
+
 
 backend_adjust(_Backend, _Dict) ->
     erlang:error(nif_not_loaded).

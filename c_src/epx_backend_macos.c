@@ -89,11 +89,11 @@ typedef struct {
 epx_backend_t* carbon_init(epx_dict_t* param);
 
 static int carbon_finish(epx_backend_t*);
-static int carbon_pic_attach(epx_backend_t*, epx_pixmap_t* pic);
-static int carbon_pic_detach(epx_backend_t*, epx_pixmap_t* pic);
+static int carbon_pix_attach(epx_backend_t*, epx_pixmap_t* pic);
+static int carbon_pix_detach(epx_backend_t*, epx_pixmap_t* pic);
 static int carbon_begin(epx_window_t* ewin);
 static int carbon_end(epx_window_t* ewin, int off_screen);
-static int carbon_pic_draw(epx_backend_t*, epx_pixmap_t* pic, epx_window_t* win,
+static int carbon_pix_draw(epx_backend_t*, epx_pixmap_t* pic, epx_window_t* win,
 			   int src_x, int src_y, int dst_x, int dst_y,
 			   unsigned int width,
 			   unsigned int height);
@@ -105,23 +105,25 @@ static int carbon_evt_detach(epx_backend_t*);
 static int carbon_evt_read(epx_backend_t*, epx_event_t*);
 static int carbon_adjust(epx_backend_t* backend, epx_dict_t* param);
 static int carbon_win_adjust(epx_window_t*, epx_dict_t* param);
+static int carbon_info(epx_backend_t* backend, epx_dict_t* param);
 
 static epx_callbacks_t carbon_callbacks =
 {
-    carbon_finish,
-    carbon_pic_attach,
-    carbon_pic_detach,
-    carbon_pic_draw,
-    carbon_win_attach,
-    carbon_win_detach,
-    carbon_evt_attach,
-    carbon_evt_detach,
-    carbon_evt_read,
-    carbon_adjust,
-    carbon_win_swap,
-    carbon_begin,
-    carbon_end,
-    carbon_win_adjust
+    .finish = carbon_finish,
+    .pix_attach = carbon_pix_attach,
+    .pix_detach = carbon_pix_detach,
+    .pix_draw   = carbon_pix_draw,
+    .win_attach = carbon_win_attach,
+    .win_deatch = carbon_win_detach,
+    .evt_attach = carbon_evt_attach,
+    .evt_detach = carbon_evt_detach,
+    .evt_read   = carbon_evt_read,
+    .adjust     = carbon_adjust,
+    .win_swap   = carbon_win_swap,
+    .begin      = carbon_begin,
+    .end        = carbon_end,
+    .win_adjust = carbon_win_adjust,
+    .info       = carbon_info
 };
 
 static pascal OSStatus EPxAppEventHandler(
@@ -466,7 +468,7 @@ static CGDataProviderDirectCallbacks dacallbacks =
     pixel_ReleaseInfo
 };
 
-static int carbon_pic_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int carbon_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     CarbonBackend* be = (CarbonBackend*) backend;
     CarbonPixels* pe;
@@ -519,7 +521,7 @@ static int carbon_pic_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 }
 
 						
-static int carbon_pic_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int carbon_pix_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     CarbonPixels* pe = (CarbonPixels*) pixmap->opaque;
 
@@ -638,7 +640,7 @@ static int carbon_end(epx_window_t* ewin, int off_screen)
 
 
 
-static int carbon_pic_draw(epx_backend_t* backend, epx_pixmap_t* pic, 
+static int carbon_pix_draw(epx_backend_t* backend, epx_pixmap_t* pic, 
 			   epx_window_t* ewin,
 			   int src_x, int src_y, int dst_x, int dst_y,
 			   unsigned int width,
@@ -1232,6 +1234,14 @@ int carbon_win_adjust(epx_window_t* win, epx_dict_t* param)
     }
     //  "focus", "modal" ...
     return 1;
+}
+
+int carbon_info(epx_backend_t *backend, epx_dict_t* param)
+{
+    (void) backend;
+    (void) param;
+    EPX_DBGFMT("carbon: info");
+    return 0;
 }
 
 #endif

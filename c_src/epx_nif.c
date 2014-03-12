@@ -124,6 +124,14 @@ static ERL_NIF_TERM dict_get_string(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM dict_get_binary(ErlNifEnv* env, int argc,
 				    const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM dict_is_key(ErlNifEnv* env, int argc,
+				const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM dict_first(ErlNifEnv* env, int argc,
+			       const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM dict_next(ErlNifEnv* env, int argc,
+			      const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM dict_info(ErlNifEnv* env, int argc,
+			      const ERL_NIF_TERM argv[]);
 
 // Graphic context
 static ERL_NIF_TERM gc_create(ErlNifEnv* env, int argc,
@@ -332,6 +340,10 @@ ErlNifFunc epx_funcs[] =
     { "dict_get_float", 2, dict_get_float },
     { "dict_get_string", 2, dict_get_string },
     { "dict_get_binary", 2, dict_get_binary },
+    { "dict_is_key",     2, dict_is_key },
+    { "dict_first",      1, dict_first },
+    { "dict_next",       2, dict_next },
+    { "dict_info",       2, dict_info },
 
     // Graphic context
     { "gc_create", 0, gc_create },    
@@ -514,12 +526,20 @@ DECL_ATOM(glyph_fixed_width);
 DECL_ATOM(glyph_dot_kern);
 
 // Backend info
+DECL_ATOM(name);
+// DECL_ATOM(width);
+// DECL_ATOM(height);
 DECL_ATOM(pending);
 DECL_ATOM(opengl);
 DECL_ATOM(use_opengl);
 DECL_ATOM(windows);
 DECL_ATOM(pixmaps);
+DECL_ATOM(pixel_formats);
 DECL_ATOM(epx_pixel_formats);
+
+// Dict info
+DECL_ATOM(size);
+DECL_ATOM(sorted);
 
 // Font info
 DECL_ATOM(file_name);
@@ -1363,7 +1383,7 @@ static int get_pixel_format(ErlNifEnv* env, const ERL_NIF_TERM term,
 
     *fmt = EPX_FORMAT_INVALID;
     if (!enif_get_atom(env, term, fmtbuf, sizeof(fmtbuf), ERL_NIF_LATIN1))
-	return enif_make_badarg(env);
+	return 0;
     if ((*fmt = epx_pixel_format_from_name(fmtbuf)) == EPX_FORMAT_INVALID)
 	return 0;
     return 1;
@@ -3446,6 +3466,76 @@ static ERL_NIF_TERM dict_get_binary(ErlNifEnv* env, int argc,
     return bt;
 }
 
+static ERL_NIF_TERM dict_is_key(ErlNifEnv* env, int argc, 
+				const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_dict_t* dict;
+    char key[256];
+
+    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+	return enif_make_badarg(env);
+    if (!enif_get_string(env, argv[1], key, sizeof(key), ERL_NIF_LATIN1))
+	return enif_make_badarg(env);
+    if (epx_dict_is_key(dict, key))
+	return ATOM(true);
+    return ATOM(false);
+}
+
+static ERL_NIF_TERM dict_first(ErlNifEnv* env, int argc, 
+			       const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_dict_t* dict;
+    size_t len;
+    char* value;
+
+    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+	return enif_make_badarg(env);
+    if (dict->used == 0)
+	return ATOM(false);
+    else if (epx_dict_first(dict, &value, &len) < 0)
+	return enif_make_badarg(env);
+    return enif_make_string_len(env, value, len, ERL_NIF_LATIN1);
+}
+
+static ERL_NIF_TERM dict_next(ErlNifEnv* env, int argc, 
+			      const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_dict_t* dict;
+    char key[256];
+    size_t len;
+    char* value;
+
+    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+	return enif_make_badarg(env);
+    if (!enif_get_string(env, argv[1], key, sizeof(key), ERL_NIF_LATIN1))
+	return enif_make_badarg(env);
+    value = key;
+    if (epx_dict_next(dict, &value, &len) < 0)
+	return ATOM(false);
+    return enif_make_string_len(env, value, len, ERL_NIF_LATIN1);
+}
+
+static ERL_NIF_TERM dict_info(ErlNifEnv* env, int argc, 
+			      const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_dict_t* dict;
+    
+    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+	return enif_make_badarg(env);
+    if (argv[1] == ATOM(size)) {
+	return enif_make_uint(env, dict->used);
+    }
+    else if (argv[1] == ATOM(sorted)) {
+	return dict->is_sorted ? ATOM(true) : ATOM(false);
+    }
+    else 
+	return enif_make_badarg(env);
+}
+
 /******************************************************************************
  *
  * Graphic context
@@ -4321,22 +4411,27 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
 				 const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_backend_t* backend;
+    epx_nif_backend_t* backend;
+    epx_backend_t* be;
     
     if (!get_object(env, argv[0], &backend_res, (void**) &backend))
 	return enif_make_badarg(env);
+    be = backend->backend;
 
-    if (argv[1] == ATOM(pending)) {  // number of events pending
-	return enif_make_int(env, backend->pending);
+    if (argv[1] == ATOM(name)) {  // number of events pending
+	return enif_make_string(env, be->name, ERL_NIF_LATIN1);
+    }
+    else if (argv[1] == ATOM(pending)) {  // number of events pending
+	return enif_make_int(env, be->pending);
     }
     else if (argv[1] == ATOM(opengl)) { // opengl support
-	return make_bool(env, backend->opengl);
+	return make_bool(env, be->opengl);
     }
     else if (argv[1] == ATOM(use_opengl)) { // opengl used
-	return make_bool(env, backend->use_opengl);
+	return make_bool(env, be->use_opengl);
     }
     else if (argv[1] == ATOM(windows)) { // windows attached
-	epx_window_t* window = backend->window_list;
+	epx_window_t* window = be->window_list;
 	ERL_NIF_TERM list = enif_make_list(env, 0);
 	while(window) {
 	    list =
@@ -4348,7 +4443,7 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
 	return list;
     }
     else if (argv[1] == ATOM(pixmaps)) { // pixmaps attached
-	epx_pixmap_t* pixmap = backend->pixmap_list;
+	epx_pixmap_t* pixmap = be->pixmap_list;
 	ERL_NIF_TERM list = enif_make_list(env, 0);
 	while(pixmap) {
 	    list =
@@ -4359,8 +4454,29 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
 	}
 	return list;
     }
+    else if (argv[1] == ATOM(width)) { // width of display
+	return enif_make_int(env, be->width);
+    }
+    else if (argv[1] == ATOM(height)) { // height of display
+	return enif_make_int(env, be->height);
+    }
     else if (argv[1] == ATOM(epx_pixel_formats)) { // pixmap formats supported
-	return enif_make_list(env, 0);
+	int i;
+	ERL_NIF_TERM list = enif_make_list(env, 0);
+	for (i = be->nformats-1; i >= 0; i--) {
+	    ERL_NIF_TERM hd = make_epx_pixel_format(env,be->formats[i]);
+	    list = enif_make_list_cell(env,hd,list);
+	}
+	return list;
+    }
+    else if (argv[1] == ATOM(pixel_formats)) { // as epx_pixel_formats but names
+	int i;
+	ERL_NIF_TERM list = enif_make_list(env, 0);
+	for (i = be->nformats-1; i >= 0; i--) {
+	    ERL_NIF_TERM hd = make_pixel_format(env,be->formats[i]);
+	    list = enif_make_list_cell(env,hd,list);
+	}
+	return list;
     }
     return enif_make_badarg(env);    
 }
@@ -4696,12 +4812,20 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     LOAD_ATOM(glyph_dot_kern);
 
     // backend info
+    LOAD_ATOM(name);
+    LOAD_ATOM(width);
+    LOAD_ATOM(height);
     LOAD_ATOM(pending);
     LOAD_ATOM(opengl);
     LOAD_ATOM(use_opengl);
     LOAD_ATOM(windows);
     LOAD_ATOM(pixmaps);
+    LOAD_ATOM(pixel_formats);
     LOAD_ATOM(epx_pixel_formats);
+
+    // dict info
+    LOAD_ATOM(size);
+    LOAD_ATOM(sorted);
 
     // font_info atoms
     LOAD_ATOM(file_name);
