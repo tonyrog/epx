@@ -666,7 +666,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     cursor_off(0);
 
     be->vinfo  = be->ovinfo;
-    be->vinfo.bits_per_pixel = EPX_PIXEL_SIZE(EPX_FORMAT_ARGB) * 8; // Default
+    be->vinfo.bits_per_pixel = EPX_PIXEL_BIT_SIZE(EPX_FORMAT_ARGB);
     be->vinfo.xoffset = 0;
     be->vinfo.yoffset = 0;
 
