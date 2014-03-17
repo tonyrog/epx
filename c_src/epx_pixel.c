@@ -224,19 +224,18 @@ char* epx_pixel_format_to_name(epx_format_t fmt,char*buf,size_t size)
     }
 
     bpp = EPX_PIXEL_BIT_SIZE(fmt);
-    if (fmt & EPX_F_Alpha) {
-	switch(EPX_PIXEL_FMT(fmt)) {
-	case EPX_FMT_RGB4: a_size = bpp - 12; break;
-	case EPX_FMT_RGB5: a_size = bpp - 15; break;
-	case EPX_FMT_RGB8: a_size = bpp - 24; break;
-	case EPX_FMT_RGB10: a_size = bpp - 30; break;
-	case EPX_FMT_GRAY: if (bpp>8) a_size=8; break;
-	case EPX_FMT_RED:  if (bpp>8) a_size=8; break;
-	case EPX_FMT_GREEN: if (bpp>8) a_size=8; break;
-	case EPX_FMT_ALPHA: a_size=bpp; break;
-	default: break;
-	}
+    switch(EPX_PIXEL_FMT(fmt)) {
+    case EPX_FMT_RGB4: a_size = bpp - 12; break;
+    case EPX_FMT_RGB5: a_size = bpp - 15; break;
+    case EPX_FMT_RGB8: a_size = bpp - 24; break;
+    case EPX_FMT_RGB10: a_size = bpp - 30; break;
+    case EPX_FMT_GRAY: if (bpp>8) a_size=8; break;
+    case EPX_FMT_RED:  if (bpp>8) a_size=8; break;
+    case EPX_FMT_GREEN: if (bpp>8) a_size=8; break;
+    case EPX_FMT_ALPHA: a_size=bpp; break;
+    default: break;
     }
+
     switch(EPX_PIXEL_FMT(fmt)) {
     case EPX_FMT_RGB4: r_size = g_size = b_size = 4; break;
     case EPX_FMT_RGB5: r_size = g_size = b_size = 5; break;

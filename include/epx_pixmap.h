@@ -61,6 +61,10 @@ typedef struct _epx_pixmap_functions_t {
     void (*alpha_area)(uint8_t* src, int src_wb, epx_format_t src_pt,
 		       uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 		       uint8_t alpha, unsigned int width, unsigned int height);
+    /* ! Fade area */
+    void (*fade_area)(uint8_t* src, int src_wb, epx_format_t src_pt,
+		      uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+		      uint8_t fade, unsigned int width, unsigned int height);
 
 } epx_pixmap_functions_t;
 

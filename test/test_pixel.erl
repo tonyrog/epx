@@ -19,6 +19,7 @@
 
 format_list() ->
     [argb,abgr,rgba,bgra,rgb,bgr].
+%%     xarg,xbgr,rgbx,bgrx].
 
 operation_list() ->
     [fill, fill_blend,
@@ -41,23 +42,27 @@ accel_list() ->
     end.
 
 test() ->
+    test(100).
+
+test(N) ->
     lists:foreach(
       fun(Accel) ->
 	      epx:simd_set(Accel),
 	      lists:foreach(
 		fun(Format) ->
-			test(Format,100)
+			test_format(Format,N)
 		end, format_list())
       end, accel_list()).
 
 
-test(Format,N) ->
-    test(Format,Format,N).
+test_format(Format,N) ->
+    test_format(Format,Format,N).
 
-test(PixelFormatA,PixelFormatB,N) ->
-    test(PixelFormatA,PixelFormatB,N,operation_list()).
+test_format(PixelFormatA,PixelFormatB,N) ->
+    test_format(PixelFormatA,PixelFormatB,N,operation_list()).
 
-test(FormatA,FormatB,N,Operations) when is_atom(FormatA), is_atom(FormatB) ->
+test_format(FormatA,FormatB,N,Operations) 
+  when is_atom(FormatA), is_atom(FormatB) ->
     A = epx:pixmap_create(?WIDTH, ?HEIGHT, FormatA),
     B = epx:pixmap_create(?WIDTH, ?HEIGHT, FormatB),
     %% regression_(A,B),
@@ -94,9 +99,12 @@ test_vector(A,B,{Operation,X,Y,Ap,Bp,Fader,Color}) ->
     epx:pixmap_put_pixel(A, X, Y, Ap),
     epx:pixmap_put_pixel(B, X, Y, Bp),
     area(Operation, A, B, Fader, Color),
-    Cp = epx:pixmap_get_pixel(B, X, Y),
     AF = epx:pixmap_info(A,epx_pixel_format),
     BF = epx:pixmap_info(B,epx_pixel_format),
+    Cp0 = epx:pixmap_get_pixel(B, X, Y),
+    Cp = if BF#epx_pixel_format.alpha -> Cp0;
+	    true -> setelement(1, Cp0, 255)  %% ignore alpha!
+	 end,
     case calc_pixel(Operation,Ap,Bp,Fader,Color,AF,BF) of
 	Cp -> {Cp,Cp};
 	Dp -> {Cp,Dp}
@@ -217,14 +225,12 @@ calc_pixel(alpha,S,D,F,_C,_AF,_BF) ->
     Fu = fix_8_8(F),
     {_,R,G,B} = pixel_blend(Fu,S,D),
     {element(1,D),R,G,B};
-calc_pixel(fade,S,D,F,_C,_AF,BF) ->
+calc_pixel(fade,S,D,F,_C,AF,BF) ->
     Sa = element(1,S),
     P = case fix_8_8(F) of
 	    0   -> D;
-	    255 -> 
-		if Sa =:= 255 -> S;
-		   true -> pixel_blend(Sa,S,D)
-		end;
+	    255 when Sa =:= 255 -> S;
+	    255 -> pixel_blend(Sa,S,D);
 	    Fu ->
 		A = (Sa*Fu) div 256,
 		pixel_blend(A,S,D)

@@ -744,47 +744,17 @@ static inline epx_pixel_t fade_pixel(uint8_t fade, epx_pixel_t s, epx_pixel_t d)
 // END-FUCNTION
 
 
-void epx_fade_area(uint8_t* src, int src_wb, epx_format_t src_pt,
-		   uint8_t* dst, int dst_wb, epx_format_t dst_pt,
-		   uint8_t fade, unsigned int width, unsigned int height)
+static void fade_area_generic(uint8_t* src, int src_wb, epx_format_t src_pt,
+			      uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+			      uint8_t fade, 
+			      unsigned int width, unsigned int height)
 {
-    // unsigned int src_psz;
-    unsigned int dst_psz;
-    epx_pixel_unpack_t unpack_dst;
-    // epx_pixel_unpack_t unpack_src;
-    epx_pixel_pack_t   pack_dst;
-
-    if (fade == ALPHA_FACTOR_0) 
+    if (fade == ALPHA_FACTOR_0)
 	return;
-
     if (fade == ALPHA_FACTOR_1) {
 	epx_blend_area(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
 	return;
     }
-
-    if (!SIMD_ENABLED())
-	goto generic;
-
-    if ((dst_pt == src_pt) && (width>=8)) {
-	switch(src_pt) {
-	case EPX_FORMAT_R8G8B8A8_BE:
-	case EPX_FORMAT_B8G8R8A8_BE:
-	case EPX_FORMAT_A8B8G8R8_LE:
-	case EPX_FORMAT_A8R8G8B8_LE:
-	    SIMD_CALL(fade_area_rgba32)(src, src_wb, dst, dst_wb, fade, width, height);
-	    return;
-	case EPX_FORMAT_A8R8G8B8_BE:
-	case EPX_FORMAT_A8B8G8R8_BE:
-	case EPX_FORMAT_B8G8R8A8_LE:
-	case EPX_FORMAT_R8G8B8A8_LE:
-	    SIMD_CALL(fade_area_argb32)(src, src_wb, dst, dst_wb, fade, width, height);
-	    return;
-	default:
-	    break;
-	}
-    }
-
-generic:
     if (src_pt == dst_pt) {
 	switch(src_pt) {
 	case EPX_FORMAT_R8G8B8A8_BE:
@@ -810,7 +780,7 @@ generic:
 	    return;
 
 	default:
-	    goto generic_area;
+	    break;
 	}
     }
     else if (src_pt == EPX_FORMAT_A8) {
@@ -833,7 +803,8 @@ generic:
 		src += src_wb;
 		dst += dst_wb;
 	    }
-	    break;
+	    return;
+
 	case EPX_FORMAT_A8R8G8B8_BE:
 	case EPX_FORMAT_A8B8G8R8_BE:
 	case EPX_FORMAT_B8G8R8A8_LE:
@@ -855,7 +826,8 @@ generic:
 		src += src_wb;
 		dst += dst_wb;
 	    }
-	    break;
+	    return;
+
 	case EPX_FORMAT_R8G8B8A8_BE:
 	case EPX_FORMAT_B8G8R8A8_BE:
 	case EPX_FORMAT_A8B8G8R8_LE:
@@ -876,11 +848,12 @@ generic:
 		src += src_wb;
 		dst += dst_wb;
 	    }
-	    break;
-	default:
-	    dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
-	    unpack_dst = epx_pixel_unpack_func(dst_pt);
-	    pack_dst   = epx_pixel_pack_func(dst_pt);
+	    return;
+
+	default: {
+	    unsigned int dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
+	    epx_pixel_unpack_t unpack_dst = epx_pixel_unpack_func(dst_pt);
+	    epx_pixel_pack_t   pack_dst = epx_pixel_pack_func(dst_pt);
 	    while(height--) {
 		uint8_t* src1 = src;
 		uint8_t* dst1 = dst;
@@ -899,13 +872,90 @@ generic:
 		src += src_wb;
 		dst += dst_wb;
 	    }
+	    return;
 	}
-	return;
+
+	}
     }
 
-generic_area:
     epx_fade_AREA(src, src_wb, src_pt, dst, dst_wb, dst_pt,
 		  fade, width, height);
+}
+
+static void fade_area_rgba32(uint8_t* src, int src_wb, epx_format_t src_pt,
+			     uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+			     uint8_t fade, 
+			     unsigned int width, unsigned int height)
+{
+    if (fade == ALPHA_FACTOR_0)
+	return;
+    if (fade == ALPHA_FACTOR_1) {
+	epx_blend_area(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
+	return;
+    }
+    if (!SIMD_ENABLED() || (src_pt != dst_pt) || (width < 8))
+	fade_area_generic(src,src_wb,src_pt,dst,dst_wb,dst_pt,fade,
+			  width,height);
+    else
+	SIMD_CALL(fade_area_rgba32)(src,src_wb,dst,dst_wb,fade,width,height);
+}
+
+static void fade_area_argb32(uint8_t* src, int src_wb, epx_format_t src_pt,
+			     uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+			     uint8_t fade, 
+			     unsigned int width, unsigned int height)
+{
+    if (fade == ALPHA_FACTOR_0)
+	return;
+    if (fade == ALPHA_FACTOR_1) {
+	epx_blend_area(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
+	return;
+    }
+    if (!SIMD_ENABLED() || (src_pt != dst_pt) || (width < 8))
+	fade_area_generic(src,src_wb,src_pt,dst,dst_wb,dst_pt,fade,
+			  width,height);
+    else
+	SIMD_CALL(fade_area_argb32)(src,src_wb,dst,dst_wb,fade,width,height);
+}
+
+
+void epx_fade_area(uint8_t* src, int src_wb, epx_format_t src_pt,
+		   uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+		   uint8_t fade, unsigned int width, unsigned int height)
+{
+    switch(src_pt) {
+    case EPX_FORMAT_R8G8B8A8_BE:
+    case EPX_FORMAT_B8G8R8A8_BE:
+    case EPX_FORMAT_A8B8G8R8_LE:
+    case EPX_FORMAT_A8R8G8B8_LE:
+	fade_area_rgba32(src,src_wb,src_pt,dst,dst_wb,dst_pt,fade,width,height);
+	break;
+    case EPX_FORMAT_R8G8B8X8_BE:
+    case EPX_FORMAT_B8G8R8X8_BE:
+    case EPX_FORMAT_X8B8G8R8_LE:
+    case EPX_FORMAT_X8R8G8B8_LE:
+	alpha_area_rgba32(src,src_wb,src_pt,dst,dst_wb,dst_pt,fade,
+			  width,height);
+	break;
+
+    case EPX_FORMAT_A8R8G8B8_BE:
+    case EPX_FORMAT_A8B8G8R8_BE:
+    case EPX_FORMAT_B8G8R8A8_LE:
+    case EPX_FORMAT_R8G8B8A8_LE:
+	fade_area_argb32(src,src_wb,src_pt,dst,dst_wb,dst_pt,fade,width,height);
+	break;
+    case EPX_FORMAT_X8R8G8B8_BE:
+    case EPX_FORMAT_X8B8G8R8_BE:
+    case EPX_FORMAT_B8G8R8X8_LE:
+    case EPX_FORMAT_R8G8B8X8_LE:
+	alpha_area_argb32(src,src_wb,src_pt,dst,dst_wb,dst_pt,fade,
+			  width,height);
+	break;
+    default:
+	fade_area_generic(src,src_wb,src_pt,dst,dst_wb,dst_pt,fade,
+			  width,height);
+	break;
+    }
 }
 
 
@@ -1446,53 +1496,62 @@ static void init_pixel_area_functions(epx_pixmap_functions_t* func,
 	func->fill_area_blend = fill_area_blend_rgb24;
 	func->blend_area      = epx_copy_area;  // no alpha for blending
 	func->alpha_area      = alpha_area_generic;
+	func->fade_area       = fade_area_generic;
 	break;
     case EPX_FORMAT_B8G8R8:  // BGR
 	func->fill_area_blend = fill_area_blend_bgr24;
 	func->blend_area      = epx_copy_area;  // no src alpha
 	func->alpha_area      = alpha_area_generic;
+	func->fade_area       = fade_area_generic;
 	break;
     case EPX_FORMAT_A8R8G8B8_BE:  // ARGB
     case EPX_FORMAT_B8G8R8A8_LE:
 	func->fill_area_blend = fill_area_blend_argb32;
 	func->blend_area      = blend_area_argb32;
 	func->alpha_area      = alpha_area_argb32;
+	func->fade_area       = fade_area_argb32;
 	break;
     case EPX_FORMAT_X8R8G8B8_BE:  // XRGB
     case EPX_FORMAT_B8G8R8X8_LE:
 	func->fill_area_blend = fill_area_blend_argb32;
-	func->blend_area      = epx_copy_area;  // no src alpha
+	func->blend_area      = epx_copy_area;     // src alpha = 1
 	func->alpha_area      = alpha_area_argb32;
+	func->fade_area       = alpha_area_argb32; // src alpha = 1
 	break;
     case EPX_FORMAT_A8B8G8R8_BE:  // ABGR
     case EPX_FORMAT_R8G8B8A8_LE:
 	func->fill_area_blend = fill_area_blend_abgr32;
 	func->blend_area      = blend_area_argb32;
 	func->alpha_area      = alpha_area_argb32;
+	func->fade_area       = fade_area_argb32;
 	break;
     case EPX_FORMAT_X8B8G8R8_BE:  // XBGR
     case EPX_FORMAT_R8G8B8X8_LE:
 	func->fill_area_blend = fill_area_blend_abgr32;
 	func->blend_area      = epx_copy_area;  // no src alpha
 	func->alpha_area      = alpha_area_argb32;  // abgr = argb for alpha
+	func->fade_area       = alpha_area_argb32;  // src alpha = 1
 	break;
     case EPX_FORMAT_R8G8B8A8_BE:  // RGBA
     case EPX_FORMAT_A8B8G8R8_LE:
 	func->fill_area_blend = fill_area_blend_rgba32;
 	func->blend_area      = blend_area_rgba32;
 	func->alpha_area      = alpha_area_rgba32;
+	func->fade_area       = fade_area_rgba32;
 	break;
     case EPX_FORMAT_R8G8B8X8_BE:  // RGBX
     case EPX_FORMAT_X8B8G8R8_LE:
 	func->fill_area_blend = fill_area_blend_rgba32;
 	func->blend_area      = epx_copy_area;  // no src alpha
 	func->alpha_area      = alpha_area_rgba32;
+	func->fade_area       = alpha_area_rgba32;  // src alpha = 1
 	break;
     case EPX_FORMAT_B8G8R8A8_BE:  // BGRA
     case EPX_FORMAT_A8R8G8B8_LE:
 	func->fill_area_blend = fill_area_blend_bgra32;
 	func->blend_area      = blend_area_rgba32;
 	func->alpha_area      = alpha_area_rgba32;
+	func->fade_area       = fade_area_rgba32;
 	break;
 
     case EPX_FORMAT_B8G8R8X8_BE:  // BGRX
@@ -1500,12 +1559,14 @@ static void init_pixel_area_functions(epx_pixmap_functions_t* func,
 	func->fill_area_blend = fill_area_blend_bgra32;
 	func->blend_area      = epx_copy_area;  // no src alpha
 	func->alpha_area      = alpha_area_rgba32;
+	func->fade_area       = alpha_area_rgba32;  // src alpha = 1
 	break;
 
     default:
 	func->fill_area_blend = fill_area_blend_generic;
 	func->blend_area      = blend_area_generic;
 	func->alpha_area      = alpha_area_generic;
+	func->fade_area       = fade_area_generic;
 	break;
     }
 }
@@ -2127,7 +2188,7 @@ void epx_pixmap_copy_area(epx_pixmap_t* src,epx_pixmap_t* dst,
 		     dr.wh.width, dr.wh.height);
     }
     else
-	dst->func.blend_area(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y), 
+	src->func.blend_area(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y), 
 			     src->bytes_per_row, src->pixel_format,
 			     EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
 			     dst->bytes_per_row, dst->pixel_format,
@@ -2151,7 +2212,7 @@ void epx_pixmap_alpha_area(epx_pixmap_t* src,epx_pixmap_t* dst, uint8_t alpha,
     if (alpha == EPX_ALPHA_TRANSPARENT)
 	return;
     else
-	dst->func.alpha_area(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y),
+	src->func.alpha_area(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y),
 			     src->bytes_per_row, src->pixel_format,
 			     EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
 			     dst->bytes_per_row, dst->pixel_format,
@@ -2171,11 +2232,11 @@ void epx_pixmap_fade_area(epx_pixmap_t* src,epx_pixmap_t* dst, uint8_t fade,
 			      width, height, &sr, &dr) < 0)
 	return;
 
-    epx_fade_area(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y), 
-		  src->bytes_per_row, src->pixel_format,
-		  EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
-		  dst->bytes_per_row, dst->pixel_format,
-		  fade, dr.wh.width, dr.wh.height);
+    src->func.fade_area(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y), 
+			src->bytes_per_row, src->pixel_format,
+			EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
+			dst->bytes_per_row, dst->pixel_format,
+			fade, dr.wh.width, dr.wh.height);
 }
 
 
