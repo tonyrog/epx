@@ -261,7 +261,7 @@ void SIMD_FUNCTION(add_blend_area_a8_argb32)
 #define SIMD_AREA_FUNCTION         SIMD_FUNCTION(fill_area_blend_argb32)
 #define SIMD_AREA_PARAMS_DECL      epx_pixel_t p,
 #define SIMD_AREA_LOCAL_DECL \
-    epx_vector_u8_t s8 = epx_simd_vector_set_pixel(0,p.r,p.g,p.b);  \
+    epx_vector_u8_t s8 = epx_simd_vector_set_pixel(p.a,p.r,p.g,p.b);  \
     epx_vector_u8_t a8 = epx_simd_vector_splat_u8(p.a);
 #define SIMD_AREA_UNALIGNED(d,w) \
     epx_fill_row_blend_argb32((d),(w),p.a,p.r,p.g,p.b)
@@ -276,7 +276,7 @@ void SIMD_FUNCTION(add_blend_area_a8_argb32)
 #define SIMD_AREA_FUNCTION         SIMD_FUNCTION(fill_area_blend_rgba32)
 #define SIMD_AREA_PARAMS_DECL      epx_pixel_t p,
 #define SIMD_AREA_LOCAL_DECL \
-    epx_vector_u8_t s8 = epx_simd_vector_set_pixel(p.r,p.g,p.b,0);	\
+    epx_vector_u8_t s8 = epx_simd_vector_set_pixel(p.r,p.g,p.b,p.a);	\
     epx_vector_u8_t a8 = epx_simd_vector_splat_u8(p.a);
 #define SIMD_AREA_UNALIGNED(d,w) \
     epx_fill_row_blend_rgba32((d),(w),p.a,p.r,p.g,p.b)

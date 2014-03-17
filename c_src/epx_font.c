@@ -373,7 +373,7 @@ void epx_compressed_add_color_area(epx_pixmap_t* src,epx_pixmap_t* dst,
     width = dr.wh.width;
     height = dr.wh.height;
 
-    dst_psz = EPX_PIXEL_SIZE(dst->pixel_format);
+    dst_psz = EPX_PIXEL_BYTE_SIZE(dst->pixel_format);
     
     if ((flags&EPX_FLAG_BLEND) == 0) {
 	while(height--) {
@@ -388,7 +388,7 @@ void epx_compressed_add_color_area(epx_pixmap_t* src,epx_pixmap_t* dst,
 		s = epx_pixel_add(color,s);
 		s.a = ((s.a * fader) >> 8);
 		s = epx_pixel_shadow(s.a, s);
-		dst->pack(s, dptr1);
+		dst->func.pack(s, dptr1);
 		dptr1 += dst_psz;
 	    }
 	    epx_fnt2_skip(&ctx, src_wb - width);
@@ -404,7 +404,7 @@ void epx_compressed_add_color_area(epx_pixmap_t* src,epx_pixmap_t* dst,
 		epx_pixel_t  s;
 		epx_pixel_t d;
 
-		d = dst->unpack(dptr1);
+		d = dst->func.unpack(dptr1);
 		s.px = 0;
 		s.a = epx_fnt2_ctx_next(&ctx);
 
@@ -412,7 +412,7 @@ void epx_compressed_add_color_area(epx_pixmap_t* src,epx_pixmap_t* dst,
 		s = epx_pixel_add(color,s);
 		s.a = ((s.a * fader) >> 8);
 		d = epx_pixel_blend(s.a, s, d);
-		dst->pack(d, dptr1);
+		dst->func.pack(d, dptr1);
 		dptr1 += dst_psz;
 	    }
 	    epx_fnt2_skip(&ctx, src_wb - width);
@@ -461,7 +461,7 @@ void epx_font_draw_glyph(epx_gc_t* gc, epx_pixmap_t* dst, int* x, int* y, int c)
     /* Set dst = 0 to determine change in x and y */
     if (dst != 0) {
 	uint16_t pixel_format = font->font_info.pixel_format;
-	int psz = EPX_PIXEL_SIZE(pixel_format);
+	int psz = EPX_PIXEL_BYTE_SIZE(pixel_format);
 	unsigned int bytes_per_row;
 	epx_pixmap_t gmap;
 

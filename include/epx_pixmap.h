@@ -43,6 +43,27 @@ typedef struct _epx_filter_ {
 
 struct _epx_backend_t;
 
+typedef struct _epx_pixmap_functions_t {
+    /*! Pixel unpack function */
+    epx_pixel_unpack_t unpack;
+    /*! Pixel pack function */
+    epx_pixel_pack_t pack;
+    /*! Fill area with blending */
+    void (*fill_area_blend)(uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+			    epx_pixel_t p, 
+			    unsigned int width, unsigned int height);
+    /* ! Blend source and destination pixmaps */
+    void (*blend_area)(uint8_t* src, int src_wb, epx_format_t src_pt,
+		       uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+		       unsigned int width, unsigned int height);
+
+    /* ! Blend source and destination pixmaps using fixed alpha a */
+    void (*alpha_area)(uint8_t* src, int src_wb, epx_format_t src_pt,
+		       uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+		       uint8_t alpha, unsigned int width, unsigned int height);
+
+} epx_pixmap_functions_t;
+
 typedef struct _epx_pixmap_t {
     EPX_OBJECT_MEMBERS(struct _epx_pixmap_t);
     struct _epx_backend_t* backend;  /* backend pointer if attached */
@@ -61,10 +82,8 @@ typedef struct _epx_pixmap_t {
     unsigned int bits_per_pixel;
     /*! Pixel type used for pixmap */
     epx_format_t pixel_format;
-    /*! Pixel unpack function */
-    epx_pixel_unpack_t unpack;
-    /*! Pixel pack function */
-    epx_pixel_pack_t pack;
+    /*! Pixel functions */
+    epx_pixmap_functions_t func;
     /*! Number of bytes per pixel, may also be calculated from pixel_format */
     unsigned int bytes_per_pixel;
     /*! Size of pixel area in bytes */
@@ -110,6 +129,8 @@ extern void epx_pixmap_destroy(epx_pixmap_t* pic);
 extern void epx_pixmap_copy_to(epx_pixmap_t* src, epx_pixmap_t* dst);
 extern void epx_pixmap_set_clip(epx_pixmap_t* pic, epx_rect_t* clip);
 extern void epx_pixmap_fill(epx_pixmap_t* pic, epx_pixel_t color);
+extern void epx_pixmap_fill_blend(epx_pixmap_t* pic, epx_pixel_t color);
+
 extern void epx_pixmap_scale(epx_pixmap_t* src, epx_pixmap_t* dst, 
 			     unsigned int width, unsigned int height);
 
@@ -194,18 +215,18 @@ extern void epx_pixmap_operation_area(epx_pixmap_t* src,epx_pixmap_t* dst,
 // Low level byte interface
 extern void epx_copy_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 			  uint8_t* dst, int dst_wb, epx_format_t dst_pt,
-			  int width, int height);
+			  unsigned int width, unsigned int height);
 
 extern void epx_fill_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt, 
 			  epx_pixel_t fill,
-			  int width, int height);
+			  unsigned int width, unsigned int height);
 
 extern void epx_fill_area_blend(uint8_t* dst, int dst_wb, epx_format_t dst_pt, 
 				epx_pixel_t p,
-				int width, int height);
+				unsigned int width, unsigned int height);
 
 extern void epx_shade_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt, 
-			   int width, int height, 
+			   unsigned int width, unsigned int height, 
 			   epx_pixel_t Px0, epx_pixel_t Px1,
 			   epx_pixel_t Py0, epx_pixel_t Py1);
 
@@ -255,13 +276,13 @@ static inline void epx_copy_row(uint8_t* src, epx_format_t src_pt,
 }
 
 static inline void epx_fill_row(uint8_t* dst,int dst_pt,
-				 epx_pixel_t fill, int width)
+				 epx_pixel_t fill, unsigned int width)
 {
     epx_fill_area(dst, 0, dst_pt, fill, width, 1);
 }
 
 static inline void epx_fill_row_blend(uint8_t* dst, epx_format_t dst_pt,
-				      epx_pixel_t p, int width)
+				      epx_pixel_t p, unsigned int width)
 {
     epx_fill_area_blend(dst, 0, dst_pt, p, width, 1);
 }
@@ -282,7 +303,7 @@ static inline void epx_sum_row(uint8_t* src, epx_format_t src_pt,
 
 static inline void epx_alpha_row(uint8_t* src, epx_format_t src_pt,
 				 uint8_t* dst, epx_format_t dst_pt,
-				 uint8_t a, int width)
+				 uint8_t a, unsigned int width)
 {
     epx_alpha_area(src, 0, src_pt, dst, 0, dst_pt, a, width, 1);
 }

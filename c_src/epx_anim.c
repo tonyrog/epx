@@ -182,7 +182,7 @@ void epx_anim_copy_frame(epx_pixmap_t* pic,  epx_gc_t* gc, int x, int y,
     unsigned char *dst0 = EPX_PIXEL_ADDR(pic, x, y);
     int dst_wb = pic->bytes_per_row;
     epx_format_t src_format = src_pt;
-    int srcPixelSize = EPX_PIXEL_SIZE(src_pt);
+    int srcPixelSize = EPX_PIXEL_BYTE_SIZE(src_pt);
     epx_format_t dst_format = pic->pixel_format;
     int dstPixelSize = pic->bytes_per_pixel;
 
@@ -270,7 +270,7 @@ void epx_anim_draw_frame(epx_pixmap_t* pic, epx_gc_t* gc, int x, int y,
     unsigned char *dst0 = EPX_PIXEL_ADDR(pic, x, y);
     int dst_wb = pic->bytes_per_row;
     epx_format_t src_format = src_pt;
-    int srcPixelSize = EPX_PIXEL_SIZE(src_pt);
+    int srcPixelSize = EPX_PIXEL_BYTE_SIZE(src_pt);
     epx_format_t dst_format = pic->pixel_format;
     int dstPixelSize = pic->bytes_per_pixel;
     epx_rect_t r = {{x,y}, {width,height}};

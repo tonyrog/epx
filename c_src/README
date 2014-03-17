@@ -1,3 +1,39 @@
+Pixel formats
+=============
+
+Epx pixel formats describe how the pixel channels are stored
+in memory, not how they are stored in a register when read
+from memory. 
+For example the pixel format argb (identical with a8r8g8b8 and
+a8r8g8b8/big) describe the size and channel order of the pixels
+in memory.
+
+    > P = pixmap_create(1, 1, argb).
+    > epx:pixmap_put_pixel(P,0,0,16#01020304).
+    > epx:pixmap_put_pixel(P,0,0,{A,R,G,B}).
+    > <<A,R,G,B>> = epx:pixmap_get_pixels(P, 0, 0, 1, 1).
+
+The 16 bit formats are a bit more tricky, since they are normally
+given in terms of 16-bit words.
+
+    > P = pixmap_create(1, 1, r5g6b5).
+    > epx:pixmap_put_pixel(P,0,0,{A,R,G,B}).
+    > <<R1:5,G1:6,B1:5>> = epx:pixmap_get_pixels(P, 0, 0, 1, 1).
+
+Note that R,G,B are in [0-255] range so that R1,G1,B1 are
+down scaled version, say R = 8 => R1 = 1.
+
+A little endian version of the above 16-bit format may be
+given as:
+
+    > P = pixmap_create(1, 1, r5g6b5/little).
+    > epx:pixmap_put_pixel(P1,0,0,{A,R,G,B}).
+    > <<A0,A1>> = epx:pixmap_get_pixels(P, 0, 0, 1, 1)
+    > <<R1:5,G1:6,B1:5>> = <<A1,A0>>
+
+ (There is a lack of a grouped little endian modifier in Erlang)
+
+
 Pixel composition operations
 
 Input pixels alpha and color components

@@ -94,7 +94,7 @@ static void epx_fill_24(uint8_t* ptr,
 			uint8_t x0,uint8_t x1,uint8_t x2,
 			size_t n)
 {
-    if (((((unsigned long)ptr) & 0x3) == 0) && (n > 3)) {
+    if (((((unsigned long)ptr) & 0x3) == 0) && (n >= 4)) {
 	uint32_t* ptr32 = (u_int32_t*) ptr;
 	uint32_t v0, v1, v2;
 	uint8_t* vp;
@@ -106,12 +106,13 @@ static void epx_fill_24(uint8_t* ptr,
 	vp = (uint8_t*) &v2;
 	vp[0]=x2; vp[1]=x0; vp[2]=x1; vp[3]=x2;	
 
-	while(n > 4) {
+	while(n >= 4) {
 	    *ptr32++ = v0;
 	    *ptr32++ = v1;
 	    *ptr32++ = v2;
 	    n -= 4;
 	}
+	ptr = (uint8_t*) ptr32;
     }
     if (n) {
 	while(n--) {
@@ -204,11 +205,11 @@ static void epx_move_area(uint8_t* src, int src_dx, int src_dy,
 // copy pixel area 
 void epx_copy_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 		   uint8_t* dst, int dst_wb, epx_format_t dst_pt,
-		   int width, int height)
+		   unsigned int width, unsigned int height)
 {
     if ((dst < src) || (height <= 1)) {
 	if (src_pt == dst_pt) {
-	    unsigned int src_psz = EPX_PIXEL_SIZE(src_pt);
+	    unsigned int src_psz = EPX_PIXEL_BYTE_SIZE(src_pt);
 	    unsigned int n = src_psz*width;
 	    
 	    while(height--) {
@@ -218,8 +219,8 @@ void epx_copy_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 	    }
 	}
 	else {
-	    int src_psz = EPX_PIXEL_SIZE(src_pt);
-	    int dst_psz = EPX_PIXEL_SIZE(dst_pt);
+	    int src_psz = EPX_PIXEL_BYTE_SIZE(src_pt);
+	    int dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
 	    epx_pixel_unpack_t unpack_src = epx_pixel_unpack_func(src_pt);
 	    epx_pixel_pack_t   pack_dst   = epx_pixel_pack_func(dst_pt);
 
@@ -243,7 +244,7 @@ void epx_copy_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 	dst += (dst_wb*height);
 
 	if (src_pt == dst_pt) {
-	    unsigned int n = EPX_PIXEL_SIZE(src_pt)*width;
+	    unsigned int n = EPX_PIXEL_BYTE_SIZE(src_pt)*width;
 	    
 	    while(height--) {
 		src -= src_wb;
@@ -252,8 +253,8 @@ void epx_copy_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 	    }
 	}
 	else {
-	    int src_psz = EPX_PIXEL_SIZE(src_pt);
-	    int dst_psz = EPX_PIXEL_SIZE(dst_pt);
+	    int src_psz = EPX_PIXEL_BYTE_SIZE(src_pt);
+	    int dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
 	    epx_pixel_unpack_t unpack_src = epx_pixel_unpack_func(src_pt);
 	    epx_pixel_pack_t   pack_dst   = epx_pixel_pack_func(dst_pt);
 
@@ -277,9 +278,9 @@ void epx_copy_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 /* fill pixel area (FIXME acceleration) */
 void epx_fill_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 		   epx_pixel_t fill,
-		   int width, int height)
+		   unsigned int width, unsigned int height)
 {
-    unsigned int psz = EPX_PIXEL_SIZE(dst_pt);
+    unsigned int psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
     uint32_t     cv = 0;
     uint8_t*     cvp = (uint8_t*) &cv;
     epx_pixel_pack_t pack = epx_pixel_pack_func(dst_pt);
@@ -319,50 +320,16 @@ void epx_fill_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 // blend dst with ARGB/ABGR color (dst alpha is untouched) 
 // caller MUST swap B/R for ABGR format
 //
-
-// fill pixel row with blending
-void epx_fill_area_blend(uint8_t* dst, int dst_wb, epx_format_t dst_pt, 
-			 epx_pixel_t p, int width, int height)
+static void fill_area_blend_generic(uint8_t* dst, int dst_wb,
+				    epx_format_t dst_pt, 
+				    epx_pixel_t p, 
+				    unsigned int width, unsigned int height)
 {
     int psz;
     epx_pixel_unpack_t unpack_dst;
     epx_pixel_pack_t   pack_dst;
 
-    if (!SIMD_ENABLED())
-	goto generic;
-    
-    switch(dst_pt) {
-    case EPX_FORMAT_R8G8B8:
-	SIMD_CALL(fill_area_blend_rgb24)(dst,dst_wb,p,
-				       width,height);
-	break;
-    case EPX_FORMAT_B8G8R8:
-	SIMD_CALL(fill_area_blend_rgb24)(dst,dst_wb,epx_pixel_swap(p),
-					 width,height);
-	break;
-    case EPX_FORMAT_A8R8G8B8:
-    case EPX_FORMAT_X8R8G8B8:
-	SIMD_CALL(fill_area_blend_argb32)(dst,dst_wb,p,width,height);
-	break;
-    case EPX_FORMAT_A8B8G8R8:
-    case EPX_FORMAT_X8B8G8R8:
-	SIMD_CALL(fill_area_blend_argb32)(dst,dst_wb,p,width,height);
-	break;
-    case EPX_FORMAT_R8G8B8A8:
-    case EPX_FORMAT_R8G8B8X8:
-	SIMD_CALL(fill_area_blend_rgba32)(dst,dst_wb,p,width,height);
-	break;
-    case EPX_FORMAT_B8G8R8A8:
-    case EPX_FORMAT_B8G8R8X8:
-	SIMD_CALL(fill_area_blend_rgba32)(dst,dst_wb,epx_pixel_swap(p),
-					width,height);
-	break;
-    default:
-	goto generic;
-    }
-    return;
-generic:
-    psz = EPX_PIXEL_SIZE(dst_pt);
+    psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
     unpack_dst = epx_pixel_unpack_func(dst_pt);
     pack_dst   = epx_pixel_pack_func(dst_pt);
 
@@ -379,13 +346,130 @@ generic:
     }
 }
 
+static void fill_area_blend_rgb24(uint8_t* dst, int dst_wb,
+				  epx_format_t dst_pt, 
+				  epx_pixel_t p, 
+				  unsigned int width, unsigned int height)
+{
+    if (!SIMD_ENABLED())
+	fill_area_blend_generic(dst, dst_wb, dst_pt, p, width, height);
+    else 
+	SIMD_CALL(fill_area_blend_rgb24)(dst, dst_wb, p, width, height);
+}
+
+static void fill_area_blend_bgr24(uint8_t* dst, int dst_wb,
+				  epx_format_t dst_pt, 
+				  epx_pixel_t p, 
+				  unsigned int width, unsigned int height)
+{
+    if (!SIMD_ENABLED())
+	fill_area_blend_generic(dst, dst_wb, dst_pt, p, width, height);
+    else 
+	SIMD_CALL(fill_area_blend_rgb24)(dst, dst_wb, epx_pixel_swap(p),
+					 width, height);
+}
+
+static void fill_area_blend_argb32(uint8_t* dst, int dst_wb,
+				   epx_format_t dst_pt, 
+				   epx_pixel_t p, 
+				   unsigned int width, unsigned int height)
+{
+    if (!SIMD_ENABLED())
+	fill_area_blend_generic(dst, dst_wb, dst_pt, p, width, height);
+    else 
+	SIMD_CALL(fill_area_blend_argb32)(dst, dst_wb, p, width, height);
+}
+
+static void fill_area_blend_abgr32(uint8_t* dst, int dst_wb,
+				   epx_format_t dst_pt, 
+				   epx_pixel_t p, 
+				   unsigned int width, unsigned int height)
+{
+    if (!SIMD_ENABLED())
+	fill_area_blend_generic(dst, dst_wb, dst_pt, p, width, height);
+    else 
+	SIMD_CALL(fill_area_blend_argb32)(dst, dst_wb,epx_pixel_swap(p),
+					  width,height);
+}
+
+static void fill_area_blend_rgba32(uint8_t* dst, int dst_wb,
+				   epx_format_t dst_pt, 
+				   epx_pixel_t p, 
+				   unsigned int width, unsigned int height)
+{
+    if (!SIMD_ENABLED())
+	fill_area_blend_generic(dst, dst_wb, dst_pt, p, width, height);
+    else 
+	SIMD_CALL(fill_area_blend_rgba32)(dst, dst_wb, p, width, height);
+}
+
+static void fill_area_blend_bgra32(uint8_t* dst, int dst_wb,
+				   epx_format_t dst_pt, 
+				   epx_pixel_t p, 
+				   unsigned int width, unsigned int height)
+{
+    if (!SIMD_ENABLED())
+	fill_area_blend_generic(dst, dst_wb, dst_pt, p, width, height);
+    else
+	SIMD_CALL(fill_area_blend_rgba32)(dst, dst_wb, epx_pixel_swap(p),
+					  width, height);
+}
+
+// fill pixel row with blending
+void epx_fill_area_blend(uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+			 epx_pixel_t p, 
+			 unsigned int width, unsigned int height)
+{
+    switch(dst_pt) {
+    case EPX_FORMAT_R8G8B8:
+	fill_area_blend_rgb24(dst,dst_wb,dst_pt,p,width,height);
+	break;
+    case EPX_FORMAT_B8G8R8:
+	fill_area_blend_bgr24(dst,dst_wb,dst_pt,p,width,height);
+	break;
+
+    case EPX_FORMAT_A8R8G8B8_BE:
+    case EPX_FORMAT_X8R8G8B8_BE:
+    case EPX_FORMAT_B8G8R8A8_LE:
+    case EPX_FORMAT_B8G8R8X8_LE:
+	fill_area_blend_argb32(dst,dst_wb,dst_pt,p,width,height);
+	break;
+
+    case EPX_FORMAT_A8B8G8R8_BE:
+    case EPX_FORMAT_X8B8G8R8_BE:
+    case EPX_FORMAT_R8G8B8A8_LE:
+    case EPX_FORMAT_R8G8B8X8_LE:
+	fill_area_blend_abgr32(dst,dst_wb,dst_pt,p,width,height);
+	break;
+
+    case EPX_FORMAT_R8G8B8A8_BE:
+    case EPX_FORMAT_R8G8B8X8_BE:
+    case EPX_FORMAT_A8B8G8R8_LE:
+    case EPX_FORMAT_X8B8G8R8_LE:
+	fill_area_blend_rgba32(dst,dst_wb,dst_pt,p,width,height);
+	break;
+
+    case EPX_FORMAT_B8G8R8A8_BE:
+    case EPX_FORMAT_B8G8R8X8_BE:
+    case EPX_FORMAT_A8R8G8B8_LE:
+    case EPX_FORMAT_X8R8G8B8_LE:
+	fill_area_blend_bgra32(dst,dst_wb,dst_pt,p,width,height);
+	break;
+    default:
+	goto generic;
+    }
+    return;
+generic:
+    fill_area_blend_generic(dst,dst_wb,dst_pt,p,width,height);
+}
+
 /*! Experimental */
 void epx_shade_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt, 
-		    int width, int height, 
+		    unsigned int width, unsigned int height, 
 		    epx_pixel_t Px0, epx_pixel_t Px1,
 		    epx_pixel_t Py0, epx_pixel_t Py1)
 {
-    int psz = EPX_PIXEL_SIZE(dst_pt);
+    int psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
     int height1 = height;
     int y = 0;
     epx_pixel_unpack_t unpack_dst = epx_pixel_unpack_func(dst_pt);
@@ -393,7 +477,7 @@ void epx_shade_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt,
     
     while(height1--) {
 	uint8_t* dst1 = dst;
-	int width1 = width;
+	unsigned int width1 = width;
 	int x = 0;
 	while(width1--) {
 	    epx_pixel_t d = unpack_dst(dst1);
@@ -425,59 +509,89 @@ void epx_shade_area(uint8_t* dst, int dst_wb, epx_format_t dst_pt,
 #undef AREA_OPERATION
 // END-FUNCTION
 
-void epx_blend_area(uint8_t* src, int src_wb, epx_format_t src_pt,
-		    uint8_t* dst, int dst_wb, epx_format_t dst_pt,
-		    unsigned int width, 
-		    unsigned int height)
+static void blend_area_generic(uint8_t* src,int src_wb,epx_format_t src_pt,
+			       uint8_t* dst,int dst_wb,epx_format_t dst_pt,
+			       unsigned int width, 
+			       unsigned int height)
 {
-    if (!EPX_PIXEL_HAS_ALPHA(src_pt)) {
-	epx_copy_area(src, src_wb, src_pt, dst, dst_wb, dst_pt, 
-		      width, height);
-	return;
-    }
-    if (!SIMD_ENABLED())
-	goto generic;
-
-    if ((dst_pt == src_pt) && (width>=8)) {
-	switch(src_pt) {
-	case EPX_FORMAT_R8G8B8A8:
-	case EPX_FORMAT_B8G8R8A8:
-	    SIMD_CALL(blend_area_rgba32)(src, src_wb, dst, dst_wb, width, height);
-	    return;
-	case EPX_FORMAT_A8R8G8B8:
-	case EPX_FORMAT_A8B8G8R8:
-	    SIMD_CALL(blend_area_argb32)(src, src_wb, dst, dst_wb, width, height);
-	    return;
-	default:
-	    break;
-	}
-    }
-
-generic:
     if (src_pt == dst_pt) {
 	switch(src_pt) {
-	case EPX_FORMAT_A8R8G8B8:
-	case EPX_FORMAT_A8B8G8R8: 
-	    while(height--) {
-		epx_blend_row_argb32(src, dst, width);
-		src += src_wb;
-		dst += dst_wb;
-	    }
-	    return;	
-	case EPX_FORMAT_B8G8R8A8:
-	case EPX_FORMAT_R8G8B8A8:
+	case EPX_FORMAT_R8G8B8A8_BE:
+	case EPX_FORMAT_B8G8R8A8_BE:
+	case EPX_FORMAT_A8B8G8R8_LE:
+	case EPX_FORMAT_A8R8G8B8_LE:
 	    while(height--) {
 		epx_blend_row_rgba32(src, dst, width);
 		src += src_wb;
 		dst += dst_wb;
 	    }
 	    return;
+	case EPX_FORMAT_A8R8G8B8_BE:
+	case EPX_FORMAT_A8B8G8R8_BE:
+	case EPX_FORMAT_B8G8R8A8_LE:
+	case EPX_FORMAT_R8G8B8A8_LE:
+	    while(height--) {
+		epx_blend_row_argb32(src, dst, width);
+		src += src_wb;
+		dst += dst_wb;
+	    }
+	    return;	
 	default:
 	    break;
 	}
     }
-// generic_area:
     epx_blend_AREA(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
+}
+
+static void blend_area_rgba32(uint8_t* src,int src_wb,epx_format_t src_pt,
+			      uint8_t* dst,int dst_wb,epx_format_t dst_pt,
+			      unsigned int width, 
+			      unsigned int height)
+{
+    if (!SIMD_ENABLED() || (src_pt != dst_pt) || (width < 8))
+	blend_area_generic(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
+    else
+	SIMD_CALL(blend_area_rgba32)(src,src_wb,dst,dst_wb,width,height);
+}
+
+
+static void blend_area_argb32(uint8_t* src,int src_wb,epx_format_t src_pt,
+			      uint8_t* dst,int dst_wb,epx_format_t dst_pt,
+			      unsigned int width, 
+			      unsigned int height)
+{
+    if (!SIMD_ENABLED()  || (src_pt != dst_pt) || (width < 8))
+	blend_area_generic(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
+    else
+	SIMD_CALL(blend_area_argb32)(src,src_wb,dst,dst_wb,width,height);
+}
+
+void epx_blend_area(uint8_t* src, int src_wb, epx_format_t src_pt,
+		    uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+		    unsigned int width,
+		    unsigned int height)
+{
+    if (!EPX_PIXEL_HAS_ALPHA(src_pt)) {
+	epx_copy_area(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
+	return;
+    }
+    switch(src_pt) {
+    case EPX_FORMAT_R8G8B8A8_BE:
+    case EPX_FORMAT_B8G8R8A8_BE:
+    case EPX_FORMAT_A8B8G8R8_LE:
+    case EPX_FORMAT_A8R8G8B8_LE:
+	blend_area_rgba32(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
+	break;
+    case EPX_FORMAT_A8R8G8B8_BE:
+    case EPX_FORMAT_A8B8G8R8_BE:
+    case EPX_FORMAT_B8G8R8A8_LE:
+    case EPX_FORMAT_R8G8B8A8_LE:
+	blend_area_argb32(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
+	break;
+    default:
+	blend_area_generic(src,src_wb,src_pt,dst,dst_wb,dst_pt,width,height);
+	break;
+    }
 }
 
 // FUNCTION: epx_sum_area ( ... )
@@ -508,51 +622,37 @@ static inline epx_pixel_t alpha_pixel(uint8_t a, epx_pixel_t s, epx_pixel_t d)
 #undef AREA_OPERATION
 // END-FUCNTION
 
-void epx_alpha_area(uint8_t* src, int src_wb, epx_format_t src_pt,
-		    uint8_t* dst, int dst_wb, epx_format_t dst_pt,
-		    uint8_t alpha, unsigned int width, unsigned int height)
+static void alpha_area_generic(uint8_t* src, int src_wb, epx_format_t src_pt,
+			       uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+			       uint8_t alpha, 
+			       unsigned int width, unsigned int height)
 {
-    if (!SIMD_ENABLED())
-	goto generic;
-
-    if ((dst_pt == src_pt) && (width>=8)) {
-	switch(src_pt) {
-	case EPX_FORMAT_R8G8B8A8:
-	case EPX_FORMAT_B8G8R8A8:
-	case EPX_FORMAT_R8G8B8X8:
-	case EPX_FORMAT_B8G8R8X8:
-	    SIMD_CALL(alpha_area_rgba32)(src,src_wb,dst,dst_wb,alpha,width,height);
-	    return;
-	case EPX_FORMAT_A8R8G8B8:
-	case EPX_FORMAT_A8B8G8R8:
-	case EPX_FORMAT_X8R8G8B8:
-	case EPX_FORMAT_X8B8G8R8:
-	    SIMD_CALL(alpha_area_argb32)(src,src_wb,dst,dst_wb,alpha,width,height);
-	    return;
-	default:
-	    goto generic_area;
-	}
-    }
-
-generic:
     if (src_pt == dst_pt) {
 	switch(src_pt) {
-	case EPX_FORMAT_X8R8G8B8:
-	case EPX_FORMAT_A8R8G8B8:
-	case EPX_FORMAT_X8B8G8R8:
-	case EPX_FORMAT_A8B8G8R8:
+	case EPX_FORMAT_B8G8R8X8_BE:
+	case EPX_FORMAT_B8G8R8A8_BE:
+	case EPX_FORMAT_R8G8B8X8_BE:
+	case EPX_FORMAT_R8G8B8A8_BE:
+	case EPX_FORMAT_X8R8G8B8_LE:
+	case EPX_FORMAT_A8R8G8B8_LE:
+	case EPX_FORMAT_X8B8G8R8_LE:
+	case EPX_FORMAT_A8B8G8R8_LE:
 	    while(height--) {
-		epx_alpha_row_argb32(src,dst,alpha,width);
+		epx_alpha_row_rgba32(src,dst,alpha,width);
 		src += src_wb;
 		dst += dst_wb;
 	    }
 	    return;
-	case EPX_FORMAT_B8G8R8X8:
-	case EPX_FORMAT_B8G8R8A8:
-	case EPX_FORMAT_R8G8B8X8:
-	case EPX_FORMAT_R8G8B8A8:
+	case EPX_FORMAT_X8R8G8B8_BE:
+	case EPX_FORMAT_A8R8G8B8_BE:
+	case EPX_FORMAT_X8B8G8R8_BE:
+	case EPX_FORMAT_A8B8G8R8_BE:
+	case EPX_FORMAT_B8G8R8X8_LE:
+	case EPX_FORMAT_B8G8R8A8_LE:
+	case EPX_FORMAT_R8G8B8X8_LE:
+	case EPX_FORMAT_R8G8B8A8_LE:
 	    while(height--) {
-		epx_alpha_row_rgba32(src,dst,alpha,width);
+		epx_alpha_row_argb32(src,dst,alpha,width);
 		src += src_wb;
 		dst += dst_wb;
 	    }
@@ -569,11 +669,57 @@ generic:
 	    break;
 	}
     }
-generic_area:
-    // generic area function
-    epx_alpha_AREA(src,src_wb,src_pt,dst,dst_wb,dst_pt,
-		   alpha,
-		   width,height);
+    epx_alpha_AREA(src,src_wb,src_pt,dst,dst_wb,dst_pt,alpha,width,height);
+}
+
+static void alpha_area_rgba32(uint8_t* src, int src_wb, epx_format_t src_pt,
+			      uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+			      uint8_t a,unsigned int width, unsigned int height)
+{
+    if (!SIMD_ENABLED() || (src_pt != dst_pt) || (width < 8))
+	alpha_area_generic(src,src_wb,src_pt,dst,dst_wb,dst_pt,a,width,height);
+    else
+	SIMD_CALL(alpha_area_rgba32)(src,src_wb,dst,dst_wb,a,width,height);	
+}
+
+static void alpha_area_argb32(uint8_t* src, int src_wb, epx_format_t src_pt,
+			      uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+			      uint8_t a,unsigned int width, unsigned int height)
+{
+    if (!SIMD_ENABLED() || (src_pt != dst_pt) || (width < 8))
+	alpha_area_generic(src,src_wb,src_pt,dst,dst_wb,dst_pt,a,width,height);
+    else
+	SIMD_CALL(alpha_area_argb32)(src,src_wb,dst,dst_wb,a,width,height);	
+}
+
+void epx_alpha_area(uint8_t* src, int src_wb, epx_format_t src_pt,
+		    uint8_t* dst, int dst_wb, epx_format_t dst_pt,
+		    uint8_t a, unsigned int width, unsigned int height)
+{
+    switch(src_pt) {
+    case EPX_FORMAT_B8G8R8X8_BE:
+    case EPX_FORMAT_B8G8R8A8_BE:
+    case EPX_FORMAT_R8G8B8X8_BE:
+    case EPX_FORMAT_R8G8B8A8_BE:
+    case EPX_FORMAT_X8R8G8B8_LE:
+    case EPX_FORMAT_A8R8G8B8_LE:
+    case EPX_FORMAT_X8B8G8R8_LE:
+    case EPX_FORMAT_A8B8G8R8_LE:
+	alpha_area_rgba32(src,src_wb,src_pt,dst,dst_wb,dst_pt,a,width,height);
+	break;
+    case EPX_FORMAT_X8R8G8B8_BE:
+    case EPX_FORMAT_A8R8G8B8_BE:
+    case EPX_FORMAT_X8B8G8R8_BE:
+    case EPX_FORMAT_A8B8G8R8_BE:
+    case EPX_FORMAT_B8G8R8X8_LE:
+    case EPX_FORMAT_B8G8R8A8_LE:
+    case EPX_FORMAT_R8G8B8X8_LE:
+    case EPX_FORMAT_R8G8B8A8_LE:
+	alpha_area_argb32(src,src_wb,src_pt,dst,dst_wb,dst_pt,a,width,height);
+	break;
+    default:
+	alpha_area_generic(src,src_wb,src_pt,dst,dst_wb,dst_pt,a,width,height);
+    }
 }
 
 
@@ -621,12 +767,16 @@ void epx_fade_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 
     if ((dst_pt == src_pt) && (width>=8)) {
 	switch(src_pt) {
-	case EPX_FORMAT_R8G8B8A8:
-	case EPX_FORMAT_B8G8R8A8:
+	case EPX_FORMAT_R8G8B8A8_BE:
+	case EPX_FORMAT_B8G8R8A8_BE:
+	case EPX_FORMAT_A8B8G8R8_LE:
+	case EPX_FORMAT_A8R8G8B8_LE:
 	    SIMD_CALL(fade_area_rgba32)(src, src_wb, dst, dst_wb, fade, width, height);
 	    return;
-	case EPX_FORMAT_A8R8G8B8:
-	case EPX_FORMAT_A8B8G8R8:
+	case EPX_FORMAT_A8R8G8B8_BE:
+	case EPX_FORMAT_A8B8G8R8_BE:
+	case EPX_FORMAT_B8G8R8A8_LE:
+	case EPX_FORMAT_R8G8B8A8_LE:
 	    SIMD_CALL(fade_area_argb32)(src, src_wb, dst, dst_wb, fade, width, height);
 	    return;
 	default:
@@ -637,22 +787,28 @@ void epx_fade_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 generic:
     if (src_pt == dst_pt) {
 	switch(src_pt) {
-	case EPX_FORMAT_A8R8G8B8:
-	case EPX_FORMAT_A8B8G8R8:
-	    while(height--) {
-		epx_fade_row_argb32(src, dst, fade, width);
-		src += src_wb;
-		dst += dst_wb;
-	    }
-	    return;
-	case EPX_FORMAT_B8G8R8A8:
-	case EPX_FORMAT_R8G8B8A8:
+	case EPX_FORMAT_R8G8B8A8_BE:
+	case EPX_FORMAT_B8G8R8A8_BE:
+	case EPX_FORMAT_A8B8G8R8_LE:
+	case EPX_FORMAT_A8R8G8B8_LE:
 	    while(height--) {
 		epx_fade_row_rgba32(src, dst, fade, width);
 		src += src_wb;
 		dst += dst_wb;
 	    }
 	    return;
+
+	case EPX_FORMAT_A8R8G8B8_BE:
+	case EPX_FORMAT_A8B8G8R8_BE:
+	case EPX_FORMAT_B8G8R8A8_LE:
+	case EPX_FORMAT_R8G8B8A8_LE:
+	    while(height--) {
+		epx_fade_row_argb32(src, dst, fade, width);
+		src += src_wb;
+		dst += dst_wb;
+	    }
+	    return;
+
 	default:
 	    goto generic_area;
 	}
@@ -678,8 +834,10 @@ generic:
 		dst += dst_wb;
 	    }
 	    break;
-	case EPX_FORMAT_A8R8G8B8:
-	case EPX_FORMAT_A8B8G8R8:
+	case EPX_FORMAT_A8R8G8B8_BE:
+	case EPX_FORMAT_A8B8G8R8_BE:
+	case EPX_FORMAT_B8G8R8A8_LE:
+	case EPX_FORMAT_R8G8B8A8_LE:
 	    while(height--) {
 		uint8_t* src1 = src;
 		uint8_t* dst1 = dst;
@@ -698,8 +856,10 @@ generic:
 		dst += dst_wb;
 	    }
 	    break;
-	case EPX_FORMAT_B8G8R8A8:
-	case EPX_FORMAT_R8G8B8A8:
+	case EPX_FORMAT_R8G8B8A8_BE:
+	case EPX_FORMAT_B8G8R8A8_BE:
+	case EPX_FORMAT_A8B8G8R8_LE:
+	case EPX_FORMAT_A8R8G8B8_LE:
 	    while(height--) {
 		uint8_t* src1 = src;
 		uint8_t* dst1 = dst;
@@ -718,7 +878,7 @@ generic:
 	    }
 	    break;
 	default:
-	    dst_psz = EPX_PIXEL_SIZE(dst_pt);
+	    dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
 	    unpack_dst = epx_pixel_unpack_func(dst_pt);
 	    pack_dst   = epx_pixel_pack_func(dst_pt);
 	    while(height--) {
@@ -759,8 +919,8 @@ void epx_shadow_area(uint8_t* src, int src_wb, epx_format_t src_pt,
     epx_pixel_unpack_t unpack_src;
     epx_pixel_pack_t   pack_dst;
 
-    src_psz = EPX_PIXEL_SIZE(src_pt);
-    dst_psz = EPX_PIXEL_SIZE(dst_pt);
+    src_psz = EPX_PIXEL_BYTE_SIZE(src_pt);
+    dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
     unpack_src = epx_pixel_unpack_func(src_pt);
     unpack_dst = epx_pixel_unpack_func(dst_pt);
     pack_dst   = epx_pixel_pack_func(dst_pt);
@@ -855,24 +1015,32 @@ void epx_add_color_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 
     if ((dst_pt == src_pt) && (width>=8)) {
 	switch(src_pt) {
-	case EPX_FORMAT_R8G8B8A8:
-	case EPX_FORMAT_R8G8B8X8:
+	case EPX_FORMAT_R8G8B8A8_BE:
+	case EPX_FORMAT_R8G8B8X8_BE:
+	case EPX_FORMAT_A8B8G8R8_LE:
+	case EPX_FORMAT_X8B8G8R8_LE:
 	    SIMD_CALL(add_blend_area_rgba32)(src,src_wb,dst,dst_wb,fader,
 					   color,width,height);
 	    return;
-	case EPX_FORMAT_B8G8R8A8:
-	case EPX_FORMAT_B8G8R8X8:
+	case EPX_FORMAT_B8G8R8A8_BE:
+	case EPX_FORMAT_B8G8R8X8_BE:
+	case EPX_FORMAT_A8R8G8B8_LE:
+	case EPX_FORMAT_X8R8G8B8_LE:
 	    SIMD_CALL(add_blend_area_rgba32)(src,src_wb,dst,dst_wb,fader,
 					   epx_pixel_swap(color),
 					   width,height);
 	    return;
-	case EPX_FORMAT_A8R8G8B8:
-	case EPX_FORMAT_X8R8G8B8:
+	case EPX_FORMAT_A8R8G8B8_BE:
+	case EPX_FORMAT_X8R8G8B8_BE:
+	case EPX_FORMAT_B8G8R8A8_LE:
+	case EPX_FORMAT_B8G8R8X8_LE:
 	    SIMD_CALL(add_blend_area_argb32)(src,src_wb,dst,dst_wb,fader,
 					   color,width,height);
 	    return;
-	case EPX_FORMAT_A8B8G8R8:
-	case EPX_FORMAT_X8B8G8R8:
+	case EPX_FORMAT_A8B8G8R8_BE:
+	case EPX_FORMAT_X8B8G8R8_BE:
+	case EPX_FORMAT_R8G8B8A8_LE:
+	case EPX_FORMAT_R8G8B8X8_LE:
 	    SIMD_CALL(add_blend_area_argb32)(src,src_wb,dst,dst_wb,fader,
 					   epx_pixel_swap(color),
 					   width,height);
@@ -883,24 +1051,32 @@ void epx_add_color_area(uint8_t* src, int src_wb, epx_format_t src_pt,
     }
     else if (src_pt == EPX_FORMAT_A8) {
 	switch(dst_pt) {
-	case EPX_FORMAT_R8G8B8A8:
-	case EPX_FORMAT_R8G8B8X8:
+	case EPX_FORMAT_R8G8B8A8_BE:
+	case EPX_FORMAT_R8G8B8X8_BE:
+	case EPX_FORMAT_A8B8G8R8_LE:
+	case EPX_FORMAT_X8B8G8R8_LE:
 	    SIMD_CALL(add_blend_area_a8_rgba32)(src,src_wb,dst,dst_wb,fader,
 					      color,width,height);
 	    return;
-	case EPX_FORMAT_B8G8R8A8:
-	case EPX_FORMAT_B8G8R8X8:
+	case EPX_FORMAT_B8G8R8A8_BE:
+	case EPX_FORMAT_B8G8R8X8_BE:
+	case EPX_FORMAT_A8R8G8B8_LE:
+	case EPX_FORMAT_X8R8G8B8_LE:
 	    SIMD_CALL(add_blend_area_a8_rgba32)(src,src_wb,dst,dst_wb,fader,
 						 epx_pixel_swap(color),
 						 width,height);
 	    return;
-	case EPX_FORMAT_A8R8G8B8:
-	case EPX_FORMAT_X8R8G8B8:
+	case EPX_FORMAT_A8R8G8B8_BE:
+	case EPX_FORMAT_X8R8G8B8_BE:
+	case EPX_FORMAT_B8G8R8A8_LE:
+	case EPX_FORMAT_B8G8R8X8_LE:
 	    SIMD_CALL(add_blend_area_a8_argb32)(src,src_wb,dst,dst_wb,fader,
 					      color,width,height);
 	    return;
-	case EPX_FORMAT_A8B8G8R8:
-	case EPX_FORMAT_X8B8G8R8:
+	case EPX_FORMAT_A8B8G8R8_BE:
+	case EPX_FORMAT_X8B8G8R8_BE:
+	case EPX_FORMAT_R8G8B8A8_LE:
+	case EPX_FORMAT_R8G8B8X8_LE:
 	    SIMD_CALL(add_blend_area_a8_argb32)(src,src_wb,dst,dst_wb,fader,
 					      epx_pixel_swap(color),
 					      width,height);
@@ -915,8 +1091,8 @@ generic_area:
     unpack_dst = epx_pixel_unpack_func(dst_pt);
     pack_dst   = epx_pixel_pack_func(dst_pt);
 
-    src_psz = EPX_PIXEL_SIZE(src_pt);
-    dst_psz = EPX_PIXEL_SIZE(dst_pt);
+    src_psz = EPX_PIXEL_BYTE_SIZE(src_pt);
+    dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
 
     if ((flags&EPX_FLAG_BLEND) == 0) {
 	while(height--) {
@@ -971,8 +1147,8 @@ static void filter_avg_N_1_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 				int n,
 				epx_flags_t flags)
 {
-    int src_psz = EPX_PIXEL_SIZE(src_pt);
-    int dst_psz = EPX_PIXEL_SIZE(dst_pt);
+    int src_psz = EPX_PIXEL_BYTE_SIZE(src_pt);
+    int dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
     epx_pixel_unpack_t unpack_src = epx_pixel_unpack_func(src_pt);
     epx_pixel_unpack_t unpack_dst = epx_pixel_unpack_func(dst_pt);
     epx_pixel_pack_t   pack_dst   = epx_pixel_pack_func(dst_pt);
@@ -1075,8 +1251,8 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 			     width, height, n, flags);
      }
      else {
-	 int src_psz = EPX_PIXEL_SIZE(src_pt);
-	 int dst_psz = EPX_PIXEL_SIZE(dst_pt);
+	 int src_psz = EPX_PIXEL_BYTE_SIZE(src_pt);
+	 int dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
 	 epx_pixel_unpack_t unpack_src = epx_pixel_unpack_func(src_pt);
 	 epx_pixel_unpack_t unpack_dst = epx_pixel_unpack_func(dst_pt);
 	 epx_pixel_pack_t   pack_dst   = epx_pixel_pack_func(dst_pt);
@@ -1170,21 +1346,21 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 
      if (epx_point_xy_in_rect(x0,y0, &pic->clip)) {
 	 ptr = EPX_PIXEL_ADDR(pic, x0, y0);
-	 p0 = pic->unpack(ptr);
+	 p0 = pic->func.unpack(ptr);
      }
      else
 	 p0 = epx_pixel_transparent;
 
      if (epx_point_xy_in_rect(x1,y0, &pic->clip)) {
 	 ptr = EPX_PIXEL_ADDR(pic, x1, y0);
-	 p1 = pic->unpack(ptr);
+	 p1 = pic->func.unpack(ptr);
      }
      else
 	 p1 = epx_pixel_transparent;
 
      if (epx_point_xy_in_rect(x0,y1, &pic->clip)) {
 	 ptr = EPX_PIXEL_ADDR(pic, x0, y1);
-	 p2 = pic->unpack(ptr);
+	 p2 = pic->func.unpack(ptr);
      }
      else
 	 p2 = epx_pixel_transparent;
@@ -1192,7 +1368,7 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 
      if (epx_point_xy_in_rect(x1,y1, &pic->clip)) {
 	 ptr = EPX_PIXEL_ADDR(pic, x1, y1);
-	 p3 = pic->unpack(ptr);
+	 p3 = pic->func.unpack(ptr);
      }
      else
 	 p3 = epx_pixel_transparent;
@@ -1262,14 +1438,86 @@ int epx_clip_dst(epx_pixmap_t* src,epx_pixmap_t* dst,
     return 0;
 }
 
+static void init_pixel_area_functions(epx_pixmap_functions_t* func, 
+				      epx_format_t fmt)
+{
+    switch(fmt) {
+    case EPX_FORMAT_R8G8B8:  // RGB
+	func->fill_area_blend = fill_area_blend_rgb24;
+	func->blend_area      = epx_copy_area;  // no alpha for blending
+	func->alpha_area      = alpha_area_generic;
+	break;
+    case EPX_FORMAT_B8G8R8:  // BGR
+	func->fill_area_blend = fill_area_blend_bgr24;
+	func->blend_area      = epx_copy_area;  // no src alpha
+	func->alpha_area      = alpha_area_generic;
+	break;
+    case EPX_FORMAT_A8R8G8B8_BE:  // ARGB
+    case EPX_FORMAT_B8G8R8A8_LE:
+	func->fill_area_blend = fill_area_blend_argb32;
+	func->blend_area      = blend_area_argb32;
+	func->alpha_area      = alpha_area_argb32;
+	break;
+    case EPX_FORMAT_X8R8G8B8_BE:  // XRGB
+    case EPX_FORMAT_B8G8R8X8_LE:
+	func->fill_area_blend = fill_area_blend_argb32;
+	func->blend_area      = epx_copy_area;  // no src alpha
+	func->alpha_area      = alpha_area_argb32;
+	break;
+    case EPX_FORMAT_A8B8G8R8_BE:  // ABGR
+    case EPX_FORMAT_R8G8B8A8_LE:
+	func->fill_area_blend = fill_area_blend_abgr32;
+	func->blend_area      = blend_area_argb32;
+	func->alpha_area      = alpha_area_argb32;
+	break;
+    case EPX_FORMAT_X8B8G8R8_BE:  // XBGR
+    case EPX_FORMAT_R8G8B8X8_LE:
+	func->fill_area_blend = fill_area_blend_abgr32;
+	func->blend_area      = epx_copy_area;  // no src alpha
+	func->alpha_area      = alpha_area_argb32;  // abgr = argb for alpha
+	break;
+    case EPX_FORMAT_R8G8B8A8_BE:  // RGBA
+    case EPX_FORMAT_A8B8G8R8_LE:
+	func->fill_area_blend = fill_area_blend_rgba32;
+	func->blend_area      = blend_area_rgba32;
+	func->alpha_area      = alpha_area_rgba32;
+	break;
+    case EPX_FORMAT_R8G8B8X8_BE:  // RGBX
+    case EPX_FORMAT_X8B8G8R8_LE:
+	func->fill_area_blend = fill_area_blend_rgba32;
+	func->blend_area      = epx_copy_area;  // no src alpha
+	func->alpha_area      = alpha_area_rgba32;
+	break;
+    case EPX_FORMAT_B8G8R8A8_BE:  // BGRA
+    case EPX_FORMAT_A8R8G8B8_LE:
+	func->fill_area_blend = fill_area_blend_bgra32;
+	func->blend_area      = blend_area_rgba32;
+	func->alpha_area      = alpha_area_rgba32;
+	break;
 
+    case EPX_FORMAT_B8G8R8X8_BE:  // BGRX
+    case EPX_FORMAT_X8R8G8B8_LE:
+	func->fill_area_blend = fill_area_blend_bgra32;
+	func->blend_area      = epx_copy_area;  // no src alpha
+	func->alpha_area      = alpha_area_rgba32;
+	break;
+
+    default:
+	func->fill_area_blend = fill_area_blend_generic;
+	func->blend_area      = blend_area_generic;
+	func->alpha_area      = alpha_area_generic;
+	break;
+    }
+}
 
 int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height, 
 		    epx_format_t fmt)
 {
     uint8_t* data0;
-    unsigned int bytes_per_pixel = EPX_PIXEL_SIZE(fmt);
+    unsigned int bytes_per_pixel = EPX_PIXEL_BYTE_SIZE(fmt);
     unsigned int bytes_per_row   = bytes_per_pixel*width;
+    epx_pixel_unpack_t unpack;
+    epx_pixel_pack_t pack;
 
     // initialize here to make sure destructor always will work
     EPX_OBJECT_INIT(dst, EPX_PIXMAP_TYPE);
@@ -1282,6 +1530,11 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
     // Each row must by a multiple of 16!
     bytes_per_row += EPX_ALIGN_OFFS(bytes_per_row,16);
 
+    unpack = epx_pixel_unpack_func(fmt);
+    pack   = epx_pixel_pack_func(fmt);
+
+    if ((unpack == NULL) || (pack == NULL))
+	return -1;
     if (!(data0 = (uint8_t*) malloc(bytes_per_row*height+15)))
 	return -1;
 
@@ -1291,8 +1544,9 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
     dst->height         = height;
     dst->bits_per_pixel = bytes_per_pixel*8;
     dst->pixel_format   = fmt;
-    dst->unpack         = epx_pixel_unpack_func(fmt);
-    dst->pack           = epx_pixel_pack_func(fmt);
+    dst->func.unpack    = unpack;
+    dst->func.pack      = pack;
+    init_pixel_area_functions(&dst->func, fmt);
     dst->bytes_per_pixel = bytes_per_pixel;
     /* total number of bytes, not including padding */
     dst->sz             = bytes_per_row*height;
@@ -1379,8 +1633,7 @@ int epx_pixmap_init_sub_pixmap(epx_pixmap_t* src, epx_pixmap_t* dst,
     dst->height         = dr.wh.height;
     dst->bits_per_pixel = src->bits_per_pixel;
     dst->pixel_format   = src->pixel_format;
-    dst->unpack         = src->unpack;
-    dst->pack           = src->pack;
+    dst->func           = src->func;
     dst->sz             = src->bytes_per_row*dr.wh.height;
 
     dst->data0 = 0;  // signal sub-pixmap
@@ -1463,7 +1716,7 @@ void epx_pixmap_put_pixel(epx_pixmap_t* pic, int x, int y, epx_flags_t flags, ep
     if (!epx_point_xy_in_rect(x, y, &pic->clip))
 	return;
     dst = EPX_PIXEL_ADDR(pic,x,y);
-    put_apixel(dst,pic->unpack,pic->pack,flags,p);
+    put_apixel(dst,pic->func.unpack,pic->func.pack,flags,p);
 }
 
 
@@ -1478,7 +1731,7 @@ void epx_pixmap_put_pixels(epx_pixmap_t* dst, int x, int y,
 {
     uint8_t* src_ptr;
     uint8_t* src_end;
-    unsigned int src_psz = EPX_PIXEL_SIZE(pixel_format);
+    unsigned int src_psz = EPX_PIXEL_BYTE_SIZE(pixel_format);
     unsigned int src_wb  = width*src_psz;
     epx_rect_t sr;
     epx_rect_t dr;
@@ -1505,10 +1758,10 @@ void epx_pixmap_put_pixels(epx_pixmap_t* dst, int x, int y,
 		      dst->bytes_per_row, dst->pixel_format,
 		      dr.wh.width, dr.wh.height);
     else
-	epx_blend_area(src_ptr, src_wb, pixel_format,
-		       EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
-		       dst->bytes_per_row, dst->pixel_format,
-		       dr.wh.width, dr.wh.height);
+	dst->func.blend_area(src_ptr, src_wb, pixel_format,
+			     EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
+			     dst->bytes_per_row, dst->pixel_format,
+			     dr.wh.width, dr.wh.height);
 }
 
 
@@ -1520,13 +1773,13 @@ epx_pixel_t epx_pixmap_get_pixel(epx_pixmap_t* pic, int x, int y)
     if (!epx_point_xy_in_rect(x,y,&pic->clip))
 	return epx_pixel_black;
     src = EPX_PIXEL_ADDR(pic,x,y);
-    return pic->unpack(src);
+    return pic->func.unpack(src);
 }
 
 // Fill epx_pixmap_ with colors from p 
 void epx_pixmap_fill(epx_pixmap_t* dst, epx_pixel_t p)
 {
-    if (!dst->data0) {  // a sub-pixmap
+    if (!dst->data0 || (dst->bytes_per_pixel==3)) {  // a sub-pixmap
 	epx_fill_area(dst->data, dst->bytes_per_row, dst->pixel_format, p,
 		      dst->width, dst->height);
     }
@@ -1534,16 +1787,13 @@ void epx_pixmap_fill(epx_pixmap_t* dst, epx_pixel_t p)
 	uint32_t    cv = 0;
 	uint8_t*    cvp = (uint8_t*) &cv;
 
-	dst->pack(p, cvp);
+	dst->func.pack(p, cvp);
 	switch(dst->bytes_per_pixel) {
 	case 1:
 	    epx_fill_8(dst->data,  cvp[0], dst->sz);
 	    break;
 	case 2: 
 	    epx_fill_16(dst->data, cvp[0], cvp[1], dst->sz/2);	    
-	    break;
-	case 3: 
-	    epx_fill_24(dst->data, cvp[0], cvp[1], cvp[2], dst->sz/3);
 	    break;
 	case 4: 
 	    epx_fill_32(dst->data, cvp[0], cvp[1], cvp[2], cvp[3], dst->sz/4);
@@ -1553,6 +1803,14 @@ void epx_pixmap_fill(epx_pixmap_t* dst, epx_pixel_t p)
 	}
     }
 }
+
+void epx_pixmap_fill_blend(epx_pixmap_t* dst, epx_pixel_t p)
+{
+    dst->func.fill_area_blend(dst->data, dst->bytes_per_row, 
+			      dst->pixel_format, p,
+			      dst->width, dst->height);
+}
+
 
 /* Flip the Pixmap (y direction) */
 void epx_pixmap_flip(epx_pixmap_t* pic)
@@ -1575,12 +1833,12 @@ static inline void shift_area(uint8_t* src, int src_wb, int src_pt,
 			      int amount)
 {
     if (amount > 0) {
-	int psz = EPX_PIXEL_SIZE(src_pt);
+	int psz = EPX_PIXEL_BYTE_SIZE(src_pt);
 	src   += amount*psz;
 	width -= amount;
     }
     else {
-	int psz = EPX_PIXEL_SIZE(dst_pt);
+	int psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
 	dst   += (-amount)*psz;
 	width -= (-amount);
     }
@@ -1600,8 +1858,8 @@ static inline void shift_area_rotate(uint8_t* src, int src_wb, int src_pt,
 				     int amount)
 {
     int a = (amount < 0) ? -amount : amount;
-    int src_psz = EPX_PIXEL_SIZE(src_pt);
-    int dst_psz = EPX_PIXEL_SIZE(dst_pt);
+    int src_psz = EPX_PIXEL_BYTE_SIZE(src_pt);
+    int dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
     int n = width;
     int is_inline = (src == dst);
     uint8_t* src_from;
@@ -1869,11 +2127,11 @@ void epx_pixmap_copy_area(epx_pixmap_t* src,epx_pixmap_t* dst,
 		     dr.wh.width, dr.wh.height);
     }
     else
-	epx_blend_area(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y), 
-		       src->bytes_per_row, src->pixel_format,
-		       EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
-		       dst->bytes_per_row, dst->pixel_format,
-		       dr.wh.width, dr.wh.height);
+	dst->func.blend_area(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y), 
+			     src->bytes_per_row, src->pixel_format,
+			     EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
+			     dst->bytes_per_row, dst->pixel_format,
+			     dr.wh.width, dr.wh.height);
 }
 
 
@@ -1893,11 +2151,11 @@ void epx_pixmap_alpha_area(epx_pixmap_t* src,epx_pixmap_t* dst, uint8_t alpha,
     if (alpha == EPX_ALPHA_TRANSPARENT)
 	return;
     else
-	epx_alpha_area(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y),
-		       src->bytes_per_row, src->pixel_format,
-		       EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
-		       dst->bytes_per_row, dst->pixel_format,
-		       alpha, dr.wh.width, dr.wh.height);
+	dst->func.alpha_area(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y),
+			     src->bytes_per_row, src->pixel_format,
+			     EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
+			     dst->bytes_per_row, dst->pixel_format,
+			     alpha, dr.wh.width, dr.wh.height);
 }
 
 /* copy src rectangle (x1,y1,w,h) to dst rectangle (x2,y2,w,h) 
@@ -2083,9 +2341,9 @@ void epx_pixmap_rotate_area(epx_pixmap_t* src, epx_pixmap_t* dst, float angle,
 			p = epixel_interp(src, xsf, ysf);
 		    else {
 			uint8_t* src_addr = EPX_PIXEL_ADDR(src,xs,ys);
-			p = src->unpack(src_addr);
+			p = src->func.unpack(src_addr);
 		    }
-		    put_apixel(dst_addr,dst->unpack,dst->pack,flags,p);
+		    put_apixel(dst_addr,dst->func.unpack,dst->func.pack,flags,p);
 		}
 	    }
 	}
@@ -2122,7 +2380,7 @@ void epx_pixmap_scale(epx_pixmap_t* src, epx_pixmap_t* dst,
 	    float xsf = x*xs;
 	    epx_pixel_t p = epixel_interp(src, xsf, ysf);
 	    uint8_t* addr = EPX_PIXEL_ADDR(dst,x,y);
-	    dst->pack(p, addr);
+	    dst->func.pack(p, addr);
 	    x++;
 	}
 	y++;
@@ -2144,8 +2402,8 @@ void epx_binop_area(uint8_t* src, int src_wb, epx_format_t src_pt,
     epx_pixel_unpack_t unpack_src;
     epx_pixel_pack_t   pack_dst;
 
-    src_psz = EPX_PIXEL_SIZE(src_pt);
-    dst_psz = EPX_PIXEL_SIZE(dst_pt);
+    src_psz = EPX_PIXEL_BYTE_SIZE(src_pt);
+    dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
     unpack_src = epx_pixel_unpack_func(src_pt);
     unpack_dst = epx_pixel_unpack_func(dst_pt);
     pack_dst   = epx_pixel_pack_func(dst_pt);
@@ -2296,7 +2554,7 @@ void epx_pixmap_operation_area(epx_pixmap_t* src,epx_pixmap_t* dst,
     case EPX_PIXEL_OP_COPY:     binop = binop_copy; break;
     case EPX_PIXEL_OP_ADD:
 	epx_binop_add_AREA(EPX_PIXEL_ADDR(src,sr.xy.x,sr.xy.y), 
-			   src->bytes_per_row, src->pixel_format,
+		   src->bytes_per_row, src->pixel_format,
 			   EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
 			   dst->bytes_per_row, dst->pixel_format,
 			   dr.wh.width, dr.wh.height);

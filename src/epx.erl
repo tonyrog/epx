@@ -39,7 +39,7 @@
 -export([pixmap_info/1, pixmap_info/2]).
 -export([pixmap_info_keys/0]).
 -export([pixmap_set_clip/2]).
--export([pixmap_fill/2]).
+-export([pixmap_fill/2, pixmap_fill/3]).
 -export([pixmap_copy_to/2]).
 -export([pixmap_flip/1]).
 -export([pixmap_scale/4]).
@@ -204,23 +204,12 @@
 			dashed | ntop | nright | nbottom | nleft |
 			none.
 
+-type epx_pixel_format_simple() ::
+	argb | rgba | abgr | bgra | rgb | bgr.
+
 -type epx_pixel_format() ::
-	%% FIXME fill with more formats(((((((
-	argb | a8r8g8b8 | xrgb | x8r8g8b8 |
-	rgba | r8g8b8a8 | rgbx | r8g8b8x8 |
-	abgr | a8b8g8r8 | xbgr | x8b8g8r8 |
-	bgra | b8g8r8a8 | bgrx | b8g8r8x8 |
-	rgb  | r8g8b8 |
-	bgr  | b8g8r8 |
-	'565' | r5g6b5 | '565BE' | r5g6b5BE |
-	'565LE' | r5g6b5LE |
-	'1555' | a1r5g5b |
-	gray8a8 |
-	gray16 |
-	a8 |
-	alpha8 |
-	gray8 |
-	efnt2.
+	epx_pixel_format_simple() | atom() | string() |
+	#epx_pixel_format {}.
 
 -type epx_pixmap_operation() :: 
 	clear | src | dst | src_over | dst_over | src_in | dst_in |
@@ -463,7 +452,16 @@ pixmap_set_clip(_Pixmap, _Rect) ->
 %% @end
 -spec pixmap_fill(Dst::epx_pixmap(), Color::epx_color()) -> void().
 
-pixmap_fill(_Dst, _Color) ->
+pixmap_fill(Dst, Color) ->
+    pixmap_fill(Dst, Color, []).
+
+%% @doc
+%%   Fill and blend the rectangle Dst with Color
+%% @end
+-spec pixmap_fill(Dst::epx_pixmap(), Color::epx_color(), Flags::epx_flags()) ->
+			 void().
+
+pixmap_fill(_Dst, _Color, _Flags) ->
     erlang:error(nif_not_loaded).
 
 %% @doc

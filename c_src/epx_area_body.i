@@ -34,8 +34,8 @@ void AREA_FUNCTION(uint8_t* src, int src_wb, epx_format_t src_pt,
     epx_pixel_unpack_t unpack_src;
     epx_pixel_pack_t   pack_dst;
 
-    src_psz = EPX_PIXEL_SIZE(src_pt);
-    dst_psz = EPX_PIXEL_SIZE(dst_pt);
+    src_psz = EPX_PIXEL_BYTE_SIZE(src_pt);
+    dst_psz = EPX_PIXEL_BYTE_SIZE(dst_pt);
     unpack_src = epx_pixel_unpack_func(src_pt);
     unpack_dst = epx_pixel_unpack_func(dst_pt);
     pack_dst   = epx_pixel_pack_func(dst_pt);

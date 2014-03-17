@@ -31,90 +31,265 @@ static struct {
     const epx_format_t pixel_format;
 } epx_format_table[] =
 {
-    { "argb",     EPX_FORMAT_ARGB },
-    { "a8r8g8b8", EPX_FORMAT_ARGB },
-
-    { "rgba",     EPX_FORMAT_RGBA },
-    { "r8g8b8a8", EPX_FORMAT_RGBA },
-
-    { "abgr",     EPX_FORMAT_ABGR },
-    { "a8b8g8r8", EPX_FORMAT_ABGR },
-
-    { "bgra",     EPX_FORMAT_BGRA },
-    { "b8g8r8a8", EPX_FORMAT_BGRA },
-
-    { "xrgb",     EPX_FORMAT_X8R8G8B8 },
-    { "x8r8g8b8", EPX_FORMAT_X8R8G8B8 },
-
-    { "rgbx",     EPX_FORMAT_R8G8B8X8 },
-    { "r8g8b8x8", EPX_FORMAT_R8G8B8X8 },
-
-    { "xbgr",     EPX_FORMAT_X8B8G8R8 },
-    { "x8b8g8r8", EPX_FORMAT_X8B8G8R8 },
-
-    { "bgrx",     EPX_FORMAT_B8G8R8X8 },
-    { "b8g8r8x8", EPX_FORMAT_B8G8R8X8 },
-
-    { "rgb",      EPX_FORMAT_RGB  },
-    { "r8g8b8",   EPX_FORMAT_RGB  },
-
-    { "bgr",      EPX_FORMAT_BGR  },
-    { "b8g8r8",   EPX_FORMAT_BGR  },
-
-    { "565",      EPX_FORMAT_R5G6B5_BE },
-    { "r5g6b5",   EPX_FORMAT_R5G6B5_BE },
-    { "565BE",    EPX_FORMAT_R5G6B5_BE },
-    { "r5g6b5BE", EPX_FORMAT_R5G6B5_BE },
-
-    { "565LE",    EPX_FORMAT_R5G6B5_LE },
-    { "r5g6b5LE", EPX_FORMAT_R5G6B5_LE },
-
-    { "b5g6r5",     EPX_FORMAT_B5G6R5_BE },
-    { "b5g6r5BE",   EPX_FORMAT_B5G6R5_BE },
-    { "b5g6r5LE",   EPX_FORMAT_B5G6R5_LE },
-
-    { "1555",     EPX_FORMAT_A1R5G5B5 },
-    { "a1r5g5b",  EPX_FORMAT_A1R5G5B5 },
-
-    { "555",      EPX_FORMAT_R5G5B5X1 },
-    { "r5g5b5_1", EPX_FORMAT_R5G5B5X1 },
-    { "_1r5g5b5", EPX_FORMAT_X1R5G5B5 },
-
-    { "gray8a8", EPX_FORMAT_A8L8 },
-    { "gray16",  EPX_FORMAT_L16 },
-    { "a8",      EPX_FORMAT_A8 },
-    { "alpha8",  EPX_FORMAT_A8 },
-    { "r8",      EPX_FORMAT_R8 },
-    { "g8",      EPX_FORMAT_G8 },
-    { "b8",      EPX_FORMAT_B8 },
-    { "gray8",   EPX_FORMAT_L8 },
-    { "efnt2",   EPX_FORMAT_EFNT2 },
-    { "a8l8",    EPX_FORMAT_A8L8 },
+    // special format names
+    { "[565]",         EPX_FORMAT_R5G6B5_BE },
+    { "[565]/big",     EPX_FORMAT_R5G6B5_BE },
+    { "[565]/little",  EPX_FORMAT_R5G6B5_LE },
+    { "[1555]",        EPX_FORMAT_A1R5G5B5_BE },
+    { "[1555]/big",    EPX_FORMAT_A1R5G5B5_BE },
+    { "[1555]/little", EPX_FORMAT_A1R5G5B5_LE },
+    { "[555]",         EPX_FORMAT_R5G5B5X1_BE },
+    { "[555]/big",     EPX_FORMAT_R5G5B5X1_BE },
+    { "[555]/little",  EPX_FORMAT_R5G5B5X1_LE },
+    { "[efnt2]",       EPX_FORMAT_EFNT2 },
     { 0, 0 }
 };
 
+//
+// "parse" a name string and return a "matching" format
+// r[<n>] g[<n>] b[<n>] a[<n>] x[<n>] _[<n>] g[<n>] l[<n>]
+// /little /big /native
+//
+#define CI_A 0
+#define CI_L 1
+#define CI_R 2
+#define CI_G 3
+#define CI_B 4
+#define CI_RGB(r,g,b) \
+    ((c_size[CI_R]==(r)) && (c_size[CI_G]==(g)) && (c_size[CI_B]==(b)))
+#define CI_TEST(r,g,b) \
+    (((c_size[CI_R] > 0) == (r)) &&		\
+     ((c_size[CI_G] > 0) == (g)) &&		\
+     ((c_size[CI_B] > 0) == (b)))
+
+
 epx_format_t epx_pixel_format_from_name(char* name)
 {
-    int i = 0;
+    char* ptr = name;
+    int   c_offs[5];
+    int   c_size[5];
+    int   ci     = -1;
+    int   fmt    = -1;
+    int   bgr    = 0;
+    int   alpha  = 0;
+    int   alpha_first = 0;
+    int   little = 0;
+    int   offs   = 0;   // also bits per pixel
+    int   i;
 
+    // scan "special" formats
+    i = 0;
     while(epx_format_table[i].name) {
 	if (strcasecmp(name, epx_format_table[i].name) == 0)
 	    return epx_format_table[i].pixel_format;
 	i++;
     }
-    return EPX_FORMAT_INVALID;
+
+    for (i = 0; i < 5; i++) {
+	c_offs[i] = -1;
+	c_size[i] = 0;
+    }
+
+    // handle parsable formats
+    while(*ptr) {
+	switch(*ptr++) {
+	case 'r': ci=CI_R; break;
+	case 'g': ci=CI_G; break;
+	case 'b': ci=CI_B; break;
+	case 'x': ci=CI_A; alpha=0; break;
+	case '_': ci=CI_A; alpha=0; break;
+	case 'a': ci=CI_A; alpha=1; break;
+	case 'l': ci=CI_L; break;
+	case '/':
+	    if (strcmp(ptr, "big") == 0) {
+		little = 0;
+		goto done;
+	    }
+	    else if (strcmp(ptr, "little") == 0) {
+		little = 1;
+		goto done;
+	    }
+	    else if (strcmp(ptr, "native") == 0) {
+#if BYTE_ORDER == BIG_ENDIAN
+		little = 0;
+#elif BYTE_ORDER == LITTLE_ENDIAN
+		little = 1;
+#else
+		return EPX_FORMAT_INVALID;
+#endif
+		goto done;
+	    }
+	    else
+		return EPX_FORMAT_INVALID;
+	    break;
+	default:
+	    return EPX_FORMAT_INVALID;
+	}
+	
+	c_offs[ci] = offs;
+	c_size[ci] = 8;
+	if ( ((*ptr >= '0') && (*ptr <= '9')) ) {
+	    c_size[ci] = (*ptr++-'0');
+	    if ( ((*ptr >= '0') && (*ptr <= '9')) ) {
+		c_size[ci] = c_size[ci]*10 + (*ptr++-'0');
+	    }
+	}
+	offs += c_size[ci];
+    }
+
+done:
+    switch(offs) {
+    case 7:  offs=8; break;
+    case 8:  break;
+    case 15: offs=16; break;
+    case 16: break;
+    case 24: break;
+    case 32: break;
+    default: return EPX_FORMAT_INVALID;
+    }
+
+    if (c_offs[CI_A] >= 0) {
+	alpha_first = (c_offs[CI_A] == 0);
+    }
+
+    if ((c_offs[CI_B]>=0) &&
+	(c_offs[CI_B] < c_offs[CI_G]) && 
+	(c_offs[CI_G] < c_offs[CI_R])) {
+	bgr = 1;
+    }
+
+    if (CI_RGB(2,3,2))        fmt = EPX_FMT_RGB232;
+    else if (CI_RGB(3,3,2))   fmt = EPX_FMT_RGB332;
+    else if (CI_RGB(5,6,5))   fmt = EPX_FMT_RGB565;
+    else if (CI_TEST(1,0,0))  fmt = EPX_FMT_RED;
+    else if (CI_TEST(0,1,0))  fmt = EPX_FMT_GREEN;
+    else if (CI_TEST(0,0,1))  fmt = EPX_FMT_GREEN;
+    else if ((c_size[CI_R]==c_size[CI_G]) && (c_size[CI_G]==c_size[CI_B])) {
+	switch(c_size[CI_R]) {
+	case 4:  fmt = EPX_FMT_RGB4; break;
+	case 5:  fmt = EPX_FMT_RGB5; break;
+	case 8:  fmt = EPX_FMT_RGB8; break;
+	case 10: fmt = EPX_FMT_RGB10; break;
+	case 12: fmt = EPX_FMT_RGB12; break;
+	case 16: fmt = EPX_FMT_RGB16; break;
+	default: return EPX_FORMAT_INVALID;
+	}
+    }
+    else
+	return EPX_FORMAT_INVALID;
+    return EPX_FMT(fmt,bgr,alpha,alpha_first,little,offs);
 }
 
-char* epx_pixel_format_to_name(epx_format_t fmt)
+// write format characters and sizes
+static inline void put_fmt_size(char** pptr, char* eptr, char chan, int size)
 {
+    char* ptr = *pptr;
+
+    if (size > 0) {
+	if (ptr < eptr) *ptr = chan;
+	ptr++;
+	if (size != 8) {
+	    if ((size >= 10) && (size <= 99)) {
+		if (ptr < eptr) *ptr = (size / 10) + '0';
+		ptr++;
+		if (ptr < eptr)	*ptr = (size % 10) + '0';
+		ptr++;
+	    }
+	    else if ((size > 0) && (size < 10)) {
+		if (ptr < eptr) *ptr = size + '0';
+		ptr++;
+	    }
+	}
+    }
+    *pptr = ptr;
+}
+
+// buffer must be aleast 4*4+7+1 bytes long
+char* epx_pixel_format_to_name(epx_format_t fmt,char*buf,size_t size)
+{
+    char* ptr = buf;
+    char* eptr = buf+size-1;
     int i = 0;
+    int bpp = 0;
+    int a_size = 0;
+    int r_size = 0;
+    int g_size = 0;
+    int b_size = 0;
+    int l_size = 0;
 
     while(epx_format_table[i].name) {
 	if (epx_format_table[i].pixel_format == fmt)
 	    return (char*) epx_format_table[i].name;
 	i++;
     }
-    return 0;
+
+    bpp = EPX_PIXEL_BIT_SIZE(fmt);
+    if (fmt & EPX_F_Alpha) {
+	switch(EPX_PIXEL_FMT(fmt)) {
+	case EPX_FMT_RGB4: a_size = bpp - 12; break;
+	case EPX_FMT_RGB5: a_size = bpp - 15; break;
+	case EPX_FMT_RGB8: a_size = bpp - 24; break;
+	case EPX_FMT_RGB10: a_size = bpp - 30; break;
+	case EPX_FMT_GRAY: if (bpp>8) a_size=8; break;
+	case EPX_FMT_RED:  if (bpp>8) a_size=8; break;
+	case EPX_FMT_GREEN: if (bpp>8) a_size=8; break;
+	case EPX_FMT_ALPHA: a_size=bpp; break;
+	default: break;
+	}
+    }
+    switch(EPX_PIXEL_FMT(fmt)) {
+    case EPX_FMT_RGB4: r_size = g_size = b_size = 4; break;
+    case EPX_FMT_RGB5: r_size = g_size = b_size = 5; break;
+    case EPX_FMT_RGB8: r_size = g_size = b_size = 8; break;
+    case EPX_FMT_RGB10: r_size = g_size = b_size = 10; break;
+    case EPX_FMT_RGB232: r_size = 2; g_size = 3; b_size = 2; break;
+    case EPX_FMT_RGB332: r_size = 3; g_size = 3; b_size = 2; break;
+    case EPX_FMT_RGB565: r_size = 5; g_size = 6; b_size = 5; break;
+    case EPX_FMT_GRAY:  l_size = bpp - a_size; break;
+    case EPX_FMT_RED:   r_size = bpp - a_size; break;
+    case EPX_FMT_GREEN: g_size = bpp - a_size; break;
+    case EPX_FMT_BLUE:  b_size = bpp - a_size; break;
+    default: break;
+    }
+
+    if (a_size && (fmt & EPX_F_AFirst)) {
+	if (fmt & EPX_F_Alpha)
+	    put_fmt_size(&ptr, eptr, 'a', a_size);
+	else
+	    put_fmt_size(&ptr, eptr, 'x', a_size);
+    }
+
+    put_fmt_size(&ptr, eptr, 'l', l_size);
+    if (fmt & EPX_F_Bgr) {
+	put_fmt_size(&ptr, eptr, 'b', b_size);
+	put_fmt_size(&ptr, eptr, 'g', g_size);
+	put_fmt_size(&ptr, eptr, 'r', r_size);
+    }
+    else {
+	put_fmt_size(&ptr, eptr, 'r', b_size);
+	put_fmt_size(&ptr, eptr, 'g', g_size);
+	put_fmt_size(&ptr, eptr, 'b', r_size);
+    }
+
+    if (a_size && !(fmt & EPX_F_AFirst)) {
+	if (fmt & EPX_F_Alpha)
+	    put_fmt_size(&ptr, eptr, 'a', a_size);
+	else
+	    put_fmt_size(&ptr, eptr, 'x', a_size);
+    }
+
+    if (fmt & EPX_F_Little) {
+	if (ptr < eptr) *ptr = '/';
+	ptr++;
+	if ((eptr-ptr) >= 6)
+	    strcpy(ptr, "little");
+	ptr += 6;
+    }
+    if (ptr < eptr) {
+	*ptr = '\0';
+	return buf;
+    }
+    return NULL;
 }
 
 
@@ -123,7 +298,7 @@ static struct {
     const epx_pixel_t pixel;
 } epx_color_table[] =
 {
-    {"aliceBlue",    EPX_PIXEL_RGB(0xF0,0xF8,0xFF)  },
+    {"aliceBlue",      EPX_PIXEL_RGB(0xF0,0xF8,0xFF)  },
     {"antiqueWhite", EPX_PIXEL_RGB(0xFA,0xEB,0xD7)  },
     {"aqua",	     EPX_PIXEL_RGB(0x00,0xFF,0xFF)  },
     {"aquamarine",   EPX_PIXEL_RGB(0x7F,0xFF,0xD4)  },
@@ -273,7 +448,7 @@ static struct {
     { 0, EPX_PIXEL_RGB(0,0,0)}
 };
 
-
+// convert hex intege format 0xaarrggbb or color name to pixel
 epx_pixel_t epx_pixel_from_string(char* name)
 {
     char* eptr;
@@ -427,14 +602,14 @@ epx_pixel_t epx_unpack_r5g5b5a1(uint8_t* src)
     return p;
 }
 
-epx_pixel_t epx_unpack_r5g5b5x1(uint8_t* src)
+epx_pixel_t epx_unpack_r5g5b5a1_le(uint8_t* src)
 {
     epx_pixel_t p;
-    uint16_t v = src[0]<<8 | src[1];
+    uint16_t v = src[1]<<8 | src[0];
     p.r = (v >> 8) & 0xf8;
     p.g = (v >> 3) & 0xf8;
     p.b = (v << 2) & 0xf8;
-    p.a = 255;
+    p.a = (v&1) ? 255 : 0;
     return p;
 }
 
@@ -449,14 +624,14 @@ epx_pixel_t epx_unpack_a1r5g5b5(uint8_t* src)
     return p;
 }
 
-epx_pixel_t epx_unpack_x1r5g5b5(uint8_t* src)
+epx_pixel_t epx_unpack_a1r5g5b5_le(uint8_t* src)
 {
     epx_pixel_t p;
-    uint16_t v = src[0]<<8 | src[1];
+    uint16_t v = src[1]<<8 | src[0];
     p.r = (v >> 7) & 0xf8;
     p.g = (v >> 2) & 0xf8;
     p.b = (v << 3) & 0xf8;
-    p.a = 255;
+    p.a = (v >> 15) ? 255 : 0;
     return p;
 }
 
@@ -539,21 +714,41 @@ epx_pixel_unpack_t epx_pixel_unpack_func(epx_format_t fmt)
     case EPX_FORMAT_B8:       return epx_unpack_b8;
     case EPX_FORMAT_L8:       return epx_unpack_l8;
     case EPX_FORMAT_R8G8B8:   return epx_unpack_r8g8b8;
-    case EPX_FORMAT_R8G8B8A8: return epx_unpack_r8g8b8a8;
-    case EPX_FORMAT_A8R8G8B8: return epx_unpack_a8r8g8b8;
     case EPX_FORMAT_B8G8R8:   return epx_unpack_b8g8r8;
-    case EPX_FORMAT_B8G8R8A8: return epx_unpack_b8g8r8a8;
-    case EPX_FORMAT_A8B8G8R8: return epx_unpack_a8b8g8r8;
+
+    case EPX_FORMAT_R8G8B8A8_BE: return epx_unpack_r8g8b8a8;
+    case EPX_FORMAT_A8B8G8R8_LE: return epx_unpack_r8g8b8a8;
+    case EPX_FORMAT_R8G8B8X8_BE: return epx_unpack_r8g8b8a8;
+    case EPX_FORMAT_X8B8G8R8_LE: return epx_unpack_r8g8b8a8;
+
+    case EPX_FORMAT_A8R8G8B8_BE: return epx_unpack_a8r8g8b8;
+    case EPX_FORMAT_B8G8R8A8_LE: return epx_unpack_a8r8g8b8;
+    case EPX_FORMAT_X8R8G8B8_BE: return epx_unpack_a8r8g8b8;
+    case EPX_FORMAT_B8G8R8X8_LE: return epx_unpack_a8r8g8b8;
+
+    case EPX_FORMAT_B8G8R8A8_BE: return epx_unpack_b8g8r8a8;
+    case EPX_FORMAT_A8R8G8B8_LE: return epx_unpack_b8g8r8a8;
+    case EPX_FORMAT_B8G8R8X8_BE: return epx_unpack_b8g8r8a8;
+    case EPX_FORMAT_X8R8G8B8_LE: return epx_unpack_b8g8r8a8;
+
+    case EPX_FORMAT_A8B8G8R8_BE: return epx_unpack_a8b8g8r8;
+    case EPX_FORMAT_R8G8B8A8_LE: return epx_unpack_a8b8g8r8;
+    case EPX_FORMAT_X8B8G8R8_BE: return epx_unpack_a8b8g8r8;
+    case EPX_FORMAT_R8G8B8X8_LE: return epx_unpack_a8b8g8r8;
+
     case EPX_FORMAT_A8Y8U8V8: return epx_unpack_a8y8u8v8;
-    case EPX_FORMAT_R5G5B5A1: return epx_unpack_r5g5b5a1;
-    case EPX_FORMAT_R5G5B5X1: return epx_unpack_r5g5b5x1;
-    case EPX_FORMAT_A1R5G5B5: return epx_unpack_a1r5g5b5;
-    case EPX_FORMAT_X1R5G5B5: return epx_unpack_x1r5g5b5;
+    case EPX_FORMAT_R5G5B5A1_BE: return epx_unpack_r5g5b5a1;
+    case EPX_FORMAT_R5G5B5X1_BE: return epx_unpack_r5g5b5a1;
+    case EPX_FORMAT_R5G5B5X1_LE: return epx_unpack_r5g5b5a1_le;
+    case EPX_FORMAT_A1R5G5B5_BE: return epx_unpack_a1r5g5b5;
+    case EPX_FORMAT_X1R5G5B5_BE: return epx_unpack_a1r5g5b5;
+    case EPX_FORMAT_A1R5G5B5_LE: return epx_unpack_a1r5g5b5_le;
+    case EPX_FORMAT_X1R5G5B5_LE: return epx_unpack_a1r5g5b5_le;
     case EPX_FORMAT_R5G6B5_BE: return epx_unpack_r5g6b5_be;
     case EPX_FORMAT_R5G6B5_LE: return epx_unpack_r5g6b5_le;
     case EPX_FORMAT_B5G6R5_BE: return epx_unpack_b5g6r5_be;
     case EPX_FORMAT_B5G6R5_LE: return epx_unpack_b5g6r5_le;
-    case EPX_FORMAT_A8L8:     return epx_unpack_a8l8;
+    case EPX_FORMAT_A8L8_BE:   return epx_unpack_a8l8;
     default:
 	EPX_DBGFMT("epx_pixel_unpack_func: undefined func: %x", fmt);
 	return 0;
@@ -629,32 +824,30 @@ void epx_pack_a8b8g8r8(epx_pixel_t p, uint8_t* dst)
 
 void epx_pack_r5g5b5a1(epx_pixel_t p, uint8_t* dst)
 {
-    uint16_t v = ((p.r>>3)<<11)|((p.g>>3)<<6)|
-	((p.b>>3) <<1)|((p.a)!=0);
+    uint16_t v = ((p.r>>3)<<11)|((p.g>>3)<<6)|((p.b>>3) <<1)|((p.a)!=0);
     dst[0] = (v >> 8);
     dst[1] = v & 0xff;
 }
 
-void epx_pack_r5g5b5x1(epx_pixel_t p, uint8_t* dst)
+void epx_pack_r5g5b5a1_le(epx_pixel_t p, uint8_t* dst)
 {
-    uint16_t v = ((p.r>>3)<<11)|((p.g>>3)<<6)|((p.b>>3) <<1);
-    dst[0] = (v >> 8);
-    dst[1] = v & 0xff;
+    uint16_t v = ((p.r>>3)<<11)|((p.g>>3)<<6)|((p.b>>3) <<1)|((p.a)!=0);
+    dst[1] = (v >> 8);
+    dst[0] = v & 0xff;
 }
 
 void epx_pack_a1r5g5b5(epx_pixel_t p, uint8_t* dst)
 {
-    uint16_t v = ((p.r>>3)<<10)|((p.g>>3)<<5)|
-	((p.b>>3))|(((p.a)!=0)<<15);
+    uint16_t v = ((p.r>>3)<<10)|((p.g>>3)<<5)|((p.b>>3))|(((p.a)!=0)<<15);
     dst[0] = (v >> 8);
     dst[1] = v & 0xff;
 }
 
-void epx_pack_x1r5g5b5(epx_pixel_t p, uint8_t* dst)
+void epx_pack_a1r5g5b5_le(epx_pixel_t p, uint8_t* dst)
 {
-    uint16_t v = ((p.r>>3)<<10)|((p.g>>3)<<5)|((p.b>>3));
-    dst[0] = (v >> 8);
-    dst[1] = v & 0xff;
+    uint16_t v = ((p.r>>3)<<10)|((p.g>>3)<<5)|((p.b>>3))|(((p.a)!=0)<<15);
+    dst[1] = (v >> 8);
+    dst[0] = v & 0xff;
 }
 
 void epx_pack_r5g6b5_be(epx_pixel_t p, uint8_t* dst)
@@ -717,31 +910,42 @@ epx_pixel_pack_t epx_pixel_pack_func(epx_format_t fmt)
     case EPX_FORMAT_B8:       return epx_pack_b8;
     case EPX_FORMAT_L8:       return epx_pack_l8;
     case EPX_FORMAT_R8G8B8:   return epx_pack_r8g8b8;
-
-    case EPX_FORMAT_R8G8B8A8: return epx_pack_r8g8b8a8;
-    case EPX_FORMAT_R8G8B8X8: return epx_pack_r8g8b8a8;
-
-    case EPX_FORMAT_A8R8G8B8: return epx_pack_a8r8g8b8;
-    case EPX_FORMAT_X8R8G8B8: return epx_pack_a8r8g8b8;
-
     case EPX_FORMAT_B8G8R8:   return epx_pack_b8g8r8;
 
-    case EPX_FORMAT_B8G8R8A8: return epx_pack_b8g8r8a8;
-    case EPX_FORMAT_B8G8R8X8: return epx_pack_b8g8r8a8;
 
-    case EPX_FORMAT_A8B8G8R8: return epx_pack_a8b8g8r8;
-    case EPX_FORMAT_X8B8G8R8: return epx_pack_a8b8g8r8;
+    case EPX_FORMAT_R8G8B8A8_BE: return epx_pack_r8g8b8a8;
+    case EPX_FORMAT_A8B8G8R8_LE: return epx_pack_r8g8b8a8;
+    case EPX_FORMAT_R8G8B8X8_BE: return epx_pack_r8g8b8a8;
+    case EPX_FORMAT_X8B8G8R8_LE: return epx_pack_r8g8b8a8;
+
+    case EPX_FORMAT_A8R8G8B8_BE: return epx_pack_a8r8g8b8;
+    case EPX_FORMAT_B8G8R8A8_LE: return epx_pack_a8r8g8b8;
+    case EPX_FORMAT_X8R8G8B8_BE: return epx_pack_a8r8g8b8;
+    case EPX_FORMAT_B8G8R8X8_LE: return epx_pack_a8r8g8b8;
+
+    case EPX_FORMAT_B8G8R8A8_BE: return epx_pack_b8g8r8a8;
+    case EPX_FORMAT_A8R8G8B8_LE: return epx_pack_b8g8r8a8;
+    case EPX_FORMAT_B8G8R8X8_BE: return epx_pack_b8g8r8a8;
+    case EPX_FORMAT_X8R8G8B8_LE: return epx_pack_b8g8r8a8;
+
+    case EPX_FORMAT_A8B8G8R8_BE: return epx_pack_a8b8g8r8;
+    case EPX_FORMAT_R8G8B8A8_LE: return epx_pack_a8b8g8r8;
+    case EPX_FORMAT_X8B8G8R8_BE: return epx_pack_a8b8g8r8;
+    case EPX_FORMAT_R8G8B8X8_LE: return epx_pack_a8b8g8r8;
 
     case EPX_FORMAT_A8Y8U8V8: return epx_pack_a8y8u8v8;
-    case EPX_FORMAT_R5G5B5A1: return epx_pack_r5g5b5a1;
-    case EPX_FORMAT_R5G5B5X1: return epx_pack_r5g5b5x1;
-    case EPX_FORMAT_A1R5G5B5: return epx_pack_a1r5g5b5;
-    case EPX_FORMAT_X1R5G5B5: return epx_pack_x1r5g5b5;
+    case EPX_FORMAT_R5G5B5A1_BE: return epx_pack_r5g5b5a1;
+    case EPX_FORMAT_R5G5B5X1_BE: return epx_pack_r5g5b5a1;
+    case EPX_FORMAT_R5G5B5A1_LE: return epx_pack_r5g5b5a1_le;
+    case EPX_FORMAT_R5G5B5X1_LE: return epx_pack_r5g5b5a1_le;
+
+    case EPX_FORMAT_A1R5G5B5_BE: return epx_pack_a1r5g5b5;
+    case EPX_FORMAT_X1R5G5B5_BE: return epx_pack_a1r5g5b5;
     case EPX_FORMAT_R5G6B5_BE:   return epx_pack_r5g6b5_be;
     case EPX_FORMAT_R5G6B5_LE:   return epx_pack_r5g6b5_le;
     case EPX_FORMAT_B5G6R5_BE:   return epx_pack_b5g6r5_be;
     case EPX_FORMAT_B5G6R5_LE:   return epx_pack_b5g6r5_le;
-    case EPX_FORMAT_A8L8:     return epx_pack_a8l8;
+    case EPX_FORMAT_A8L8_BE:     return epx_pack_a8l8;
     default:
 	EPX_DBGFMT("epx_pixel_pack_func: undefined func: %x", fmt);
 	return 0;

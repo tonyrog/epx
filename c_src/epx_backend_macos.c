@@ -529,6 +529,7 @@ static int carbon_pix_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 	CGColorSpaceRelease(pe->colorspace);
 	CGDataProviderRelease(pe->provider);
 	epx_object_unlink(&backend->pixmap_list, pixmap);
+	// FIXME: free(pe) ? 
 	pixmap->opaque = 0;
 	pixmap->backend = 0;
     }

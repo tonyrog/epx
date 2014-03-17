@@ -71,7 +71,8 @@ void epx_pixmap_draw_point(epx_pixmap_t* pic, epx_gc_t* gc, int x, int y)
 	return;
     dst = EPX_PIXEL_ADDR(pic,x,y);
     if (!gc) gc = &epx_default_gc;
-    put_apixel(dst,pic->unpack,pic->pack,gc->line_style,gc->foreground_color);
+    put_apixel(dst,pic->func.unpack,pic->func.pack,
+	       gc->line_style,gc->foreground_color);
 }
 
 

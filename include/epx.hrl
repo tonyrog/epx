@@ -72,7 +72,7 @@
 
 -record(epx_pixel_format,
 	{
-	  name         :: atom(),          %% optional name
+	  name         :: string()|atom(), %% optional name
 	  format       :: epx_px_format(), %% various channel size
 	  bgr          :: boolean(),       %% bgr or rgb channel order
 	  alpha_first  :: boolean(),       %% alpha first or last channel

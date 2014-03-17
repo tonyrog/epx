@@ -527,11 +527,11 @@ static void fb_mod_vinfo(epx_dict_t *param, struct fb_var_screeninfo *vinfo)
     if (epx_dict_lookup_string(param,"pixel_format",&string_param,NULL) != -1) {
 	epx_format_t fmt = epx_pixel_format_from_name(string_param);
 	if (fmt != EPX_FORMAT_INVALID)
-	    vinfo->bits_per_pixel = EPX_PIXEL_SIZE(fmt)*8;
+	    vinfo->bits_per_pixel = EPX_PIXEL_BIT_SIZE(fmt);
     }
     else {
 	if (epx_dict_lookup_integer(param,  "pixel_type", &int_param) != -1) {
-	    vinfo->bits_per_pixel = EPX_PIXEL_SIZE(int_param)*8;
+	    vinfo->bits_per_pixel = EPX_PIXEL_BIT_SIZE(int_param);
 	}
     }
 
