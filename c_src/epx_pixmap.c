@@ -1496,13 +1496,13 @@ static void init_pixel_area_functions(epx_pixmap_functions_t* func,
 	func->fill_area_blend = fill_area_blend_rgb24;
 	func->blend_area      = epx_copy_area;  // no alpha for blending
 	func->alpha_area      = alpha_area_generic;
-	func->fade_area       = fade_area_generic;
+	func->fade_area       = alpha_area_generic;  // src alpha = 1
 	break;
     case EPX_FORMAT_B8G8R8:  // BGR
 	func->fill_area_blend = fill_area_blend_bgr24;
 	func->blend_area      = epx_copy_area;  // no src alpha
 	func->alpha_area      = alpha_area_generic;
-	func->fade_area       = fade_area_generic;
+	func->fade_area       = alpha_area_generic;  // src alpha = 1
 	break;
     case EPX_FORMAT_A8R8G8B8_BE:  // ARGB
     case EPX_FORMAT_B8G8R8A8_LE:

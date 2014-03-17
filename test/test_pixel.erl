@@ -210,30 +210,37 @@ calc_pixel(blend,S,D,_F,_C,AF,BF) ->
 calc_pixel(shadow,S,D,_F,_C,_AF,BF) ->
     G = luminance(S),
     set_alpha(pixel_shadow(G, D), BF);
-calc_pixel(shadow_blend,_S={0,_,_,_},D,_F,_C,_AF,BF) ->
-    set_alpha(D,BF);
-calc_pixel(shadow_blend,S={255,_,_,_},D,_F,_C,_AF,BF) ->
-    G = luminance(S),
-    P = pixel_shadow(G, D),
-    set_alpha(P, BF);
+
 calc_pixel(shadow_blend,S,D,_F,_C,_AF,BF) ->
-    D1 = pixel_blend(element(1,S),S,D),
-    G = luminance(D1),
-    P = pixel_shadow(G, D1),
+    Sa = element(1,S),
+    P  = if Sa =:= 0 -> D;
+	    Sa =:= 255 ->
+		 G = luminance(S),
+		 pixel_shadow(G, D);
+	    true ->
+		 D1 = pixel_blend(Sa,S,D),
+		 G = luminance(D1),
+		 pixel_shadow(G, D1)
+	 end,
     set_alpha(P, BF);
 calc_pixel(alpha,S,D,F,_C,_AF,_BF) ->
     Fu = fix_8_8(F),
     {_,R,G,B} = pixel_blend(Fu,S,D),
     {element(1,D),R,G,B};
 calc_pixel(fade,S,D,F,_C,AF,BF) ->
-    Sa = element(1,S),
-    P = case fix_8_8(F) of
-	    0   -> D;
-	    255 when Sa =:= 255 -> S;
-	    255 -> pixel_blend(Sa,S,D);
-	    Fu ->
-		A = (Sa*Fu) div 256,
-		pixel_blend(A,S,D)
+    Fu = fix_8_8(F),
+    P = if not AF#epx_pixel_format.alpha ->
+		pixel_blend(Fu,S,D);
+	   true ->
+		Sa = element(1,S),
+		if Fu =:= 0 -> D;
+		   Fu =:= 255,Sa =:= 255 -> S;
+		   Fu =:= 255 -> pixel_blend(Sa,S,D);
+		   %% Sa =:= 255 -> pixel_blend(Fu,S,D);
+		   true ->
+			A = (Sa*Fu) div 256,
+			pixel_blend(A,S,D)
+		end
 	end,
     set_alpha(P, BF);
 calc_pixel(color,S,_D,F,Color,_AF,BF) ->
