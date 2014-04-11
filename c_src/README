@@ -59,7 +59,7 @@ CLEAR	 0				0		- Transparent
 
 SRC	 A*Aa				Aa		-
 
-DST	 B*Bb				Bb
+DST	 B*Ba				Ba
 
 SRC-OVER Aa*A+(1-Aa)*B*Ba		Aa+Ba-Aa*Ba
 
