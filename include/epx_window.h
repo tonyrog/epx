@@ -23,7 +23,6 @@ struct _epx_backend_t;
 typedef struct _epx_window_t {
     EPX_OBJECT_MEMBERS(struct _epx_window_t);
     struct _epx_backend_t* backend;       // backend pointer if attached
-    int (*detach)(struct _epx_window_t*); // detach function
     void* owner;                          // user field (for erlang pid)
     void* user;                           // extra user data
     uint32_t mask;                        // event mask, FIXME lock!

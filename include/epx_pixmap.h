@@ -71,7 +71,6 @@ typedef struct _epx_pixmap_functions_t {
 typedef struct _epx_pixmap_t {
     EPX_OBJECT_MEMBERS(struct _epx_pixmap_t);
     struct _epx_backend_t* backend;  /* backend pointer if attached */
-    int (*detach)(struct _epx_pixmap_t*); // detach function
     struct _epx_pixmap_t* parent;         // parent pixmap (for sub_pixmap)
     void* user;                           // extra user data
     /*! Clip rectangle restrict pixels drawn within boundary */

@@ -24,8 +24,7 @@
 
 #include "epx_hash.h"
 #include "epx_debug.h"
-
-
+#include "epx_lock.h"
 
 typedef enum
 {
@@ -71,17 +70,24 @@ typedef struct _epx_object_t {
     EPX_OBJECT_MEMBERS(struct _epx_object_t);
 } epx_object_t;
 
+typedef struct _epx_object_list_t {
+    epx_lock_t    lock;
+    unsigned      length;
+    epx_object_t* first;
+} epx_object_list_t;
+
 static inline void epx_object_ref(void* arg)
 {
     epx_object_t* obj = (epx_object_t*) arg;
-    if (obj)
-	obj->refc++;
+    // FIXME: make atomic
+    if (obj) obj->refc++;
 }
 
 static inline void epx_object_unref(void* arg)
 {
     epx_object_t* obj = (epx_object_t*) arg;
     if (obj) {
+	// FIXME: make atomic
 	if (obj->refc <= 1) {
 	    if (obj->release)
 		obj->release(obj);
@@ -91,20 +97,41 @@ static inline void epx_object_unref(void* arg)
     }
 }
 
-static inline void epx_object_link(void* list, void* obj)
+static inline void epx_object_list_init(epx_object_list_t* list)
 {
-    ((epx_object_t*)obj)->next = (epx_object_t*)*((void**)list);
-    *((void**)list) = obj;
+    list->lock = epx_lock_create();
+    list->first = (epx_object_t*) 0;
+    list->length = 0;
 }
 
-static inline void epx_object_unlink(void* list, void* obj)
+static inline void epx_object_link_(epx_object_list_t* list, epx_object_t* obj)
 {
-    epx_object_t** pp = (epx_object_t**)list;
-    while((*pp) && (*pp) != (epx_object_t*)obj) {
+    epx_lock_lock(list->lock);
+    obj->next = list->first;
+    list->first = obj;
+    list->length++;
+    epx_lock_unlock(list->lock);
+}
+
+#define epx_object_link(list, obj) epx_object_link_(list, (epx_object_t*) (obj))
+
+
+static inline void epx_object_unlink_(epx_object_list_t* list, epx_object_t* obj)
+{
+    epx_object_t** pp = &list->first;
+
+    epx_lock_lock(list->lock);
+    while((*pp) && ((*pp) != obj)) {
 	pp = &(*pp)->next;
     }
-    if ((*pp) == (epx_object_t*)obj)
-	*pp = ((epx_object_t*)obj)->next;
+    if ((*pp) == obj) {
+	list->length--;
+	*pp = obj->next;
+	obj->next = (epx_object_t*) 0;
+    }
+    epx_lock_unlock(list->lock);
 }
+
+#define epx_object_unlink(list, obj) epx_object_unlink_(list, (epx_object_t*) (obj))
 
 #endif

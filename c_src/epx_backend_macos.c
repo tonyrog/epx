@@ -87,6 +87,7 @@ typedef struct {
 
 
 epx_backend_t* carbon_init(epx_dict_t* param);
+int carbon_upgrade(epx_backend_t* be);
 
 static int carbon_finish(epx_backend_t*);
 static int carbon_pix_attach(epx_backend_t*, epx_pixmap_t* pic);
@@ -114,7 +115,7 @@ static epx_callbacks_t carbon_callbacks =
     .pix_detach = carbon_pix_detach,
     .pix_draw   = carbon_pix_draw,
     .win_attach = carbon_win_attach,
-    .win_deatch = carbon_win_detach,
+    .win_detach = carbon_win_detach,
     .evt_attach = carbon_evt_attach,
     .evt_detach = carbon_evt_detach,
     .evt_read   = carbon_evt_read,
@@ -366,8 +367,8 @@ epx_backend_t* carbon_init(epx_dict_t* param)
     be->b.pending = 0;
     be->b.opengl = 0;
     be->b.use_opengl = 0;
-    be->b.pixmap_list = 0;
-    be->b.window_list = 0;
+    epx_object_list_init(&be->b.pixmap_list);
+    epx_object_list_init(&be->b.window_list);
     be->b.event = EPX_INVALID_HANDLE;
 
     if (epx_dict_lookup_integer(param, "use_opengl", &int_param) != -1)
@@ -389,6 +390,13 @@ epx_backend_t* carbon_init(epx_dict_t* param)
 
     return (epx_backend_t*) &(be->b);
 }
+
+int carbon_upgrade(epx_backend_t* backend)
+{
+    backend->cb = &carbon_callbacks;
+    return 0;
+}
+
 
 /* return the backend event handle */
 static EPX_HANDLE_T carbon_evt_attach(epx_backend_t* backend)

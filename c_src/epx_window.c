@@ -21,14 +21,16 @@
 #include "../include/epx_object.h"
 #include "../include/epx_dict.h"
 #include "../include/epx_window.h"
+#include "../include/epx_backend.h"
 
 void EPX_WINDOW_TYPE_RELEASE(void* arg)
 {
-    epx_window_t* win = (epx_window_t*) arg;
-
+    epx_window_t* window = (epx_window_t*) arg;
+    epx_backend_t* be;
     EPX_DBGFMT_MEM("EWINDOW_TYPE_RELEASE: %p", arg);
-    if (win->detach) win->detach(win);
-    if (win->on_heap) free(win);
+    if ((be = window->backend) != NULL)
+	be->cb->win_detach(be, window);
+    if (window->on_heap) free(window);
 }
 
 void epx_window_destroy(epx_window_t* win)
@@ -41,7 +43,6 @@ int epx_window_init(epx_window_t* win, int x, int y,
 {
     EPX_OBJECT_INIT(win, EPX_WINDOW_TYPE);
     win->backend = 0;
-    win->detach  = 0;
     win->user    = 0;
     win->owner   = 0;
     win->opengl  = 0;

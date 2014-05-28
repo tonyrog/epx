@@ -51,9 +51,9 @@ typedef struct _epx_backend_t {
     /*! Display formats */
     epx_format_t formats[EPX_BACKEND_MAX_FORMATS];
     /*! List of attached windows */
-    epx_window_t*  window_list;
+    epx_object_list_t window_list;
     /*! List of attached pixmaps */
-    epx_pixmap_t*  pixmap_list;
+    epx_object_list_t pixmap_list;
     /*! Event handle             */
     EPX_HANDLE_T event;
     /*! Backend callbacks        */
@@ -82,6 +82,7 @@ typedef struct _epx_callbacks_t {
 
 extern char*          epx_backend_name(int i);
 extern epx_backend_t* epx_backend_create(char* name, epx_dict_t* param);
+extern int  epx_backend_upgrade(epx_backend_t* be);
 extern void epx_backend_destroy(epx_backend_t* be);
 
 #define epx_backend_finish(be) ((be)->cb->finish((be)))

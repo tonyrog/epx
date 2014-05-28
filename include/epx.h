@@ -51,6 +51,7 @@
 #include "epx_backend.h"
 #include "epx_font.h"
 #include "epx_hash.h"
+#include "epx_lock.h"
 
 extern void epx_init(int accel);
 

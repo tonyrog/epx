@@ -1,3 +1,21 @@
+Erlang PiXel library
+====================
+
+epx is a library for manipulating pixels. Various operation exist
+to operate on the pixels.
+
+To create a small pixmap and set some pixels you do not even have to
+start the epx application, just do:
+
+    Pixmap = epx:pixmap_create(10, 10, rgb),
+    epx:pixmap_fill(Pixmap, red),
+    epx_pixmap_put_pixel(Pixmap, 4, 4, white).
+
+Now you can read the pixels:
+ 
+    {A,R,G,B} = epx:pixmap_get_pixel(Pixmap, 3, 3).
+    <<R,G,B>> = epx:pixmap_get_pixels(Pixmap, 3, 3, 1, 1).
+
 
 
 

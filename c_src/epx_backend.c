@@ -26,57 +26,85 @@
 #include "../include/epx_backend.h"
 
 typedef epx_backend_t* (*backend_init_t)(epx_dict_t* param);
+typedef int (*backend_upgrade_t)(epx_backend_t*);
 
 extern epx_backend_t* none_init(epx_dict_t* param);
+extern int none_upgrade(epx_backend_t* backend);
 
 #if defined(FB)
 extern epx_backend_t* fb_init(epx_dict_t* param);
+extern int fb_upgrade(epx_backend_t* backend);
 #endif
 
 #if defined(__APPLE__) && !defined(__x86_64__)
 extern epx_backend_t* carbon_init(epx_dict_t* param);
+extern int carbon_upgrade(epx_backend_t* backend);
 #endif
 
-// #if defined(__APPLE__)
-// extern epx_backend_t* cocoa_init(epx_dict_t* param);
-// #endif
+#if 0 && defined(__APPLE__)
+extern epx_backend_t* cocoa_init(epx_dict_t* param);
+extern int cocoa_upgrade(epx_backend_t* backend);
+#endif
 
 
 #if defined(WIN32)
 extern epx_backend_t* win32_init(epx_dict_t* param);
+extern int win32_upgrade(epx_backend_t* backend);
 #endif
 
 #if defined(X11)
 extern epx_backend_t* x11_init(epx_dict_t* param);
+extern int x11_upgrade(epx_backend_t* backend);
 #endif
 
 static struct _backend_item {
     char* name;
     backend_init_t init;
+    backend_upgrade_t upgrade;
 } backend_item [] =
 {
 #if defined(__APPLE__) && !defined(__x86_64__)
-    {"macos", (backend_init_t) carbon_init},
+    { .name = "macos",
+      .init = carbon_init,
+      .upgrade = carbin_upgrade
+    }
 #endif
 
-// #if defined(__APPLE__)
-//    {"cocoa", (backend_init_t) cocoa_init},
-//#endif
-
+#if 0 && defined(__APPLE__)
+    { .name = "cocoa",
+      .init = cocoa_init,
+      .upgrade = cocoa_upgrade
+    },
+#endif
 
 #ifdef WIN32
-    {"win32", (backend_init_t) win32_init},
+    { .name = "win32",
+      .init = win32_init,
+      .upgrade = win32_upgrade
+    },
 #endif
 
 #ifdef X11
-    {"x11", (backend_init_t) x11_init},
+    { .name = "x11",
+      .init = x11_init,
+      .upgrade = x11_upgrade
+    },
 #endif
 
 #ifdef FB
-    {"fb", (backend_init_t) fb_init},
+    { .name = "fb",
+      .init = fb_init,
+      .upgrade = fb_upgrade
+    },
 #endif
-    {"none", (backend_init_t) none_init},
-    {NULL, NULL}
+    { .name = "none",
+      .init = none_init,
+      .upgrade = none_upgrade
+    },
+    { .name = NULL,
+      .init = NULL,
+      .upgrade = NULL
+    }
 };
 
 char* epx_backend_name(int i)
@@ -118,71 +146,71 @@ epx_backend_t* epx_backend_create(char* name, epx_dict_t* param)
     }
 }
 
+int epx_backend_upgrade(epx_backend_t* be)
+{
+    int i = 0;
+    while(backend_item[i].name) {
+	if (strcmp(backend_item[i].name, be->name) == 0)
+	    return (backend_item[i].upgrade)(be);
+	i++;
+    }
+    return -1;
+}
+
 int epx_backend_adjust(epx_backend_t* be, epx_dict_t* param)
 {
     return be->cb->adjust(be, param);
 }
 
-static int pixmap_backend_detach(epx_pixmap_t* pixmap)
-{
-    epx_backend_t* be = pixmap->backend;
-    if (be)
-	return be->cb->pix_detach(be, pixmap);
-    return -1;
-}
-
 int epx_backend_pixmap_attach(epx_backend_t* be, epx_pixmap_t* pixmap)
 {
-    if (pixmap->backend)
+    if (pixmap->backend != NULL)
 	return -1;
     if (be->cb->pix_attach(be, pixmap) < 0)
 	return -1;
-    pixmap->detach = pixmap_backend_detach;
-    return 0;
-}
-
-static int window_backend_detach(epx_window_t* window)
-{
-    epx_backend_t* be = window->backend;
-    if (be)
-	return be->cb->win_detach(be, window);
-    return -1;
-}
-
-int epx_backend_window_attach(epx_backend_t* be, epx_window_t* window)
-{
-    if (window->backend)
-	return -1;
-    if (be->cb->win_attach(be, window) < 0)
-	return -1;
-    window->detach = window_backend_detach;
-    return 0;
-}
-
-int epx_window_detach(epx_window_t* window)
-{
-    window_backend_detach(window);
-    window->backend = 0;
     return 0;
 }
 
 int epx_pixmap_detach(epx_pixmap_t* pixmap)
 {
-    pixmap_backend_detach(pixmap);
-    pixmap->backend = 0;
+    epx_backend_t* be;
+
+    if ((be = pixmap->backend) != NULL) {
+	be->cb->pix_detach(be, pixmap);
+	pixmap->backend = 0;
+    }
+    return 0;
+}
+
+int epx_backend_window_attach(epx_backend_t* be, epx_window_t* window)
+{
+    if (window->backend != NULL)
+	return -1;
+    if (be->cb->win_attach(be, window) < 0)
+	return -1;
+    return 0;
+}
+
+int epx_window_detach(epx_window_t* window)
+{
+    epx_backend_t* be;
+    if ((be = window->backend) != NULL) {
+	be->cb->win_detach(be, window);
+	window->backend = 0;
+    }
     return 0;
 }
 
 int epx_window_swap(epx_window_t* win)
 {
-    if (!win->backend)
+    if (win->backend == NULL)
 	return -1;
     return epx_backend_window_swap(win->backend, win);
 }
 
 int epx_window_adjust(epx_window_t* win, epx_dict_t* param)
 {
-    if (!win->backend)
+    if (win->backend == NULL)
 	return -1;
     return epx_backend_window_adjust(win->backend, win, param);
 }

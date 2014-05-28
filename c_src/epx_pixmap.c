@@ -27,7 +27,7 @@
 #include "../include/epx_pixmap.h"
 #include "../include/epx_colors.h"
 #include "../include/epx_simd.h"
-
+#include "../include/epx_backend.h"
 
 #define EPX_INLINE_COPY_SIZE 32
 #define EPX_INLINE_FILL_SIZE 16
@@ -1585,7 +1585,6 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
     dst->data0   = 0;
     dst->data    = 0;
     dst->backend = 0;
-    dst->detach  = 0;
     dst->parent  = 0;
     dst->user    = 0;
     // Each row must by a multiple of 16!
@@ -1684,7 +1683,6 @@ int epx_pixmap_init_sub_pixmap(epx_pixmap_t* src, epx_pixmap_t* dst,
     EPX_OBJECT_INIT(dst, EPX_PIXMAP_TYPE);
 
     dst->backend = 0;
-    dst->detach  = 0;
     dst->parent  = src;
     epx_object_ref(src);  // set a reference to parent
 
@@ -1730,18 +1728,18 @@ void epx_pixmap_destroy(epx_pixmap_t* pic)
 
 void EPX_PIXMAP_TYPE_RELEASE(void* arg)
 {
-    epx_pixmap_t* px = (epx_pixmap_t*) arg;
-
+    epx_pixmap_t* pixmap = (epx_pixmap_t*) arg;
+    epx_backend_t* be;
     EPX_DBGFMT_MEM("EPIXMAP_TYPE_RELEASE: %p", arg);
-    if (px->detach)  // detach from backend (or something)
-	px->detach(px);
-    if (px->data0) {
-	free(px->data0);
-	px->data0 = 0;
+    if ((be = pixmap->backend) != NULL)
+	be->cb->pix_detach(be, pixmap);
+    if (pixmap->data0) {
+	free(pixmap->data0);
+	pixmap->data0 = 0;
     }
-    px->data = 0;
-    epx_object_unref(px->parent);
-    if (px->on_heap) free(px);
+    pixmap->data = 0;
+    epx_object_unref(pixmap->parent);
+    if (pixmap->on_heap) free(pixmap);
 }
 
 
@@ -1813,11 +1811,17 @@ void epx_pixmap_put_pixels(epx_pixmap_t* dst, int x, int y,
     if (src_end >= (((uint8_t*)data)+len))
 	return;
 
-    if ((flags & EPX_FLAG_BLEND)==0)
+    if ((flags & (EPX_FLAG_BLEND|EPX_FLAG_SUM))==0)
 	epx_copy_area(src_ptr, src_wb, pixel_format,
 		      EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
 		      dst->bytes_per_row, dst->pixel_format,
 		      dr.wh.width, dr.wh.height);
+    else if  ((flags & (EPX_FLAG_BLEND|EPX_FLAG_SUM))==EPX_FLAG_SUM) {
+	epx_sum_area(src_ptr, src_wb, pixel_format,
+		     EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),
+		     dst->bytes_per_row, dst->pixel_format,
+		     dr.wh.width, dr.wh.height);
+    }
     else
 	dst->func.blend_area(src_ptr, src_wb, pixel_format,
 			     EPX_PIXEL_ADDR(dst,dr.xy.x,dr.xy.y),

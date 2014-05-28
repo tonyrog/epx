@@ -32,6 +32,7 @@ typedef struct {
 
 
 epx_backend_t* none_init(epx_dict_t* param);
+int none_upgrade(epx_backend_t* be);
 
 static int none_finish(epx_backend_t*);
 static int none_pix_attach(epx_backend_t*, epx_pixmap_t*);
@@ -92,12 +93,19 @@ epx_backend_t* none_init(epx_dict_t* param)
     be->b.height = 0;
     be->b.nformats = 0;
     be->b.cb = &none_callbacks;
-    be->b.pixmap_list = NULL;
-    be->b.window_list = NULL;
+    epx_object_list_init(&be->b.pixmap_list);
+    epx_object_list_init(&be->b.window_list);
     be->b.event = EPX_INVALID_HANDLE;
 
     return (epx_backend_t*) &(be->b);
 }
+
+int none_upgrade(epx_backend_t* backend)
+{
+    backend->cb = &none_callbacks;
+    return 0;
+}
+
 
 /* return the backend event handle */
 static EPX_HANDLE_T none_evt_attach(epx_backend_t* backend)

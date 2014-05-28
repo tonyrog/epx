@@ -57,8 +57,10 @@ static struct {
 #define CI_B 4
 #define CI_RGB(r,g,b) \
     ((c_size[CI_R]==(r)) && (c_size[CI_G]==(g)) && (c_size[CI_B]==(b)))
-#define CI_TEST(r,g,b) \
-    (((c_size[CI_R] > 0) == (r)) &&		\
+#define CI_TEST(a,l,r,g,b)			\
+    (((c_size[CI_A] > 0) == (a)) &&		\
+     ((c_size[CI_L] > 0) == (l)) &&		\
+     ((c_size[CI_R] > 0) == (r)) &&		\
      ((c_size[CI_G] > 0) == (g)) &&		\
      ((c_size[CI_B] > 0) == (b)))
 
@@ -161,9 +163,11 @@ done:
     if (CI_RGB(2,3,2))        fmt = EPX_FMT_RGB232;
     else if (CI_RGB(3,3,2))   fmt = EPX_FMT_RGB332;
     else if (CI_RGB(5,6,5))   fmt = EPX_FMT_RGB565;
-    else if (CI_TEST(1,0,0))  fmt = EPX_FMT_RED;
-    else if (CI_TEST(0,1,0))  fmt = EPX_FMT_GREEN;
-    else if (CI_TEST(0,0,1))  fmt = EPX_FMT_GREEN;
+    else if (CI_TEST(1,0,0,0,0)) fmt = EPX_FMT_ALPHA;
+    else if (CI_TEST(0,1,0,0,0)) fmt = EPX_FMT_GRAY;
+    else if (CI_TEST(0,0,1,0,0))  fmt = EPX_FMT_RED;
+    else if (CI_TEST(0,0,0,1,0))  fmt = EPX_FMT_GREEN;
+    else if (CI_TEST(0,0,0,0,1))  fmt = EPX_FMT_BLUE;
     else if ((c_size[CI_R]==c_size[CI_G]) && (c_size[CI_G]==c_size[CI_B])) {
 	switch(c_size[CI_R]) {
 	case 4:  fmt = EPX_FMT_RGB4; break;

@@ -32,11 +32,12 @@
 
 #undef HAVE_OPENGL   // not yet
 
-#include "epx_backend.h"
+#include "../include/epx_backend.h"
 #ifdef HAVE_OPENGL
 #include <AGL/agl.h>
 #endif
 
+#define debug
 
 #define kEpxEventNew 1
 #define kEpxEventDel 2
@@ -75,13 +76,14 @@ typedef struct {
 
 
 epx_backend_t* cocoa_init(epx_dict_t* param);
+int cocoa_upgrade(epx_backend_t* be);
 
 static int cocoa_finish(epx_backend_t*);
-static int cocoa_pic_attach(epx_backend_t*, epx_pixmap_t* pic);
-static int cocoa_pic_detach(epx_backend_t*, epx_pixmap_t* pic);
+static int cocoa_pix_attach(epx_backend_t*, epx_pixmap_t* pic);
+static int cocoa_pix_detach(epx_backend_t*, epx_pixmap_t* pic);
 static int cocoa_begin(epx_window_t* ewin);
 static int cocoa_end(epx_window_t* ewin, int off_screen);
-static int cocoa_pic_draw(epx_backend_t*, epx_pixmap_t* pic, epx_window_t* win,
+static int cocoa_pix_draw(epx_backend_t*, epx_pixmap_t* pic, epx_window_t* win,
 			   int src_x, int src_y, int dst_x, int dst_y,
 			   unsigned int width,
 			   unsigned int height);
@@ -93,23 +95,25 @@ static int cocoa_evt_detach(epx_backend_t*);
 static int cocoa_evt_read(epx_backend_t*, epx_event_t*);
 static int cocoa_adjust(epx_backend_t *backend, epx_dict_t* param);
 static int cocoa_win_adjust(epx_window_t*, epx_dict_t* param);
+static int cocoa_info(epx_backend_t *backend, epx_dict_t* param);
 
 static epx_callbacks_t cocoa_callbacks =
 {
-    cocoa_finish,
-    cocoa_pic_attach,
-    cocoa_pic_detach,
-    cocoa_pic_draw,
-    cocoa_win_attach,
-    cocoa_win_detach,
-    cocoa_evt_attach,
-    cocoa_evt_detach,
-    cocoa_evt_read,
-    cocoa_adjust,
-    cocoa_win_swap,
-    cocoa_begin,
-    cocoa_end,
-    cocoa_win_adjust
+    .finish = cocoa_finish,
+    .pix_attach = cocoa_pix_attach,
+    .pix_detach = cocoa_pix_detach,
+    .pix_draw   = cocoa_pix_draw,
+    .win_attach = cocoa_win_attach,
+    .win_detach = cocoa_win_detach,
+    .evt_attach = cocoa_evt_attach,
+    .evt_detach = cocoa_evt_detach,
+    .evt_read   = cocoa_evt_read,
+    .adjust     = cocoa_adjust,
+    .win_swap   = cocoa_win_swap,
+    .begin      = cocoa_begin,
+    .end        = cocoa_end,
+    .win_adjust = cocoa_win_adjust,
+    .info       = cocoa_info
 };
 
 
@@ -159,7 +163,8 @@ void dbg_print_event(char* label, EventRef theEvent)
     eventKind  = GetEventKind(theEvent);
     id_to_string(eventClass, e_class, NULL);
 
-    EDBGFMT("%s: class='%s', kind=%lu", label, e_class, eventKind);
+    EPX_DBGFMT("%s: class='%s', kind=%lu", label, e_class, eventKind);
+    //fprintf(stderr, "%s: class='%s', kind=%lu\r\n", label, e_class, eventKind);
 }
 #else
 #define dbg_print_event(label,inEvent) do {} while(0)
@@ -339,7 +344,7 @@ void* cocoa_event_thread(void* arg)
 
     pthread_mutex_unlock(&cocoa_lock);
 
-    RunApplicationEventLoop();
+    CFRunLoopRun();
 
     close(be->ofd);  // signal termination!
     return NULL;
@@ -361,8 +366,8 @@ epx_backend_t* cocoa_init(epx_dict_t* param)
     be->b.pending = 0;
     be->b.opengl = 0;
     be->b.use_opengl = 0;
-    be->b.pixmap_list = NULL;
-    be->b.window_list = NULL;
+    epx_object_list_init(&be->b.pixmap_list);
+    epx_object_list_init(&be->b.window_list);
     be->b.event = EPX_INVALID_HANDLE;
 
     if (epx_dict_lookup_integer(param, "use_opengl", &int_param) != -1)
@@ -384,6 +389,13 @@ epx_backend_t* cocoa_init(epx_dict_t* param)
 
     return (epx_backend_t*) &(be->b);
 }
+
+int cocoa_upgrade(epx_backend_t* backend)
+{
+    backend->cb = &cocoa_callbacks;
+    return 0;
+}
+
 
 /* return the backend event handle */
 static EPX_HANDLE_T cocoa_evt_attach(epx_backend_t* backend)
@@ -455,7 +467,7 @@ static CGDataProviderDirectCallbacks dacallbacks =
     pixel_ReleaseInfo
 };
 
-static int cocoa_pic_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int cocoa_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     CocoaBackend* be = (CocoaBackend*) backend;
     CocoaPixels* pe;
@@ -506,7 +518,7 @@ static int cocoa_pic_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 }
 
 						
-static int cocoa_pic_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int cocoa_pix_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     CocoaPixels* pe = (CocoaPixels*) pixmap->opaque;
 
@@ -543,7 +555,7 @@ static void draw_image(CGContextRef ctx, CGRect srcRect, CGRect dstRect,
 			false,
 			kCGRenderingIntentSaturation);
     if (!img) {
-	fprintf(stderr, "epic_macos: error CGImageCreate\n");
+	fprintf(stderr, "epix_cocoa: error CGImageCreate\n");
 	return;
     }
 
@@ -571,11 +583,13 @@ static void draw_image(CGContextRef ctx, CGRect srcRect, CGRect dstRect,
 static int cocoa_begin(epx_window_t* ewin)
 {
     CocoaWindow* cwin = (CocoaWindow*) ewin->opaque;
-
+    NSGraphicsContext* ctx;
     if ((cwin == NULL) || (cwin->winRef == 0))
 	return -1;
+    ctx = [cwin->winNS graphicsContext];
+    cwin->port = [ctx graphicsPort];
 
-    cwin->port = GetWindowPort(cwin->winRef);
+    // cwin->port = GetWindowPort(cwin->winRef);
     pthread_mutex_lock(&cocoa_lock);
 
     if (ewin->opengl) {
@@ -586,8 +600,8 @@ static int cocoa_begin(epx_window_t* ewin)
 #endif
     }
     else {
-	QDBeginCGContext(cwin->port, &cwin->ctx);
-	CGContextSaveGState(cwin->ctx);
+	[NSGraphicsContext saveGraphicsState];
+	[NSGraphicsContext setCurrentContext:ctx];
     }
     return 0;
 }
@@ -611,9 +625,7 @@ static int cocoa_end(epx_window_t* ewin, int off_screen)
     }
     else {
 	CGContextFlush(cwin->ctx);
-	/* CGContextSynchronize(Ctx); */
-	CGContextRestoreGState(cwin->ctx);
-	QDEndCGContext(cwin->port, &cwin->ctx);
+	[NSGraphicsContext restoreGraphicsState];
     }
     pthread_mutex_unlock(&cocoa_lock);
 
@@ -622,7 +634,7 @@ static int cocoa_end(epx_window_t* ewin, int off_screen)
 
 
 
-static int cocoa_pic_draw(epx_backend_t* backend, epx_pixmap_t* pic, epx_window_t* ewin,
+static int cocoa_pix_draw(epx_backend_t* backend, epx_pixmap_t* pic, epx_window_t* ewin,
 			   int src_x, int src_y, int dst_x, int dst_y,
 			   unsigned int width,
 			   unsigned int height)
@@ -1073,7 +1085,7 @@ static pascal OSStatus EPxWindowEventHandler(
 	    e.type = EPX_EVENT_CLOSE;
 	    goto handled_event;
         }
-        else if (eventKind == kEventWindowClickContentRgn) {
+        else if (eventKind == 0 /* kEventWindowClickContentRgn */) {
             // Point   where;
 	    HIPoint where;
             UInt32  modifiers;
@@ -1162,7 +1174,7 @@ notHandled_event:
     return eventNotHandledErr;
 }
 
-int cocoa_adjust(epx_backend_t *backend, epx_dict_t* param)
+static int cocoa_adjust(epx_backend_t *backend, epx_dict_t* param)
 {
     (void) backend;
     (void) param;
@@ -1170,7 +1182,7 @@ int cocoa_adjust(epx_backend_t *backend, epx_dict_t* param)
     return 1;
 }
 
-int cocoa_win_adjust(epx_window_t *win, epx_dict_t* param)
+static int cocoa_win_adjust(epx_window_t *win, epx_dict_t* param)
 {
     int width, wi;
     int height, hi;
@@ -1213,5 +1225,11 @@ int cocoa_win_adjust(epx_window_t *win, epx_dict_t* param)
     return 1;
 }
 
-
+static int cocoa_info(epx_backend_t *backend, epx_dict_t* param)
+{
+    (void) backend;
+    (void) param;
+    EPX_DBGFMT("cocoa: info");
+    return 0;
+}
 

@@ -74,6 +74,7 @@ typedef struct {
 
 
 epx_backend_t* x11_init(epx_dict_t* param);
+int x11_upgrade(epx_backend_t* be);
 
 static int x11_finish(epx_backend_t*);
 static int x11_pic_attach(epx_backend_t*, epx_pixmap_t*);
@@ -143,14 +144,20 @@ static int WaitForNotify(Display *dpy, XEvent *event, XPointer arg)
 
 static epx_window_t* find_event_window(X11Backend* x11, Window w)
 {
-    epx_window_t* window = x11->b.window_list;  /* list of attached windows */
+    epx_window_t* window;
+    
+    epx_lock_lock(x11->b.window_list.lock);
+    window = (epx_window_t*) x11->b.window_list.first;
 
     while(window) {
 	X11Window* w11 = (X11Window*) window->opaque;
-	if (w11->window == w)
+	if (w11->window == w) {
+	    epx_lock_unlock(x11->b.window_list.lock);
 	    return window;
+	}
 	window = window->next;
     }
+    epx_lock_unlock(x11->b.window_list.lock);
     return NULL;
 }
 
@@ -291,8 +298,8 @@ epx_backend_t* x11_init(epx_dict_t* param)
     be->b.use_opengl = 0;
     be->b.width = 0;
     be->b.height = 0;
-    be->b.pixmap_list = 0;
-    be->b.window_list = 0;
+    epx_object_list_init(&be->b.pixmap_list);
+    epx_object_list_init(&be->b.window_list);
     be->b.nformats = 0;
     be->b.event = EPX_INVALID_HANDLE;
 
@@ -356,6 +363,13 @@ epx_backend_t* x11_init(epx_dict_t* param)
     }
     return (epx_backend_t*) &(be->b);
 }
+
+int x11_upgrade(epx_backend_t* backend)
+{
+    backend->cb = &x11_callbacks;
+    return 0;
+}
+
 
 /* return the backend event handle */
 static EPX_HANDLE_T x11_evt_attach(epx_backend_t* backend)
@@ -696,7 +710,7 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 				 ewin->height,
 				 DefaultDepth(be->display, be->screen));
 	if (!xwin->pm)
-	    fprintf(stderr, "epic_x11: Failed create of Pixmap\n");
+	    fprintf(stderr, "epx_x11: Failed create of Pixmap\n");
 
 	XSetWMProtocols(be->display, win, &be->wm_delete_window, 1);
 

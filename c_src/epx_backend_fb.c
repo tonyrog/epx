@@ -108,6 +108,7 @@ typedef struct {
 
 
 epx_backend_t* fb_init(epx_dict_t* param);
+int fb_upgrade(epx_backend_t* be);
 
 static int fb_finish(epx_backend_t*);
 static int fb_pic_attach(epx_backend_t*, epx_pixmap_t*);
@@ -603,8 +604,8 @@ epx_backend_t* fb_init(epx_dict_t* param)
     be->b.height = 0;
     be->b.nformats = 0;
     be->b.cb = &fb_callbacks;
-    be->b.pixmap_list = NULL;
-    be->b.window_list = NULL;
+    epx_object_list_init(&be->b.pixmap_list);
+    epx_object_list_init(&be->b.window_list);
     be->b.event = EPX_INVALID_HANDLE;
 #ifdef HAVE_MTRR
     be->mtrr_fd = -1;
@@ -691,6 +692,12 @@ epx_backend_t* fb_init(epx_dict_t* param)
 error:
     free(be);
     return NULL;
+}
+
+int fb_upgrade(epx_backend_t* backend)
+{
+    backend->cb = &fb_callbacks;
+    return 0;
 }
 
 
