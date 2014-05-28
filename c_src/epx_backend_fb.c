@@ -1107,7 +1107,7 @@ static int fb_evt_read(epx_backend_t* backend, epx_event_t* e)
 	   which will trigger core.
 	   return 0.
 	*/
-	if (!be->b.window_list) {
+	if (be->b.window_list.first == NULL) {
 	    DEBUGF("No window attached. Will return 0");
 	    return 0;
 	}
@@ -1115,7 +1115,7 @@ static int fb_evt_read(epx_backend_t* backend, epx_event_t* e)
 	if ((buf.type < EV_CNT) && (ev_callbacks[buf.type] != NULL)) {
 	    int r;
 
-	    be->ev.window = be->b.window_list;
+	    be->ev.window = (epx_window_t*) be->b.window_list.first;
 	    r = (*ev_callbacks[buf.type])(buf.time, buf.type, buf.code,
 					  buf.value, be, &be->ev);
 	    if (r) {  // normally only by EV_SYN
