@@ -468,6 +468,12 @@ void epx_font_draw_glyph(epx_gc_t* gc, epx_pixmap_t* dst, int* x, int* y, int c)
 	// NOTE: each pixel data row must be 16 byte aligned!
 	gmap.width     = width;
 	gmap.height    = U16LE(glyph->height);
+	// work around for me changing alpha first bit to better handle
+	// format parsing. When only alpha then alpha first is set, before
+	// it was unset. Since fonts are compiled and stored we make this
+	// workaround here.
+	pixel_format = ((pixel_format|EPX_F_AFirst) == EPX_FORMAT_A8) ?
+	    EPX_FORMAT_A8 : pixel_format;
 	gmap.pixel_format = pixel_format;
 	gmap.bytes_per_pixel = psz;
 	gmap.bits_per_pixel = psz*8;
