@@ -286,6 +286,9 @@ epx_backend_t* x11_init(epx_dict_t* param)
     char* display_name = NULL;
     size_t len;
 
+    // Must be the first XLib call.
+    XInitThreads();
+
     if ((be = (X11Backend*) malloc(sizeof(X11Backend))) == NULL)
 	return NULL;
     EPX_OBJECT_INIT((epx_backend_t*)be, EPX_BACKEND_TYPE);
