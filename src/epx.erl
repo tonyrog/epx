@@ -269,7 +269,7 @@ old_start(Prefered) ->
     end.
 
 %% @doc
-%%  Set epx internal debug logginf
+%%  Set epx internal debug logging
 %% @end
 
 -type epx_debug_level() :: debug | info | notice | warning | error |

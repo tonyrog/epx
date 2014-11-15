@@ -18,23 +18,20 @@ Now you can read the pixels:
 
 
 
+# epx on frame buffer device (linux)
 
-erl -pa $PWD/ebin 
-
-epx:debug(debug).
-epx:start().
-{ok, BID } = epx_backend:create("fb", [{backend,"fb"}, {width, 1280}, {height, 1024}, {input_mouse_device, "/dev/input/event7"}, {input_keyboard_device, "/dev/input/event5"}]).
-B = epx_backend:backend(BID).
-W=epx:window_create(0,0,1280,1024, [button_press, key_press, key_release]).
-epx:window_attach(W, B).
+    epx:debug(debug).
+    epx:start().
+    {ok, BID } = epx_backend:create("fb", [{backend,"fb"}, {width, 1280}, {height, 1024}, {input_mouse_device, "/dev/input/event7"}, {input_keyboard_device, "/dev/input/event5"}]).
+    B = epx_backend:backend(BID).
+    W=epx:window_create(0,0,1280,1024, [button_press, key_press, key_release]).
+    epx:window_attach(W, B).
 
 
-* howto run framebuffer on vmware (ubuntu)
+## howto run framebuffer on vmware (ubuntu)
 
-Append "vmwgfx.enable_fbdev=no" to GRUB_CMDLINE_LINUX_DEFAULT in
-file /etc/default/grub.
-"no" is not a correct value, driver will complain. But this
-is a bug workaround :-)
+Append "vmwgfx.enable_fbdev=no" to GRUB_CMDLINE_LINUX_DEFAULT in file /etc/default/grub. "no" is not a correct value, driver will complain. But this is a bug workaround :-)
+
 May look something like this:
 
     GRUB_CMDLINE_LINUX_DEFAULT="splash quiet vmwgfx.enable_fbdev=no"
@@ -42,3 +39,4 @@ May look something like this:
 Then the fb driver may be probed:
 
     sudo modprobe uvesafb
+
