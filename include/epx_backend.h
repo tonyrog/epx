@@ -107,11 +107,6 @@ extern int  epx_window_adjust(epx_window_t* win, epx_dict_t *param);
 extern int epx_backend_window_attach(epx_backend_t* be, epx_window_t* win);
 extern int epx_window_detach(epx_window_t* win);
 
-// Render (attached) pixmap on attached win
-extern int epx_pixmap_draw_window(epx_pixmap_t* pix, epx_window_t* win,
-				  int x_src, int y_src, int x_dst, int y_dst,
-				  unsigned int width, unsigned int height);
-
 extern int epx_backend_pixmap_attach(epx_backend_t* be, epx_pixmap_t* pix);
 extern int epx_pixmap_detach(epx_pixmap_t* pix);
 
