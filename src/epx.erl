@@ -965,7 +965,7 @@ gc_info(Gc) ->
     map(fun(Info) -> {Info,gc_info(Gc,Info)} end,
 	gc_info_keys()).
 
--spec gc_info(Gc::epx_gc(), Item::epx_gc_info_key) -> term().
+-spec gc_info(Gc::epx_gc(), Item::epx_gc_info_key()) -> term().
 
 gc_info(Gc, Item) ->
     gc_get(Gc, Item).
