@@ -23,7 +23,7 @@
 -module(epx_t2d).
 
 -export([identity/0, translate/3, scale/3, rotate/2, compose/2]).
--export([deg_norm/1]).
+-export([deg_norm/1, deg_to_rad/1]).
 -export([x/3, y/3, dx/3, dy/3, height/2, width/2, 
 	 dimension/3, dimension/2, delta/3, delta/2,
 	 point/3, point/2, points/2, 
@@ -34,8 +34,8 @@
 
 -define(xp(T,X,Y), (X)*(T)#t2d.sx + (Y)*(T)#t2d.ry + (T)#t2d.tx).
 -define(yp(T,X,Y), (X)*(T)#t2d.rx + (Y)*(T)#t2d.sy + (T)#t2d.ty).
--define(wp(T,W), (W)*(T)#t2d.sx).
--define(hp(T,H), (H)*(T)#t2d.sy).
+-define(wp(T,W), abs((W)*(T)#t2d.sx)).
+-define(hp(T,H), abs((H)*(T)#t2d.sy)).
 
 dx(T, X, Y) -> X*T#t2d.sx + Y*T#t2d.ry.
 dy(T, X, Y) -> X*T#t2d.rx + Y*T#t2d.sy.
@@ -50,7 +50,7 @@ dimension(T, {W, H}) ->
     dimension(T, W, H).
 
 dimension(T, W, H) ->
-    {?hp(T,W), ?hp(T,H)}.
+    {?hp(T,W), ?wp(T,H)}.
 
 
 point(T, {X, Y}) ->
