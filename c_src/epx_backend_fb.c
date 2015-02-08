@@ -319,6 +319,14 @@ static int load_pixel_format(epx_backend_t* backend,
     return 1;
 }
 
+static epx_pixmap_t* screen_pixels(FbBackend* be, int active)
+{
+  if (be->dbuf)
+    return (be->cbuf == active) ? &be->screen[1] : &be->screen[0];
+  else
+    return &be->screen[0];
+}
+
 #ifdef HAVE_INPUT_EVENT
 
 static uint32_t const cursorb[33][24] = {
@@ -400,14 +408,6 @@ static int load_cursor(FbBackend* be)
   be->cursor = def;
   be->save = epx_pixmap_create(CURSOR_WIDTH, CURSOR_HEIGHT, EPX_FORMAT_ARGB);
   return 0;
-}
-
-static epx_pixmap_t* screen_pixels(FbBackend* be, int active)
-{
-  if (be->dbuf)
-    return (be->cbuf == active) ? &be->screen[1] : &be->screen[0];
-  else
-    return &be->screen[0];
 }
 
 
@@ -854,14 +854,14 @@ static int fb_pic_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
 
     /* If we do not draw directly to pixmap. Copy it */
     if (!be->direct_pixmap_draw) {
-      epx_pixmap_t* scr = screen_pixels(be, 0);
+	epx_pixmap_t* scr = screen_pixels(be, 0);
 #ifdef HAVE_INPUT_EVENT
-      hide_cursor(be);
+	hide_cursor(be);
 #endif
-      epx_pixmap_copy_area(pixmap, scr, src_x, src_y, dst_x, dst_y,
-			   width, height, 0);
+	epx_pixmap_copy_area(pixmap, scr, src_x, src_y, dst_x, dst_y,
+			     width, height, 0);
 #ifdef HAVE_INPUT_EVENT
-      show_cursor(be,CURSOR_TIMEOUT);
+	show_cursor(be,CURSOR_TIMEOUT);
 #endif
     }
     nwin->dcount++;

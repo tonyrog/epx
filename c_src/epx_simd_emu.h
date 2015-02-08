@@ -228,14 +228,15 @@ epx_simd_fade_argb32(epx_vector_u16_t fade,
 		     epx_vector_u8_t dst)
 {
     uint8_t a;
+    uint16_t a16;
     epx_vector_u8_t r;
     uint8_t* sp = (uint8_t*) &src;
     uint8_t* dp = (uint8_t*) &dst;
     uint8_t* rp = (uint8_t*) &r;
     uint16_t* fp = (uint16_t*) &fade;
 
-    a = (sp[0] * fp[1]) >> 8;
-    a = AADJUST(a);
+    a16 = sp[0] * fp[0];
+    a = AADJUST(a16>>8);
     rp[0] = epx_blend(a, sp[0], dp[0]);
     rp[1] = epx_blend(a, sp[1], dp[1]);
     rp[2] = epx_blend(a, sp[2], dp[2]);
@@ -249,15 +250,15 @@ epx_simd_fade_rgba32(epx_vector_u16_t fade,
 		     epx_vector_u8_t dst)
 {
     uint8_t a;
+    uint16_t a16;
     epx_vector_u8_t r;
     uint8_t* sp = (uint8_t*) &src;
     uint8_t* dp = (uint8_t*) &dst;
     uint8_t* rp = (uint8_t*) &r;
     uint16_t* fp = (uint16_t*) &fade;
 
-    a = (sp[3] * fp[1]) >> 8;
-    a = AADJUST(a);
-
+    a16 = sp[3] * fp[0];
+    a = AADJUST(a16>>8);
     rp[0] = epx_blend(a, sp[0], dp[0]);
     rp[1] = epx_blend(a, sp[1], dp[1]);
     rp[2] = epx_blend(a, sp[2], dp[2]);

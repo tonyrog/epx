@@ -72,6 +72,11 @@ EXTERN_SIMD_API(_altivec);
 static epx_simd_t simd_altivec = INIT_SIMD_API(EPX_SIMD_ALTIVEC,_altivec);
 #endif
 
+#if defined(__NEON__)
+EXTERN_SIMD_API(_neon);
+static epx_simd_t simd_neon = INIT_SIMD_API(EPX_SIMD_NEON,_neon);
+#endif
+
 #if defined(__MMX__)
 EXTERN_SIMD_API(_mmx);
 static epx_simd_t simd_mmx = INIT_SIMD_API(EPX_SIMD_MMX,_mmx);
@@ -415,9 +420,18 @@ void epx_simd_init(int accel)
 
 #if defined(__ppc__) || defined(__ppc64__)
 #if defined(__VEC__) && defined(__ALTIVEC__)
-    if ((accel & EPX_SIMD_ALTIVEC)) {
+    if ((accel & EPX_SIMD_ALTIVEC) || (accel==EPX_SIMD_AUTO)) {
 	EPX_DBGFMT("SIMD: Enable altivec");
 	epx_simd = &simd_altivec;
+    }
+#endif
+#endif
+
+#if defined(__arm__)
+#if defined(__NEON__)
+    if ((accel & EPX_SIMD_NEON) || (accel==EPX_SIMD_AUTO)) {
+	EPX_DBGFMT("SIMD: Enable neon");
+	epx_simd = &simd_neon;
     }
 #endif
 #endif
