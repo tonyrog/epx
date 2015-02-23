@@ -106,7 +106,7 @@ typedef struct {
 } epx_line_t;
 
 /* put pixel given address */
-static inline void put_apixel(uint8_t* addr, 
+static inline void put_apixel(uint8_t* addr,
 			      epx_pixel_unpack_t unpack,
 			      epx_pixel_pack_t pack,
 			      epx_flags_t flags, epx_pixel_t s)
@@ -120,7 +120,7 @@ static inline void put_apixel(uint8_t* addr,
     }
 }
 
-void epx_draw_line_horizontal(epx_pixmap_t* pic, int x1, int x2, int y, 
+void epx_draw_line_horizontal(epx_pixmap_t* pic, int x1, int x2, int y,
 			  int flags, epx_pixel_t fg)
 {
     int xl, xr;
@@ -131,7 +131,7 @@ void epx_draw_line_horizontal(epx_pixmap_t* pic, int x1, int x2, int y,
     if (y > epx_rect_bottom(&pic->clip))
 	return;
     if (x1 > x2) epx_swap_int(x1,x2);
-    
+
     xl = epx_rect_left(&pic->clip);
     if (x2 < xl)
 	return;
@@ -209,9 +209,9 @@ static void set_p1(epx_pixmap_t* pixmap, epx_line_t* line, int x, int y)
     if (dx < 0) {
 	line->delta.x = (dx = -dx << 1);
 	line->s.x     = -1;
-	line->ws.x    = -pixmap->bytes_per_pixel; 
+	line->ws.x    = -pixmap->bytes_per_pixel;
     }
-    else { 
+    else {
 	line->delta.x = (dx = dx<<1);
 	line->s.x     = 1;
 	line->ws.x    = pixmap->bytes_per_pixel;
@@ -231,7 +231,7 @@ void break_here()
     fprintf(stderr, "BREAK HERE\n");
 }
 
-/* Trace line with alpha blending and antialiasing 
+/* Trace line with alpha blending and antialiasing
  * The L = luminance
  *     L(fg,1.0) = luminance of the foreground pixel with alpha=1
  *     L(fg,0.5) + L(fg,0.5) = L(fg,1.0) ?
@@ -247,7 +247,7 @@ void trace_aalias_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags,
 
     LINE_DECL(0);
     LINE_SWAPIN(line,0);
-    
+
     if (L(dx,0) > L(dy,0)) {
 	while(L(x1,0) != L(x0,0)) {
 	    LINE_STEP(L(err,0),L(ptr,0),
@@ -270,7 +270,7 @@ void trace_aalias_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags,
 		}
 	    }
 	    else if (ae > 0) {
-		/* put alias point abow */
+		/* put alias point above */
 		if (epx_point_xy_in_rect(L(x0,0),L(y0,0)+L(sy,0), &pic->clip)) {
 		    fa.a = ae;
 		    put_apixel(L(ptr,0)+L(wsy,0), pic->func.unpack,
@@ -331,13 +331,11 @@ void trace_aalias_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags,
 }
 
 /* Trace a line with no antialiasing */
-void trace_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags, epx_pixel_t fg)
+void trace_line_1(epx_pixmap_t* pic, epx_line_t* line,
+		  int flags, epx_pixel_t fg)
 {
     LINE_DECL(0);
     LINE_SWAPIN(line,0);
-
-//    fprintf(stderr, "LINE_START: (%d,%d,data=%p,ptr=%p)\r\n", 
-//	    line->p0.x, line->p0.y, pic->data, line->ptr);
 
     if (L(dx,0) > L(dy,0)) {
 	while(L(x1,0) != L(x0,0)) {
@@ -345,10 +343,8 @@ void trace_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags, epx_pixel_t fg
 		      L(x0,0),L(dx,0),L(sx,0),L(wsx,0),
 		      L(y0,0),L(dy,0),L(sy,0),L(wsy,0));
 	    if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
-//		fprintf(stderr, "(%d,%d,%p)\r\n", L(x0,0), L(y0,0),L(ptr,0));
 		put_apixel(L(ptr,0), pic->func.unpack,pic->func.pack,
 			   flags, fg);
-//		fprintf(stderr, "OK\r\n");
 	    }
 	}
     }
@@ -358,14 +354,11 @@ void trace_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags, epx_pixel_t fg
 		      L(y0,0),L(dy,0),L(sy,0),L(wsy,0),
 		      L(x0,0),L(dx,0),L(sx,0),L(wsx,0));
 	    if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
-//		fprintf(stderr, "(%d,%d,%p)\r\n", L(x0,0), L(y0,0), L(ptr,0));
 		put_apixel(L(ptr,0), pic->func.unpack,pic->func.pack,
 			   flags, fg);
-//		fprintf(stderr, "OK\r\n");
 	    }
 	}
     }
-//    fprintf(stderr, "LINE_END:\r\n");
     LINE_SWAPOUT(line,0);
 }
 
@@ -374,10 +367,9 @@ void trace_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags, epx_pixel_t fg
  *  draw horizontal line between line trace 1 and line trace 2
  *  (if possible)
  */
-void trace_line_2(epx_pixmap_t* pic, epx_line_t* line1, epx_line_t* line2, 
+void trace_line_2(epx_pixmap_t* pixmap, epx_line_t* line1, epx_line_t* line2,
 		  int flags, epx_pixel_t fg)
 {
-    int swapped;
     int n;
     LINE_DECL(1);
     LINE_DECL(2);
@@ -386,31 +378,21 @@ void trace_line_2(epx_pixmap_t* pic, epx_line_t* line1, epx_line_t* line2,
 
     /* Lines are assumed to run in the same y direction */
     if ((line1->s.y != line2->s.y) ||
-	(line1->delta.y == 0))
+	(line1->delta.y == 0)) {
+	fprintf(stderr,"line in oposite direction\r\n");
 	return;
-
-    if ((n = epx_intersect_range_length(line1->p0.y, line1->p1.y,
-					line2->p0.y, line2->p1.y)) == 0)
+    }
+    if (line1->p1.y > line2->p1.y) {  // assert than line1 stops before line2
+	fprintf(stderr,"lines not sorted\r\n");
 	return;
+    }
 
-    /* Swap in lines so that line1 starts first */
-    if (((line1->p0.y <= line2->p0.y) && (line1->s.y > 0)) ||
-	((line1->p0.y >= line2->p0.y) && (line1->s.y < 0))) {
-	swapped = 0;
-	LINE_SWAPIN(line1,1);
-	LINE_SWAPIN(line2,2);
-    }
-    else {
-	swapped = 1;
-	LINE_SWAPIN(line1,2);
-	LINE_SWAPIN(line2,1);
-    }
-#ifdef DEBUG
-    printf("n=%d\n", n);
-    printf("<= (x1=%d,y1=%d), (x2=%d,y2=%d), (x3=%d,y3=%d), (x4=%d,y4=%d)\n",
-	   L(x0,1), L(y0,1), L(x1,1), L(y1,1),
-	   L(x0,2), L(y0,2), L(x1,2), L(y1,2));
-#endif
+    LINE_SWAPIN(line1,1);
+    LINE_SWAPIN(line2,2);
+
+    // n = (L(y1,1) - L(y0,1)) + 1;
+    // fprintf(stderr, "n(1) = %d\r\n", n);
+
     /* step line 1 until it catch up with line 2 */
     if (L(dx,1) > L(dy,1)) {
 	while(L(y0,1) != L(y0,2)) {
@@ -427,17 +409,14 @@ void trace_line_2(epx_pixmap_t* pic, epx_line_t* line1, epx_line_t* line2,
 	}
     }
 
+    n = (L(y1,1) - L(y0,1)) + 1;
+    // fprintf(stderr, "n(2) = %d\r\n", n);
+
     if (flags & EPX_FLAG_NLAST)
 	n--;
-#ifdef DEBUG
-    printf("n=%d\n", n);
-    printf("<> (x1=%d,y1=%d), (x2=%d,y2=%d), (x3=%d,y3=%d), (x4=%d,y4=%d)\n",
-	   L(x0,1), L(y0,1), L(x1,1), L(y1,1),
-	   L(x0,2), L(y0,2), L(x1,2), L(y1,2));
-#endif
     while(n--) {
 	// adjust line1 x position
-	if ((L(dx,1) != 0) && (L(dx,1) > L(dy,1)) && 
+	if ((L(dx,1) != 0) && (L(dx,1) > L(dy,1)) &&
 	    (((L(x0,1) < L(x0,2)) && (L(sx,1) < 0)) ||
 	     ((L(x0,1) > L(x0,2)) && (L(sx,1) > 0)))) {
 	    /* Move to 'LAST' x position line 1 */
@@ -448,7 +427,7 @@ void trace_line_2(epx_pixmap_t* pic, epx_line_t* line1, epx_line_t* line2,
 	}
 
 	// adjust line2 x position
-	if ((L(dx,2) != 0) && (L(dx,2) > L(dy,2)) && 
+	if ((L(dx,2) != 0) && (L(dx,2) > L(dy,2)) &&
 	    (((L(x0,1) < L(x0,2)) && (L(sx,2) > 0)) ||
 	     ((L(x0,1) > L(x0,2)) && (L(sx,2) < 0)))) {
 	    /* Move to 'LAST' x position line 2 */
@@ -458,7 +437,7 @@ void trace_line_2(epx_pixmap_t* pic, epx_line_t* line1, epx_line_t* line2,
 	    }
 	}
 
-	epx_draw_line_horizontal(pic, L(x0,1), L(x0,2), L(y0,1), flags, fg);
+	epx_draw_line_horizontal(pixmap, L(x0,1), L(x0,2), L(y0,1), flags, fg);
 
 	/* step line 2 until y is moved (it wont move if dy=0) */
 	if (L(dy,2) != 0) {
@@ -498,35 +477,24 @@ void trace_line_2(epx_pixmap_t* pic, epx_line_t* line1, epx_line_t* line2,
 	    }
 	}
     }
-#ifdef DEBUG
-    printf("=> (x1=%d,y1=%d), (x2=%d,y2=%d), (x3=%d,y3=%d), (x4=%d,y4=%d)\n",
-	   L(x0,1), L(y0,1), L(x1,1), L(y1,1),
-	   L(x0,2), L(y0,2), L(x1,2), L(y1,2));
-#endif
-    if (swapped) {
-	LINE_SWAPOUT(line1,2);
-	LINE_SWAPOUT(line2,1);
-    }
-    else {
-	LINE_SWAPOUT(line1,1);
-	LINE_SWAPOUT(line2,2);
-    }
+    LINE_SWAPOUT(line1,1);
+    LINE_SWAPOUT(line2,2);
 }
 
 
-void epx_draw_line_plain(epx_pixmap_t* pic, int x1, int y1, int x2, int y2,
+void epx_draw_line_plain(epx_pixmap_t* pixmap, int x1, int y1, int x2, int y2,
 			 int flags, epx_pixel_t fg)
 {
     epx_line_t line;
-    set_p0(pic, &line, x1, y1);
-    set_p1(pic, &line, x2, y2);
+    set_p0(pixmap, &line, x1, y1);
+    set_p1(pixmap, &line, x2, y2);
     if (flags & EPX_FLAG_AALIAS)
-	trace_aalias_line_1(pic, &line, flags, fg);
+	trace_aalias_line_1(pixmap, &line, flags, fg);
     else
-	trace_line_1(pic, &line, flags, fg);
+	trace_line_1(pixmap, &line, flags, fg);
 }
 
-void draw_line_twin(epx_pixmap_t* pic, 
+void draw_line_twin(epx_pixmap_t* pixmap,
 		    int x1, int y1, int x2, int y2,
 		    int x3, int y3, int x4, int y4,
 		    int flags, epx_pixel_t fg)
@@ -535,49 +503,59 @@ void draw_line_twin(epx_pixmap_t* pic,
     epx_line_t line2;
 
     if (y2 < y1) { epx_swap_int(x1,x2); epx_swap_int(y1,y2);  }
-    set_p0(pic, &line1, x1, y1);
-    set_p1(pic, &line1, x2, y2);
+    set_p0(pixmap, &line1, x1, y1);
+    set_p1(pixmap, &line1, x2, y2);
 
     if (y4 < y3) { epx_swap_int(x3,x4); epx_swap_int(y3,y4);  }
-    set_p0(pic, &line2, x3, y3);
-    set_p1(pic, &line2, x4, y4);
-    trace_line_2(pic, &line1, &line2, flags, fg);
+    set_p0(pixmap, &line2, x3, y3);
+    set_p1(pixmap, &line2, x4, y4);
+
+    if (y2 < y4)
+	trace_line_2(pixmap, &line1, &line2, flags, fg);
+    else
+	trace_line_2(pixmap, &line2, &line1, flags, fg);
 }
 
 
-void fill_triangle(epx_pixmap_t* pic, 
-		   int x0, int y0,
-		   int x1, int y1,
-		   int x2, int y2,
-		   int flags, epx_pixel_t fg)
+void epx_fill_triangle(epx_pixmap_t* pixmap,
+		       int x0, int y0,
+		       int x1, int y1,
+		       int x2, int y2,
+		       int flags, epx_pixel_t fg)
 {
     epx_line_t line1;
     epx_line_t line2;
 
-    if (y2 < y1) { epx_swap_int(x1,x2); epx_swap_int(y1,y2);  }
-    if (y1 < y0) { epx_swap_int(x0,x1); epx_swap_int(y0,y1);  }
-    if (x2 < x1) { epx_swap_int(x1,x2); epx_swap_int(y1,y2);  }
+    // sort so that y0 <= y1 <= y2
+    if (y0 > y1) { epx_swap_int(x0,x1); epx_swap_int(y0,y1);  }
+    if (y1 > y2) { epx_swap_int(x1,x2); epx_swap_int(y1,y2);  }
+    if (y0 > y1) { epx_swap_int(x0,x1); epx_swap_int(y0,y1);  }
 
-    set_p0(pic, &line1, x0, y0);
-    set_p1(pic, &line1, x1, y1);
-
-    set_p0(pic, &line2, x0, y0);
-    set_p1(pic, &line2, x2, y2);
-
-    trace_line_2(pic, &line1, &line2, flags|EPX_FLAG_NLAST, fg);
-
-    if (epx_point_is_equal(&line1.p0, &line1.p1)) {
-	if (epx_point_is_equal(&line2.p0, &line2.p1))
-	    return;
-	set_p1(pic, &line1, x2, y2);
-	trace_line_2(pic, &line1, &line2, flags, fg);
+    if (y0 == y1) {
+	set_p0(pixmap, &line1, x0, y0);
+	set_p1(pixmap, &line1, x2, y2);
+	set_p0(pixmap, &line2, x1, y1);
+	set_p1(pixmap, &line2, x2, y2);
+	trace_line_2(pixmap, &line1, &line2, flags, fg);
     }
-    else if (epx_point_is_equal(&line2.p0, &line2.p1)) {
-	set_p1(pic, &line2, x1, y1);
-	trace_line_2(pic, &line1, &line2, flags, fg);
+    else if (y1 == y2) {
+	set_p0(pixmap, &line1, x0, y0);
+	set_p1(pixmap, &line1, x1, y1);
+	set_p0(pixmap, &line2, x0, y0);
+	set_p1(pixmap, &line2, x2, y2);
+	trace_line_2(pixmap, &line1, &line2, flags, fg);
     }
     else {
-	// fprintf(stderr, "NO LINE DONE\n");
+	set_p0(pixmap, &line1, x0, y0);
+	set_p1(pixmap, &line1, x1, y1);
+
+	set_p0(pixmap, &line2, x0, y0);
+	set_p1(pixmap, &line2, x2, y2);
+
+	trace_line_2(pixmap, &line1, &line2, flags, fg); // |EPX_FLAG_NLAST
+	// set_p0(pixmap, &line1, x1, y1);
+	set_p1(pixmap, &line1, x2, y2);
+	trace_line_2(pixmap, &line1, &line2, flags, fg);
     }
 }
 
@@ -588,7 +566,7 @@ static inline uint8_t wu_blend(uint8_t w, uint8_t fg, uint8_t bg)
 }
 
 
-static inline void put_wu_apixel(uint8_t* ptr, 
+static inline void put_wu_apixel(uint8_t* ptr,
 				 epx_pixel_unpack_t unpack,
 				 epx_pixel_pack_t pack,
 				 uint8_t w,int flags, epx_pixel_t fg,
@@ -618,7 +596,7 @@ static inline void put_wu_apixel(uint8_t* ptr,
  *
  */
 
-static void draw_dline(uint8_t* ptr, 
+static void draw_dline(uint8_t* ptr,
 		       epx_pixel_unpack_t unpack,
 		       epx_pixel_pack_t pack,
 		       float tk,
@@ -673,7 +651,7 @@ static void draw_dline(uint8_t* ptr,
  */
 
 void epx_draw_line_thick(epx_pixmap_t* pic,
-			 int x0, int y0, 
+			 int x0, int y0,
 			 int x1, int y1, int line_width,
 			 int flags, epx_pixel_t fg)
 {
@@ -866,15 +844,11 @@ void epx_draw_line_thick(epx_pixmap_t* pic,
 }
 
 
-void epx_draw_line(epx_pixmap_t* pic,int x0, int y0, int x1, int y1, 
+void epx_draw_line(epx_pixmap_t* pixmap,int x0, int y0, int x1, int y1,
 		   unsigned int line_width,int flags, epx_pixel_t p)
 {
-    if (line_width <= 1) {
-/*	if (flags & EFLAG_AALIAS)
-	    draw_line_aalias(pic, x0, y0, x1, y1, flags, p); 
-	 else */
-	    epx_draw_line_plain(pic, x0, y0, x1, y1, flags, p);
-    }
+    if (line_width <= 1)
+	epx_draw_line_plain(pixmap, x0, y0, x1, y1, flags, p);
     else
-	epx_draw_line_thick(pic, x0, y0, x1, y1, line_width, flags, p);
+	epx_draw_line_thick(pixmap, x0, y0, x1, y1, line_width, flags, p);
 }
