@@ -1376,8 +1376,8 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
      // To get gcc 4.1.2 to shut up about implicit declaration
      // without having to resort to -std=99, which triggers a shitload
      // of compile errors.
-     extern float truncf(float);    
-     extern float roundf(float);    
+     extern float truncf(float);
+     extern float roundf(float);
 
      int y0 = truncf(y-0.5);
      int y1 = truncf(y+0.5);
@@ -1415,14 +1415,12 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
      else
 	 p2 = epx_pixel_transparent;
 
-
      if (epx_point_xy_in_rect(x1,y1, &pic->clip)) {
 	 ptr = EPX_PIXEL_ADDR(pic, x1, y1);
 	 p3 = pic->func.unpack(ptr);
      }
      else
 	 p3 = epx_pixel_transparent;
-
 
      // This could probably be done in ALTIVEC || SSE2
      p.r = roundf(f0*p0.r + f1*p1.r + f2*p2.r + f3*p3.r);

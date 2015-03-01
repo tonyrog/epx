@@ -66,8 +66,8 @@ static struct _backend_item {
 #if defined(__APPLE__) && !defined(__x86_64__)
     { .name = "macos",
       .init = carbon_init,
-      .upgrade = carbin_upgrade
-    }
+      .upgrade = carbon_upgrade
+    },
 #endif
 
 #if 0 && defined(__APPLE__)
