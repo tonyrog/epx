@@ -131,7 +131,7 @@ int DDSGif::load(char* file_name, int start, int stop)
 
 		if (!Transparent || (p != TransparentColor)) {
 		    GifColorType* cp = &cmap->Colors[p];
-		   px.a = 255;
+		    px.a = 255;
 		    px.r = cp->Red;
 		    px.g = cp->Green;
 		    px.b = cp->Blue;

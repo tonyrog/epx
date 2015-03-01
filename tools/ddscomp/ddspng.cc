@@ -162,8 +162,8 @@ int DDSPng::load(char* file_name, int start, int stop)
 		p.r = ptr[0];
 		p.g = ptr[1];
 		p.b = ptr[2];
-		epx_pixmap_put_pixel(mPixmap, x, y, 0, p);
 		p.a = 255;
+		epx_pixmap_put_pixel(mPixmap, x, y, 0, p);
 		ptr += 3;
 	    }
 	    break;
