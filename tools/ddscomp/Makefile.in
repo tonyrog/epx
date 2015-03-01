@@ -1,0 +1,45 @@
+#
+# Home brewed Makefile for ddscompile
+# (C) 2006 Magden LLC.
+#
+CXX := @CXX@
+VERSION:=@VERSION@
+BINDIR :=  @CORE_DIR@/bin
+TARGET := $(BINDIR)/@Target@
+COREINC := @CORE_DIR@/include
+EPXINC := @CORE_DIR@/include
+EPXLIB := @CORE_DIR@/lib/release/epx.a
+
+PNG_CFLAGS := $(shell libpng-config --I_opts)
+PNG_LIBS   := $(shell libpng-config --libs)
+PNG_LFLAGS := $(shell libpng-config --ldflags)
+
+GIF_CFLAGS := -I@LIBUNGIF_DIR@/include
+GIF_LIBS   := -lgif
+GIF_LFLAGS := -L@LIBUNGIF_DIR@/lib
+
+AV_LIBS   := -lswscale -lavformat -lavcodec -lavutil -lz
+
+OBJ =	 ddsgif.o ddspng.o ddscomp.o lhash.o # ddsmpg.o
+
+CXXFLAGS:=@CXXFLAGS@  -D__STDC_CONSTANT_MACROS -D__STDC_LIMIT_MACROS $(PNG_CFLAGS) $(GIF_CFLAGS) -I$(EPXINC) -DVERSION=\"$(VERSION)\" -Wall
+
+giftest:	CXXFLAGS += -DTEST
+
+$(TARGET): $(OBJ)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(PNG_LFLAGS)$  $(OBJ) $(AV_LIBS) $(PNG_LIBS) $(GIF_LFLAGS) $(GIF_LIBS) $(EPXLIB)
+
+%.o: %.c
+	$(CXX) -c $(CXXFLAGS) -o $@ $<
+
+clean:
+	rm -f $(TARGET) $(OBJ)
+
+spotless: 
+	rm -rf $(TARGET) $(OBJ) config.status config.log configure autom4te.cache *~ Makefile
+
+lhash.o:	lhash.h
+ddspng.o:	ddspng.hh ddsimg.hh
+ddsgif.o:	ddsgif.hh ddsimg.hh
+# ddsmpg.o:	ddsmpg.hh ddsimg.hh
+ddscomp.o:	lhash.h ddspng.hh ddsgif.hh
