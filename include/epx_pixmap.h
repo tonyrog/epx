@@ -104,8 +104,17 @@ typedef struct _epx_pixmap_t {
 #define EPX_FLAG_SUM                  0x00000004
 #define EPX_FLAG_AALIAS               0x00000008
 #define EPX_FLAG_TEXTURED             0x00000010
-#define EPX_FLAG_NFIRST               0x00001000
-#define EPX_FLAG_NLAST                0x00002000
+#define EPX_FLAG_NE12                 0x00000020  // don't draw edge v1 - v2
+#define EPX_FLAG_NE23                 0x00000040  // don't draw edge v2 - v3
+#define EPX_FLAG_NE31                 0x00000080  // don't draw edge v3 - v1
+#define EPX_FLAG_NE34                 0x00000100  // don't draw edge v3 - v4
+#define EPX_FLAG_NE41                 0x00000200  // don't draw edge v4 - v1
+#define EPX_FLAG_NV1                  0x00001000  // don't draw vertex v1
+#define EPX_FLAG_NV2                  0x00002000  // don't draw vertex v2
+#define EPX_FLAG_NV3                  0x00004000  // don't draw vertex v3
+#define EPX_FLAG_NV4                  0x00008000  // don't draw vertex v4
+#define EPX_FLAG_NFIRST               EPX_FLAG_NV1 // dont draw first pixel
+#define EPX_FLAG_NLAST                EPX_FLAG_NV2 // dont draw last pixel
 
 typedef uint32_t epx_flags_t;
 

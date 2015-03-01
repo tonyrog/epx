@@ -4059,6 +4059,8 @@ static ERL_NIF_TERM font_load(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &font_res, (void**) &font))
 	return enif_make_badarg(env);
+    if (epx_font_is_loaded(font) || epx_font_is_mapped(font))
+	return ATOM(ok);
     if (epx_font_load(font) < 0)
 	return ATOM(error); // fixme - reason
     return ATOM(ok);
@@ -4084,6 +4086,8 @@ static ERL_NIF_TERM font_map(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &font_res, (void**) &font))
 	return enif_make_badarg(env);
+    if (epx_font_is_loaded(font) || epx_font_is_mapped(font))
+	return ATOM(ok);
     if (epx_font_map(font) < 0)
 	return ATOM(error); // fixme - reason
     return ATOM(ok);
