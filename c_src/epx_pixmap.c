@@ -2417,15 +2417,17 @@ void epx_pixmap_rotate_area(epx_pixmap_t* src, epx_pixmap_t* dst, float angle,
 // Take the src pixels and transform them to new width,height
 // and place pixels in dst.
 //
-void epx_pixmap_scale(epx_pixmap_t* src, epx_pixmap_t* dst, 
-		      unsigned int width, unsigned int height)
+void epx_pixmap_scale_area(epx_pixmap_t* src, epx_pixmap_t* dst,
+			   int x_dst, int y_dst,
+			   unsigned int width, unsigned int height,
+			   epx_flags_t flags)
 {
     epx_rect_t sr, dr;
     int y;
     unsigned h;
     float xs, ys;
 
-    if (epx_clip_dst(src,dst,0,0,0,0, width, height, &sr, &dr) < 0)
+    if (epx_clip_dst(src,dst,0,0,x_dst,y_dst, width, height, &sr, &dr) < 0)
 	return;
     // The scale factor is still (width/src->width, height/src-height)
     // The inverted scale is:
@@ -2438,17 +2440,42 @@ void epx_pixmap_scale(epx_pixmap_t* src, epx_pixmap_t* dst,
 	float ysf = y*ys;
 	int x = dr.xy.x;
 	unsigned w = dr.wh.width;
+	uint8_t* dst_addr = EPX_PIXEL_ADDR(dst,x,y);
+	unsigned int bytes_per_pixel = dst->bytes_per_pixel;
+	float xsf = x*xs;
 
-	while(w--) {
-	    float xsf = x*xs;
-	    epx_pixel_t p = epixel_interp(src, xsf, ysf);
-	    uint8_t* addr = EPX_PIXEL_ADDR(dst,x,y);
-	    dst->func.pack(p, addr);
-	    x++;
+	if (flags & EPX_FLAG_BLEND) {
+	    while(w--) {
+		epx_pixel_t s = epixel_interp(src, xsf, ysf);
+		epx_pixel_t d = dst->func.unpack(dst_addr);
+		d = epx_pixel_blend(s.a, s, d);
+		dst->func.pack(d, dst_addr);
+		dst_addr += bytes_per_pixel;
+		xsf += xs;
+	    }
+	}
+	else {
+	    while(w--) {
+		epx_pixel_t p = epixel_interp(src, xsf, ysf);
+		dst->func.pack(p, dst_addr);
+		dst_addr += bytes_per_pixel;
+		xsf += xs;
+	    }
 	}
 	y++;
     }
 }
+
+//
+// Take the src pixels and transform them to new width,height
+// and place pixels in dst.
+//
+void epx_pixmap_scale(epx_pixmap_t* src, epx_pixmap_t* dst, 
+		      unsigned int width, unsigned int height)
+{
+    epx_pixmap_scale_area(src, dst, 0, 0, width, height, 0);
+}
+
 
 //
 // Binary operation Dst = Func(Fade,Color,Src,Dst)

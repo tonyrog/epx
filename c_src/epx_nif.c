@@ -59,6 +59,8 @@ static ERL_NIF_TERM pixmap_flip(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc,
 				 const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM pixmap_scale_area(ErlNifEnv* env, int argc,
+				      const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc,
@@ -340,6 +342,7 @@ ErlNifFunc epx_funcs[] =
     NIF_FUNC("pixmap_copy_to", 2, pixmap_copy_to),
     NIF_FUNC("pixmap_flip", 1, pixmap_flip),
     NIF_FUNC("pixmap_scale", 4, pixmap_scale),
+    NIF_FUNC("pixmap_scale_area", 7, pixmap_scale_area),
     NIF_FUNC("pixmap_put_pixel", 5, pixmap_put_pixel),
     NIF_FUNC("pixmap_put_pixels", 8, pixmap_put_pixels),
     NIF_FUNC("pixmap_get_pixel", 3, pixmap_get_pixel),
@@ -2611,6 +2614,36 @@ static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc,
     if (!enif_get_uint(env, argv[3], &height))
 	return enif_make_badarg(env);
     epx_pixmap_scale(src, dst, width, height);
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM pixmap_scale_area(ErlNifEnv* env, int argc,
+				      const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_pixmap_t* src;
+    epx_pixmap_t* dst;
+    int x_dst;
+    int y_dst;
+    unsigned int width;
+    unsigned int height;
+    epx_flags_t flags;
+
+    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[2], &x_dst))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[3], &y_dst))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[4], &width))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[5], &height))
+	return enif_make_badarg(env);
+    if (!get_flags(env, argv[6], &flags))
+	return enif_make_badarg(env);
+    epx_pixmap_scale_area(src, dst, x_dst, y_dst, width, height, flags);
     return ATOM(ok);
 }
 
