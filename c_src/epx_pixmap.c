@@ -2418,31 +2418,32 @@ void epx_pixmap_rotate_area(epx_pixmap_t* src, epx_pixmap_t* dst, float angle,
 // and place pixels in dst.
 //
 void epx_pixmap_scale_area(epx_pixmap_t* src, epx_pixmap_t* dst,
+			   int x_src, int y_src,
 			   int x_dst, int y_dst,
-			   unsigned int width, unsigned int height,
+			   unsigned int w_src, unsigned int h_src,
+			   unsigned int w_dst, unsigned int h_dst,
 			   epx_flags_t flags)
 {
     epx_rect_t sr, dr;
     int y;
     unsigned h;
     float xs, ys;
-
-    if (epx_clip_dst(src,dst,0,0,x_dst,y_dst, width, height, &sr, &dr) < 0)
+    float ysf;
+    if (epx_clip_dst(src,dst,x_src,y_src,x_dst,y_dst,w_dst,h_dst,&sr,&dr) < 0)
 	return;
-    // The scale factor is still (width/src->width, height/src-height)
     // The inverted scale is:
-    xs = src->width/(float) width;
-    ys = src->height/(float) height;
+    xs = w_src/(float) w_dst;
+    ys = h_src/(float) h_dst;
 
     y = dr.xy.y;
     h = dr.wh.height;
+    ysf = y_src;
     while(h--) {
-	float ysf = y*ys;
 	int x = dr.xy.x;
 	unsigned w = dr.wh.width;
 	uint8_t* dst_addr = EPX_PIXEL_ADDR(dst,x,y);
 	unsigned int bytes_per_pixel = dst->bytes_per_pixel;
-	float xsf = x*xs;
+	float xsf = x_src;
 
 	if (flags & EPX_FLAG_BLEND) {
 	    while(w--) {
@@ -2463,6 +2464,7 @@ void epx_pixmap_scale_area(epx_pixmap_t* src, epx_pixmap_t* dst,
 	    }
 	}
 	y++;
+	ysf += ys;
     }
 }
 
@@ -2473,7 +2475,9 @@ void epx_pixmap_scale_area(epx_pixmap_t* src, epx_pixmap_t* dst,
 void epx_pixmap_scale(epx_pixmap_t* src, epx_pixmap_t* dst, 
 		      unsigned int width, unsigned int height)
 {
-    epx_pixmap_scale_area(src, dst, 0, 0, width, height, 0);
+    epx_pixmap_scale_area(src, dst, 0, 0, 0, 0,
+			  src->width, src->height,
+			  width, height, 0);
 }
 
 

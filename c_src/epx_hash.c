@@ -15,7 +15,7 @@
  *
  ***************************************************************************/
 /*
-** Linear hash of Epic objects
+** Linear hash of epx objects
 */
 #include <stdio.h>
 #include <stdlib.h>

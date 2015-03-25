@@ -146,8 +146,10 @@ extern void epx_pixmap_fill_blend(epx_pixmap_t* pic, epx_pixel_t color);
 extern void epx_pixmap_scale(epx_pixmap_t* src, epx_pixmap_t* dst, 
 			     unsigned int width, unsigned int height);
 extern void epx_pixmap_scale_area(epx_pixmap_t* src, epx_pixmap_t* dst,
+				  int x_src, int y_src,
 				  int x_dst, int y_dst,
-				  unsigned int width, unsigned int height,
+				  unsigned int w_src, unsigned int h_src,
+				  unsigned int w_dst, unsigned int h_dst,
 				  epx_flags_t flags);
 extern void epx_pixmap_flip(epx_pixmap_t* pic);
 extern void epx_pixmap_put_pixel(epx_pixmap_t* pic, int x, int y,

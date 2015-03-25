@@ -342,7 +342,7 @@ ErlNifFunc epx_funcs[] =
     NIF_FUNC("pixmap_copy_to", 2, pixmap_copy_to),
     NIF_FUNC("pixmap_flip", 1, pixmap_flip),
     NIF_FUNC("pixmap_scale", 4, pixmap_scale),
-    NIF_FUNC("pixmap_scale_area", 7, pixmap_scale_area),
+    NIF_FUNC("pixmap_scale_area", 11, pixmap_scale_area),
     NIF_FUNC("pixmap_put_pixel", 5, pixmap_put_pixel),
     NIF_FUNC("pixmap_put_pixels", 8, pixmap_put_pixels),
     NIF_FUNC("pixmap_get_pixel", 3, pixmap_get_pixel),
@@ -2623,27 +2623,40 @@ static ERL_NIF_TERM pixmap_scale_area(ErlNifEnv* env, int argc,
     (void) argc;
     epx_pixmap_t* src;
     epx_pixmap_t* dst;
+    int x_src;
+    int y_src;
+    unsigned int w_src;
+    unsigned int h_src;
     int x_dst;
     int y_dst;
-    unsigned int width;
-    unsigned int height;
+    unsigned int w_dst;
+    unsigned int h_dst;
     epx_flags_t flags;
 
     if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x_dst))
+    if (!enif_get_int(env, argv[2], &x_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y_dst))
+    if (!enif_get_int(env, argv[3], &y_src))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[4], &width))
+    if (!enif_get_int(env, argv[4], &x_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[5], &height))
+    if (!enif_get_int(env, argv[5], &y_dst))
 	return enif_make_badarg(env);
-    if (!get_flags(env, argv[6], &flags))
+    if (!enif_get_uint(env, argv[6], &w_src))
 	return enif_make_badarg(env);
-    epx_pixmap_scale_area(src, dst, x_dst, y_dst, width, height, flags);
+    if (!enif_get_uint(env, argv[7], &h_src))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[8], &w_dst))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[9], &h_dst))
+	return enif_make_badarg(env);
+    if (!get_flags(env, argv[10], &flags))
+	return enif_make_badarg(env);
+    epx_pixmap_scale_area(src, dst, x_src, y_src, x_dst, y_dst, 
+			  w_src, h_src, w_dst, h_dst, flags);
     return ATOM(ok);
 }
 

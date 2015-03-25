@@ -1258,7 +1258,7 @@ void usage(char *aProgName)
   puts(" -C rgb|rgba|argb     Specifies both pixel size and format.\n");
   puts("    gbr|gbra|agbr\n");
   puts(" -b 0-255  Default 0. Specifies neighboring pixel color and alpha variations allowed while still classifying");
-  puts("                      two pixels as identical. Not used right now");
+  puts("                      two pixels as identical.");
   puts(" -B bright Default 0. Specifies a brightness adjustment (positive or negative) to be applied");
   puts("                      to each image.");
   puts(" -c outfile           Specifies the name of the DDS file to generate.\n");

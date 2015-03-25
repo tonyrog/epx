@@ -44,6 +44,7 @@
 -export([pixmap_flip/1]).
 -export([pixmap_scale/4]).
 -export([pixmap_scale_area/6,pixmap_scale_area/7]).
+-export([pixmap_scale_area/11]).
 -export([pixmap_get_pixel/3]).
 -export([pixmap_get_pixels/5]).
 -export([pixmap_put_pixel/4,pixmap_put_pixel/5]).
@@ -513,6 +514,26 @@ pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height) ->
 			Width::unsigned(), Height::unsigned(),
 			Flags::epx_flags()) -> void().
 pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height, _Flags) ->
+    WSrc = pixmap_info(_Src, width),
+    HSrc = pixmap_info(_Src, height),
+    pixmap_scale_area(_Src, _Dst, 0, 0, _XDst, _YDst,
+		      WSrc, HSrc, _Width, _Height, _Flags).
+
+%% @doc
+%%  Scale `Src' pixmap rectangle (XSrc,YSrc, into destination rectangle 
+%%  to size (`Width' and `Height') and put the result
+%%  in the `Dst' pixmap at offset `XDst', `YDst'.
+%% @end
+-spec pixmap_scale_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			XSrc::integer(),YSrc::integer(),
+			XDst::integer(),YDst::integer(),
+			WSrc::unsigned(),HSrc::unsigned(),
+			WDst::unsigned(), HDst::unsigned(),
+			Flags::epx_flags()) -> void().
+pixmap_scale_area(_Src, _Dst,
+		  _XSrc, _YSrc, _XDst, _YDst,
+		  _WSrc, _HSrc, _WDst, _HDst,
+		  _Flags) ->
     erlang:error(nif_not_loaded).
 
 %% @doc
