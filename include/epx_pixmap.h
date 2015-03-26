@@ -104,8 +104,17 @@ typedef struct _epx_pixmap_t {
 #define EPX_FLAG_SUM                  0x00000004
 #define EPX_FLAG_AALIAS               0x00000008
 #define EPX_FLAG_TEXTURED             0x00000010
-#define EPX_FLAG_NFIRST               0x00001000
-#define EPX_FLAG_NLAST                0x00002000
+#define EPX_FLAG_NE12                 0x00000020  // don't draw edge v1 - v2
+#define EPX_FLAG_NE23                 0x00000040  // don't draw edge v2 - v3
+#define EPX_FLAG_NE31                 0x00000080  // don't draw edge v3 - v1
+#define EPX_FLAG_NE34                 0x00000100  // don't draw edge v3 - v4
+#define EPX_FLAG_NE41                 0x00000200  // don't draw edge v4 - v1
+#define EPX_FLAG_NV1                  0x00001000  // don't draw vertex v1
+#define EPX_FLAG_NV2                  0x00002000  // don't draw vertex v2
+#define EPX_FLAG_NV3                  0x00004000  // don't draw vertex v3
+#define EPX_FLAG_NV4                  0x00008000  // don't draw vertex v4
+#define EPX_FLAG_NFIRST               EPX_FLAG_NV1 // dont draw first pixel
+#define EPX_FLAG_NLAST                EPX_FLAG_NV2 // dont draw last pixel
 
 typedef uint32_t epx_flags_t;
 
@@ -136,7 +145,12 @@ extern void epx_pixmap_fill_blend(epx_pixmap_t* pic, epx_pixel_t color);
 
 extern void epx_pixmap_scale(epx_pixmap_t* src, epx_pixmap_t* dst, 
 			     unsigned int width, unsigned int height);
-
+extern void epx_pixmap_scale_area(epx_pixmap_t* src, epx_pixmap_t* dst,
+				  int x_src, int y_src,
+				  int x_dst, int y_dst,
+				  unsigned int w_src, unsigned int h_src,
+				  unsigned int w_dst, unsigned int h_dst,
+				  epx_flags_t flags);
 extern void epx_pixmap_flip(epx_pixmap_t* pic);
 extern void epx_pixmap_put_pixel(epx_pixmap_t* pic, int x, int y,
 				 epx_flags_t flags, epx_pixel_t px);

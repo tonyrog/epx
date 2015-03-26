@@ -1,6 +1,6 @@
 /***************************************************************************
  *
- * Copyright (C) 2007 - 2012, Rogvall Invest AB, <tony@rogvall.se>
+ * Copyright (C) 2007 - 2015, Rogvall Invest AB, <tony@rogvall.se>
  *
  * This software is licensed as described in the file COPYRIGHT, which
  * you should have received as part of this distribution. The terms
@@ -26,6 +26,12 @@
 #include "erl_nif.h"
 #include "../include/epx.h"
 
+#if (ERL_NIF_MAJOR_VERSION > 2) || ((ERL_NIF_MAJOR_VERSION == 2) && (ERL_NIF_MINOR_VERSION >= 7))
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr),(0)}
+#else
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr)}
+#endif
+
 #define MAX_PATH 1024
 
 static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info);
@@ -34,80 +40,86 @@ static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
 static void epx_unload(ErlNifEnv* env, void* priv_data);
 
 // Pixmaps
-static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_copy(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_copy(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_sub_pixmap(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_sub_pixmap(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[]);
 
-static ERL_NIF_TERM pixmap_info(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_info(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_set_clip(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_set_clip(ErlNifEnv* env, int argc,
 				    const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_fill(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_fill(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_copy_to(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_copy_to(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_flip(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_flip(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc,
 				 const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc, 
-				     const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_scale_area(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_get_pixel(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_copy_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_get_pixel(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_alpha_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_fade_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_copy_area(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_shadow_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_alpha_area(ErlNifEnv* env, int argc,
+				      const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM pixmap_fade_area(ErlNifEnv* env, int argc,
+				     const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM pixmap_shadow_area(ErlNifEnv* env, int argc,
 				       const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_operation_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_operation_area(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[]);
 
-static ERL_NIF_TERM pixmap_add_color_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_add_color_area(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_filter_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_filter_area(ErlNifEnv* env, int argc,
 				       const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_rotate_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_rotate_area(ErlNifEnv* env, int argc,
 				       const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_scroll(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_scroll(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_attach(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_attach(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_detach(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_detach(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_draw(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_draw(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_draw_point(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_sync(ErlNifEnv* env, int argc,
+				const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM pixmap_draw_point(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_draw_line(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_draw_line(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_draw_rectangle(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_draw_triangle(ErlNifEnv* env, int argc,
+					 const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM pixmap_draw_rectangle(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc,
 					const ERL_NIF_TERM argv[]);
 // Pixmap animations
-static ERL_NIF_TERM animation_open(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM animation_open(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM animation_copy(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM animation_copy(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM animation_draw(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM animation_draw(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM animation_info(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM animation_info(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[]);
 
 // Dictionaries
-static ERL_NIF_TERM dict_create(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_create(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM dict_copy(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_copy(ErlNifEnv* env, int argc,
 			      const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM dict_set(ErlNifEnv* env, int argc,
 			     const ERL_NIF_TERM argv[]);
@@ -142,6 +154,7 @@ static ERL_NIF_TERM gc_default(ErlNifEnv* env, int argc,
 static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
 			   const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM gc_get(ErlNifEnv* env, int argc,
+
 			   const ERL_NIF_TERM argv[]);
 
 // Fonts
@@ -180,6 +193,7 @@ typedef enum {
     EPX_MESSAGE_WINDOW_SWAP,    // backend main - swap window
     EPX_MESSAGE_WINDOW_ADJUST,  // backend main - set window parameters
     EPX_MESSAGE_ADJUST,         // backend main - set backend parameters
+    EPX_MESSAGE_PIXMAP_SYNC,    // backend main - sync pixmap (on window)
 } epx_message_type_t;
 
 struct _epx_thread_t;
@@ -210,6 +224,10 @@ typedef struct epx_message_t
 	    unsigned int width;
 	    unsigned int height;
 	} wdraw;
+	struct {
+	    epx_pixmap_t* pixmap;  // attached pixmap
+	    epx_window_t* window;  // attached window
+	} wsync;
 	void* (*upgrade)(void* arg);
 	struct _epx_queue_t* reply_q;
     };
@@ -281,11 +299,11 @@ static ERL_NIF_TERM backend_adjust(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[]);
 
 // Windows
-static ERL_NIF_TERM window_create(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM window_create(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM window_adjust(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM window_adjust(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM window_info(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM window_info(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM window_attach(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[]);
@@ -308,96 +326,99 @@ static ERL_NIF_TERM debug(ErlNifEnv* env, int argc,
 
 ErlNifFunc epx_funcs[] =
 {
-    // Debug 
-    { "debug",         1,  debug },
+    // Debug
+    NIF_FUNC("debug",         1,  debug),
     // Simd interface
-    { "simd_info",     1,  simd_info },
-    { "simd_set",      1,  simd_set  },
+    NIF_FUNC("simd_info",     1,  simd_info),
+    NIF_FUNC("simd_set",      1,  simd_set ),
 
     // Pixmap interface
-    { "pixmap_create", 3, pixmap_create },
-    { "pixmap_copy",   1, pixmap_copy },
-    { "pixmap_info",    2, pixmap_info },
-    { "pixmap_sub_pixmap", 5, pixmap_sub_pixmap },
-    { "pixmap_set_clip", 2, pixmap_set_clip },
-    { "pixmap_fill", 3, pixmap_fill },
-    { "pixmap_copy_to", 2, pixmap_copy_to },
-    { "pixmap_flip", 1, pixmap_flip },
-    { "pixmap_scale", 4, pixmap_scale },
-    { "pixmap_put_pixel", 5, pixmap_put_pixel },
-    { "pixmap_put_pixels", 8, pixmap_put_pixels },
-    { "pixmap_get_pixel", 3, pixmap_get_pixel },
-    { "pixmap_get_pixels", 5, pixmap_get_pixels },
-    { "pixmap_copy_area", 9, pixmap_copy_area },
-    { "pixmap_alpha_area", 9, pixmap_alpha_area },
-    { "pixmap_fade_area", 9, pixmap_fade_area },
-    { "pixmap_shadow_area", 9, pixmap_shadow_area },
-    { "pixmap_operation_area", 9, pixmap_operation_area },
-    { "pixmap_add_color_area", 11, pixmap_add_color_area },
-    { "pixmap_filter_area", 10, pixmap_filter_area },
-    { "pixmap_rotate_area", 12, pixmap_rotate_area },
-    { "pixmap_scroll", 6, pixmap_scroll },
-    { "pixmap_attach", 2, pixmap_attach },
-    { "pixmap_detach", 1, pixmap_detach },
-    { "pixmap_draw", 8, pixmap_draw },
-    { "pixmap_draw_point", 4, pixmap_draw_point },
-    { "pixmap_draw_line", 6, pixmap_draw_line },
-    { "pixmap_draw_rectangle", 6, pixmap_draw_rectangle },
-    { "pixmap_draw_ellipse", 6, pixmap_draw_ellipse },
+    NIF_FUNC("pixmap_create", 3, pixmap_create),
+    NIF_FUNC("pixmap_copy",   1, pixmap_copy),
+    NIF_FUNC("pixmap_info",    2, pixmap_info),
+    NIF_FUNC("pixmap_sub_pixmap", 5, pixmap_sub_pixmap),
+    NIF_FUNC("pixmap_set_clip", 2, pixmap_set_clip),
+    NIF_FUNC("pixmap_fill", 3, pixmap_fill),
+    NIF_FUNC("pixmap_copy_to", 2, pixmap_copy_to),
+    NIF_FUNC("pixmap_flip", 1, pixmap_flip),
+    NIF_FUNC("pixmap_scale", 4, pixmap_scale),
+    NIF_FUNC("pixmap_scale_area", 11, pixmap_scale_area),
+    NIF_FUNC("pixmap_put_pixel", 5, pixmap_put_pixel),
+    NIF_FUNC("pixmap_put_pixels", 8, pixmap_put_pixels),
+    NIF_FUNC("pixmap_get_pixel", 3, pixmap_get_pixel),
+    NIF_FUNC("pixmap_get_pixels", 5, pixmap_get_pixels),
+    NIF_FUNC("pixmap_copy_area", 9, pixmap_copy_area),
+    NIF_FUNC("pixmap_alpha_area", 9, pixmap_alpha_area),
+    NIF_FUNC("pixmap_fade_area", 9, pixmap_fade_area),
+    NIF_FUNC("pixmap_shadow_area", 9, pixmap_shadow_area),
+    NIF_FUNC("pixmap_operation_area", 9, pixmap_operation_area),
+    NIF_FUNC("pixmap_add_color_area", 11, pixmap_add_color_area),
+    NIF_FUNC("pixmap_filter_area", 10, pixmap_filter_area),
+    NIF_FUNC("pixmap_rotate_area", 12, pixmap_rotate_area),
+    NIF_FUNC("pixmap_scroll", 6, pixmap_scroll),
+    NIF_FUNC("pixmap_attach", 2, pixmap_attach),
+    NIF_FUNC("pixmap_detach", 1, pixmap_detach),
+    NIF_FUNC("pixmap_draw", 8, pixmap_draw),
+    NIF_FUNC("pixmap_sync", 2, pixmap_sync),
+    NIF_FUNC("pixmap_draw_point", 4, pixmap_draw_point),
+    NIF_FUNC("pixmap_draw_line", 6, pixmap_draw_line),
+    NIF_FUNC("pixmap_draw_triangle", 8, pixmap_draw_triangle),
+    NIF_FUNC("pixmap_draw_rectangle", 6, pixmap_draw_rectangle),
+    NIF_FUNC("pixmap_draw_ellipse", 6, pixmap_draw_ellipse),
 
     // Dictionary interface
-    { "dict_create", 0, dict_create },
-    { "dict_copy",   1, dict_copy },
-    { "dict_set",    3, dict_set },
-    { "dict_get",    2, dict_get },
-    { "dict_get_boolean", 2, dict_get_boolean },
-    { "dict_get_integer", 2, dict_get_integer },
-    { "dict_get_float", 2, dict_get_float },
-    { "dict_get_string", 2, dict_get_string },
-    { "dict_get_binary", 2, dict_get_binary },
-    { "dict_is_key",     2, dict_is_key },
-    { "dict_first",      1, dict_first },
-    { "dict_next",       2, dict_next },
-    { "dict_info",       2, dict_info },
+    NIF_FUNC("dict_create", 0, dict_create),
+    NIF_FUNC("dict_copy",   1, dict_copy),
+    NIF_FUNC("dict_set",    3, dict_set),
+    NIF_FUNC("dict_get",    2, dict_get),
+    NIF_FUNC("dict_get_boolean", 2, dict_get_boolean),
+    NIF_FUNC("dict_get_integer", 2, dict_get_integer),
+    NIF_FUNC("dict_get_float", 2, dict_get_float),
+    NIF_FUNC("dict_get_string", 2, dict_get_string),
+    NIF_FUNC("dict_get_binary", 2, dict_get_binary),
+    NIF_FUNC("dict_is_key",     2, dict_is_key),
+    NIF_FUNC("dict_first",      1, dict_first),
+    NIF_FUNC("dict_next",       2, dict_next),
+    NIF_FUNC("dict_info",       2, dict_info),
 
     // Graphic context
-    { "gc_create", 0, gc_create },    
-    { "gc_copy", 1, gc_copy },
-    { "gc_default", 0, gc_default },
-    { "gc_set", 3, gc_set },
-    { "gc_get", 2, gc_get },
+    NIF_FUNC("gc_create", 0, gc_create),
+    NIF_FUNC("gc_copy", 1, gc_copy),
+    NIF_FUNC("gc_default", 0, gc_default),
+    NIF_FUNC("gc_set", 3, gc_set),
+    NIF_FUNC("gc_get", 2, gc_get),
 
     // Font
-    { "font_open", 1, font_open },
-    { "font_load", 1, font_load },
-    { "font_unload", 1, font_unload },
-    { "font_map", 1, font_map },
-    { "font_unmap", 1, font_unmap },
-    { "font_info", 2, font_info },
-    { "font_draw_glyph", 5, font_draw_glyph },
-    { "font_draw_string", 5, font_draw_string },
-    { "font_draw_utf8", 5, font_draw_utf8 },
+    NIF_FUNC("font_open", 1, font_open),
+    NIF_FUNC("font_load", 1, font_load),
+    NIF_FUNC("font_unload", 1, font_unload),
+    NIF_FUNC("font_map", 1, font_map),
+    NIF_FUNC("font_unmap", 1, font_unmap),
+    NIF_FUNC("font_info", 2, font_info),
+    NIF_FUNC("font_draw_glyph", 5, font_draw_glyph),
+    NIF_FUNC("font_draw_string", 5, font_draw_string),
+    NIF_FUNC("font_draw_utf8", 5, font_draw_utf8),
     // Backend
-    { "backend_list", 0, backend_list },
-    { "backend_open", 2, backend_open },
-    { "backend_info", 2, backend_info },
-    { "backend_adjust", 2, backend_adjust },
+    NIF_FUNC("backend_list", 0, backend_list),
+    NIF_FUNC("backend_open", 2, backend_open),
+    NIF_FUNC("backend_info", 2, backend_info),
+    NIF_FUNC("backend_adjust", 2, backend_adjust),
 
     // Window
-    { "window_create", 4, window_create },
-    { "window_create", 5, window_create },
-    { "window_adjust", 2, window_adjust },
-    { "window_info",   2, window_info },
-    { "window_attach", 2, window_attach },
-    { "window_detach", 1, window_detach },
-    { "window_set_event_mask", 2, window_set_event_mask },
-    { "window_enable_events", 2, window_enable_events },
-    { "window_disable_events", 2, window_disable_events },
+    NIF_FUNC("window_create", 4, window_create),
+    NIF_FUNC("window_create", 5, window_create),
+    NIF_FUNC("window_adjust", 2, window_adjust),
+    NIF_FUNC("window_info",   2, window_info),
+    NIF_FUNC("window_attach", 2, window_attach),
+    NIF_FUNC("window_detach", 1, window_detach),
+    NIF_FUNC("window_set_event_mask", 2, window_set_event_mask),
+    NIF_FUNC("window_enable_events", 2, window_enable_events),
+    NIF_FUNC("window_disable_events", 2, window_disable_events),
 
-    { "animation_info", 2, animation_info },
-    { "animation_draw", 6, animation_draw },
-    { "animation_copy", 6, animation_copy },
-    { "animation_open", 1, animation_open },
+    NIF_FUNC("animation_info", 2, animation_info),
+    NIF_FUNC("animation_draw", 6, animation_draw),
+    NIF_FUNC("animation_copy", 6, animation_copy),
+    NIF_FUNC("animation_open", 1, animation_open),
 
 };
 
@@ -672,6 +693,7 @@ DECL_ATOM(leave);
 DECL_ATOM(configure);
 DECL_ATOM(resize);
 DECL_ATOM(crossing);
+DECL_ATOM(synced);  // special sync operation
 // Event-buttons
 // DECL_ATOM(left);
 // DECL_ATOM(right);
@@ -771,7 +793,7 @@ static int epx_queue_get(epx_queue_t* q, epx_message_t* m)
 	ql->next = q->free;
 	q->free = ql;
     }
-    else 
+    else
 	enif_free(ql);
     enif_mutex_unlock(q->mtx);
     return 0;
@@ -868,6 +890,7 @@ static char* format_message(epx_message_t* m)
     case EPX_MESSAGE_PIXMAP_ATTACH: return "pixmap_attach";
     case EPX_MESSAGE_PIXMAP_DETACH: return "pixmap_detach";
     case EPX_MESSAGE_PIXMAP_DRAW: return "pixmap_draw";
+    case EPX_MESSAGE_PIXMAP_SYNC: return "pixmap_sync";
     default: return "unknown";
     }
 }
@@ -958,7 +981,7 @@ error:
     return 0;
 }
 
-static int epx_thread_stop(epx_thread_t* thr, epx_thread_t* sender, 
+static int epx_thread_stop(epx_thread_t* thr, epx_thread_t* sender,
 			     void** exit_value)
 {
     epx_message_t m;
@@ -1023,7 +1046,7 @@ static void backend_dtor(ErlNifEnv* env, void* obj)
     m.type = EPX_MESSAGE_KILL;
     m.thread = backend->main;
     epx_message_send(ctx->reaper, 0, &m);
-}    
+}
 
 static void pixmap_dtor(ErlNifEnv* env, void* obj)
 {
@@ -1052,7 +1075,7 @@ static void window_dtor(ErlNifEnv* env, void* obj)
     (void) env;
     epx_window_t* window = (epx_window_t*) obj;
 
-    EPX_DBGFMT_MEM("WINDOW_DTOR: obj=%p, refc=%lu", 
+    EPX_DBGFMT_MEM("WINDOW_DTOR: obj=%p, refc=%lu",
 	       obj, ((epx_object_t*)obj)->refc);
 
     if (window->owner) {
@@ -1072,7 +1095,7 @@ static void window_dtor(ErlNifEnv* env, void* obj)
     else {
 	epx_object_unref(window);
     }
-} 
+}
 
 /******************************************************************************
  *
@@ -1139,7 +1162,6 @@ static int get_object(ErlNifEnv* env, const ERL_NIF_TERM term,
 	return 0;
     return 1;
 }
-				
 
 static int get_flag(ErlNifEnv* env, const ERL_NIF_TERM term,
 		    epx_flags_t* flags)
@@ -1172,7 +1194,7 @@ static int get_flags(ErlNifEnv* env, const ERL_NIF_TERM term,
     }
     if (enif_is_atom(env, term)) {
 	if (!get_flag(env, term, &f))
-	    return 0;	
+	    return 0;
 	*flags = f;
 	return 1;
     }
@@ -1184,7 +1206,7 @@ static int get_flags(ErlNifEnv* env, const ERL_NIF_TERM term,
 	epx_flags_t fs = EPX_FLAG_NONE;
 	ERL_NIF_TERM list = term;
 	ERL_NIF_TERM head, tail;
-	
+
 	while(enif_get_list_cell(env, list, &head, &tail)) {
 	    if (!get_flag(env, head, &f))
 		return 0;
@@ -1211,7 +1233,6 @@ static ERL_NIF_TERM make_flags(ErlNifEnv* env, epx_flags_t flags)
     if (flags & EPX_FLAG_TEXTURED) fv[i++] = ATOM(textured);
     if (flags & EPX_FLAG_NFIRST) fv[i++] = ATOM(nfirst);
     if (flags & EPX_FLAG_NLAST) fv[i++] = ATOM(nlast);
-    
     if (flags & EPX_LINE_STYLE_DASHED) fv[i++] = ATOM(dashed);
     if (flags & EPX_BORDER_STYLE_NTOP) fv[i++] = ATOM(ntop);
     if (flags & EPX_BORDER_STYLE_NRIGHT) fv[i++] = ATOM(nright);
@@ -1235,8 +1256,8 @@ static int get_operation(ErlNifEnv* env, const ERL_NIF_TERM term,
     else if (term == ATOM(dst_out))   *op = EPX_PIXEL_OP_DST_OUT;
     else if (term == ATOM(src_atop))  *op = EPX_PIXEL_OP_SRC_ATOP;
     else if (term == ATOM(dst_atop))  *op = EPX_PIXEL_OP_DST_ATOP;
-    else if (term == ATOM(xor))       *op = EPX_PIXEL_OP_XOR;	 
-    else if (term == ATOM(copy))      *op = EPX_PIXEL_OP_COPY;	 
+    else if (term == ATOM(xor))       *op = EPX_PIXEL_OP_XOR;
+    else if (term == ATOM(copy))      *op = EPX_PIXEL_OP_COPY;
     else if (term == ATOM(add))       *op = EPX_PIXEL_OP_ADD;
     else if (term == ATOM(sub))       *op = EPX_PIXEL_OP_SUB;
     else if (term == ATOM(src_blend)) *op = EPX_PIXEL_OP_SRC_BLEND;
@@ -1250,7 +1271,7 @@ static int get_event_flag(ErlNifEnv* env, const ERL_NIF_TERM term,
 {
     (void) env;
     if (term == ATOM(key_press))           *e = EPX_EVENT_KEY_PRESS;
-    else if (term == ATOM(key_release))	   *e = EPX_EVENT_KEY_RELEASE;	
+    else if (term == ATOM(key_release))	   *e = EPX_EVENT_KEY_RELEASE;
     else if (term == ATOM(motion))	   *e = EPX_EVENT_POINTER_MOTION;
     else if (term == ATOM(button_press))   *e = EPX_EVENT_BUTTON_PRESS;
     else if (term == ATOM(button_release)) *e = EPX_EVENT_BUTTON_RELEASE;
@@ -1299,7 +1320,7 @@ static int get_event_flags(ErlNifEnv* env, const ERL_NIF_TERM term,
 	uint32_t e;
 	ERL_NIF_TERM list = term;
 	ERL_NIF_TERM head, tail;
-	
+
 	while(enif_get_list_cell(env, list, &head, &tail)) {
 	    if (!get_event_flag(env, head, &e))
 		return 0;
@@ -1334,7 +1355,7 @@ static ERL_NIF_TERM make_event_flags(ErlNifEnv* env, uint32_t mask)
     if (mask & EPX_EVENT_BUTTON_RELEASE)
 	list = enif_make_list_cell(env, ATOM(button_release), list);
     if ((mask & (EPX_EVENT_FOCUS_IN|EPX_EVENT_FOCUS_OUT)) ==
-	(EPX_EVENT_FOCUS_IN|EPX_EVENT_FOCUS_OUT)) 
+	(EPX_EVENT_FOCUS_IN|EPX_EVENT_FOCUS_OUT))
 	list = enif_make_list_cell(env, ATOM(focus), list);
     else {
 	if (mask & EPX_EVENT_FOCUS_IN)
@@ -1369,9 +1390,9 @@ static ERL_NIF_TERM make_event_flags(ErlNifEnv* env, uint32_t mask)
 	list = enif_make_list_cell(env, ATOM(wheel_left), list);
     if (mask & EPX_EVENT_WHEEL_RIGHT)
 	list = enif_make_list_cell(env, ATOM(wheel_right), list);
-    if (mask & EPX_EVENT_CLOSE)    
+    if (mask & EPX_EVENT_CLOSE)
 	list = enif_make_list_cell(env, ATOM(close), list);
-    if (mask & EPX_EVENT_DESTROYED)    
+    if (mask & EPX_EVENT_DESTROYED)
 	list = enif_make_list_cell(env, ATOM(destroyed), list);
     return list;
 }
@@ -1425,7 +1446,6 @@ static int get_pixel_format(ErlNifEnv* env, const ERL_NIF_TERM term,
     int bpp;
 
     *fmtp = EPX_FORMAT_INVALID;
-    
     if (enif_get_string(env, term, fmtbuf, sizeof(fmtbuf), ERL_NIF_LATIN1) ||
 	enif_get_atom(env, term, fmtbuf, sizeof(fmtbuf), ERL_NIF_LATIN1)) {
 	if ((*fmtp = epx_pixel_format_from_name(fmtbuf)) == EPX_FORMAT_INVALID)
@@ -1489,7 +1509,7 @@ static ERL_NIF_TERM make_epx_pixel_format(ErlNifEnv* env, epx_format_t fmt)
 
     if (!(ptr = epx_pixel_format_to_name(fmt,namebuf,sizeof(namebuf))))
 	name=ATOM(undefined);
-    else 
+    else
 	name=enif_make_atom(env, ptr);
     switch((fmt&EPX_M_Fmt)>>12) {
     case EPX_FMT_RGB4: format = ATOM(rgb4); break;
@@ -1510,7 +1530,7 @@ static ERL_NIF_TERM make_epx_pixel_format(ErlNifEnv* env, epx_format_t fmt)
     case EPX_FMT_CALPHA:format = ATOM(calpha); break;
     default: format=ATOM(undefined); break;
     }
-    return 
+    return
 	enif_make_tuple(env, 8,
 			ATOM(epx_pixel_format),
 			name,
@@ -1560,7 +1580,7 @@ static int get_color(ErlNifEnv* env, const ERL_NIF_TERM term,
 	if (!enif_get_uint(env, elem[0], &a)) return 0;
 	if (!enif_get_uint(env, elem[1], &r)) return 0;
 	if (!enif_get_uint(env, elem[2], &g)) return 0;
-	if (!enif_get_uint(env, elem[3], &b)) return 0;	
+	if (!enif_get_uint(env, elem[3], &b)) return 0;
     }
     else
 	return 0;
@@ -1583,10 +1603,10 @@ static ERL_NIF_TERM make_texture(ErlNifEnv* env, epx_pixmap_t* texture)
 	return ATOM(undefined);
     else
 // FIXME: make_resouce_binary - if not sub_pixmap
-	return make_object(env, ATOM(epx_pixmap),  texture); 
+	return make_object(env, ATOM(epx_pixmap),  texture);
 }
 
-static int get_texture(ErlNifEnv* env, const ERL_NIF_TERM term, 
+static int get_texture(ErlNifEnv* env, const ERL_NIF_TERM term,
 		       epx_pixmap_t** texture)
 {
     if (term == ATOM(undefined))
@@ -1596,7 +1616,7 @@ static int get_texture(ErlNifEnv* env, const ERL_NIF_TERM term,
     return 1;
 }
 
-static int get_font(ErlNifEnv* env, const ERL_NIF_TERM term, 
+static int get_font(ErlNifEnv* env, const ERL_NIF_TERM term,
 		    epx_font_t** font)
 {
     if (term == ATOM(undefined))
@@ -1615,7 +1635,7 @@ static ERL_NIF_TERM make_font(ErlNifEnv* env, epx_font_t* font)
 }
 
 // Get a 8 bit fix_point value in range [0..1] mapped to [0..255]
-// The value may also be given as [0..255] 
+// The value may also be given as [0..255]
 static int get_fix_8(ErlNifEnv* env, const ERL_NIF_TERM term, uint8_t* value)
 {
     unsigned int u_value;
@@ -1797,7 +1817,7 @@ static int get_rect(ErlNifEnv* env, const ERL_NIF_TERM term,
     return 1;
 }
 
-// Load filter 
+// Load filter
 // {Width, Height, <io-list>}
 static int get_filter(ErlNifEnv* env, const ERL_NIF_TERM term,
 		      epx_filter_t* filter, ErlNifBinary* factors)
@@ -1830,7 +1850,7 @@ static int get_filter(ErlNifEnv* env, const ERL_NIF_TERM term,
     return 1;
 }
 
-/* format event 
+/* format event
  *
  * {epx_event, Window, {key_press,  Sym, Mod, Code}}
  * {epx_event, Window, {key_release, Sym, Mod, Code}}
@@ -1848,7 +1868,7 @@ static int get_filter(ErlNifEnv* env, const ERL_NIF_TERM term,
  *
  *  Button = [left,middle,right,wheel_up,wheel_down,wheel_left,wheel_right]
  *   Mod = [shift_left,shift_right,  (+ shift)
- *          ctrl_left, ctrl_right,   (+ ctrl) 
+ *          ctrl_left, ctrl_right,   (+ ctrl)
  *          alt_left, alt_right,     (+ alt)
  *          meta_left, meta_right    (+ meta)
  *          num, caps, altgr, scr]
@@ -2013,7 +2033,7 @@ static ERL_NIF_TERM make_pointer_event(ErlNifEnv* env, ERL_NIF_TERM type,
 static ERL_NIF_TERM make_event(ErlNifEnv* env, epx_event_t* e)
 {
     ERL_NIF_TERM data;
-    
+
     switch(e->type) {
     case EPX_EVENT_KEY_PRESS:
 	data = make_key_event(env, ATOM(key_press), e); break;
@@ -2045,7 +2065,7 @@ static ERL_NIF_TERM make_event(ErlNifEnv* env, epx_event_t* e)
 	data = ATOM(undefined);
     }
 
-    return enif_make_tuple3(env, ATOM(epx_event), 
+    return enif_make_tuple3(env, ATOM(epx_event),
 			    make_object(env, ATOM(epx_window), e->window),
 			    data);
 }
@@ -2091,7 +2111,7 @@ static ERL_NIF_TERM debug(ErlNifEnv* env, int argc,
  *  function = [{name,format()}]
  *****************************************************************************/
 
-static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
 			      const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2129,7 +2149,7 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
 	if (accel & EPX_SIMD_MMX)     avail[i++] = ATOM(mmx);
 	if (accel & EPX_SIMD_SSE2)    avail[i++] = ATOM(sse2);
 	if (accel & EPX_SIMD_NEON)    avail[i++] = ATOM(neon);
-	return 
+	return
 	    enif_make_tuple2(env, type,
 			     enif_make_list_from_array(env, avail, i));
     }
@@ -2144,7 +2164,7 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
 		enif_make_tuple(env, 2, enif_make_atom(env, "fill_area"),
 				enif_make_list(env, 0)),
 		enif_make_tuple(env, 2, enif_make_atom(env, "fill_area_blend"),
-				enif_make_list(env, 6, 
+				enif_make_list(env, 6,
 					       ATOM(rgb),
 					       ATOM(bgr),
 					       ATOM(argb),
@@ -2193,11 +2213,11 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
 						   ATOM(a8),ATOM(abgr))
 				    )));
     }
-    else 
+    else
 	return enif_make_badarg(env);
 }
 
-static ERL_NIF_TERM simd_set(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM simd_set(ErlNifEnv* env, int argc,
 			     const ERL_NIF_TERM argv[])
 {
     epx_ctx_t* ctx = (epx_ctx_t*) enif_priv_data(env);
@@ -2211,7 +2231,7 @@ static ERL_NIF_TERM simd_set(ErlNifEnv* env, int argc,
     else if (argv[0] == ATOM(neon)) accel = EPX_SIMD_NEON;
     else if (argv[0] == ATOM(auto)) accel = EPX_SIMD_AUTO;
     else return enif_make_badarg(env);
-    // We could check for availability here ? and return error 
+    // We could check for availability here ? and return error
     ctx->accel = accel;   // save for upgrade
     epx_simd_init(accel);
     return ATOM(ok);
@@ -2223,7 +2243,7 @@ static ERL_NIF_TERM simd_set(ErlNifEnv* env, int argc,
  *
  *****************************************************************************/
 
-static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2233,9 +2253,9 @@ static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc,
     epx_pixmap_t* dst;
     ERL_NIF_TERM t;
 
-    if (!enif_get_uint(env, argv[0], &width)) 
-	return enif_make_badarg(env);    
-    if (!enif_get_uint(env, argv[1], &height)) 
+    if (!enif_get_uint(env, argv[0], &width))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[1], &height))
 	return enif_make_badarg(env);
     if (!get_pixel_format(env, argv[2], &fmt))
 	return enif_make_badarg(env);
@@ -2246,7 +2266,7 @@ static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc,
     if (epx_pixmap_init(dst, width, height, fmt) < 0) {
 	enif_release_resource(dst);
 	return enif_make_badarg(env);
-    }	
+    }
     epx_object_ref(dst);
     // t = enif_make_resource_binary(env, dst, dst->data, dst->sz);
     t = make_object(env, ATOM(epx_pixmap), dst);
@@ -2254,7 +2274,7 @@ static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc,
     return t;
 }
 
-static ERL_NIF_TERM pixmap_info(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_info(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2289,7 +2309,7 @@ static ERL_NIF_TERM pixmap_info(ErlNifEnv* env, int argc,
 	    return make_object(env,ATOM(epx_pixmap), src->parent);
     }
     else if (argv[1] == ATOM(clip)) {
-	return enif_make_tuple4(env, 
+	return enif_make_tuple4(env,
 				enif_make_int(env, src->clip.xy.x),
 				enif_make_int(env, src->clip.xy.y),
 				enif_make_uint(env, src->clip.wh.width),
@@ -2302,12 +2322,12 @@ static ERL_NIF_TERM pixmap_info(ErlNifEnv* env, int argc,
 	else
 	    return make_object(env,ATOM(epx_backend), backend);
     }
-    else 
+    else
 	return enif_make_badarg(env);
 }
 
 
-static ERL_NIF_TERM pixmap_sub_pixmap(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_sub_pixmap(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2321,13 +2341,13 @@ static ERL_NIF_TERM pixmap_sub_pixmap(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[1], &x)) 
+    if (!enif_get_int(env, argv[1], &x))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[2], &y))
-	return enif_make_badarg(env);    
-    if (!enif_get_uint(env, argv[3], &width)) 
-	return enif_make_badarg(env);    
-    if (!enif_get_uint(env, argv[4], &height)) 
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[3], &width))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[4], &height))
 	return enif_make_badarg(env);
 
     dst = epx_resource_alloc(&pixmap_res,sizeof(epx_pixmap_t));
@@ -2343,7 +2363,7 @@ static ERL_NIF_TERM pixmap_sub_pixmap(ErlNifEnv* env, int argc,
     return t;
 }
 
-static ERL_NIF_TERM pixmap_copy(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_copy(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2353,7 +2373,7 @@ static ERL_NIF_TERM pixmap_copy(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
 	return enif_make_badarg(env);
-    
+
     dst = epx_resource_alloc(&pixmap_res, sizeof(epx_pixmap_t));
     if (!dst)
 	return enif_make_badarg(env);
@@ -2369,7 +2389,7 @@ static ERL_NIF_TERM pixmap_copy(ErlNifEnv* env, int argc,
 }
 
 
-static ERL_NIF_TERM pixmap_get_pixel(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_get_pixel(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2381,7 +2401,7 @@ static ERL_NIF_TERM pixmap_get_pixel(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &x))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[2], &y))
 	return enif_make_badarg(env);
     p = epx_pixmap_get_pixel(src, x, y);
@@ -2391,7 +2411,7 @@ static ERL_NIF_TERM pixmap_get_pixel(ErlNifEnv* env, int argc,
 //
 // pixmap_get_pixels(Pixmap, X, Y, W, H)
 //
-static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2406,7 +2426,7 @@ static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &x))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[2], &y))
 	return enif_make_badarg(env);
     if (!enif_get_uint(env, argv[3], &w))
@@ -2422,7 +2442,7 @@ static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
 	epx_rect_t sr = {{0,0},{src->width,src->height}};
 	size_t sz;
 	size_t szr;
-	
+
 	if (!epx_rect_intersect(&sr, &r, &r))
 	    szr = 0;
 	else
@@ -2450,10 +2470,10 @@ static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
 	    enif_release_binary(&bin);
 	}
     }
-    return bt;    
+    return bt;
 }
 
-static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2466,7 +2486,7 @@ static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &x))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[2], &y))
 	return enif_make_badarg(env);
     if (!get_flags(env, argv[3], &flags))
@@ -2477,7 +2497,7 @@ static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2493,11 +2513,11 @@ static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &x))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[2], &y))
 	return enif_make_badarg(env);
     if (!enif_get_uint(env, argv[3], &width))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_uint(env, argv[4], &height))
 	return enif_make_badarg(env);
     if (!get_pixel_format(env, argv[5], &fmt))
@@ -2507,13 +2527,13 @@ static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc,
     if (!get_flags(env, argv[7], &flags))
 	return enif_make_badarg(env);
 
-    epx_pixmap_put_pixels(pixmap, x, y, width, height, fmt, flags, 
+    epx_pixmap_put_pixels(pixmap, x, y, width, height, fmt, flags,
 			  bin.data, bin.size);
     return ATOM(ok);
 }
 
 // epx:pixmap_set_clip(Pixmap, #epx_rect{}) -> ok | exception(badarg)
-static ERL_NIF_TERM pixmap_set_clip(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_set_clip(ErlNifEnv* env, int argc,
 			     const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2549,7 +2569,7 @@ static ERL_NIF_TERM pixmap_fill(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_copy_to(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_copy_to(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2564,7 +2584,7 @@ static ERL_NIF_TERM pixmap_copy_to(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_flip(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_flip(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2576,7 +2596,7 @@ static ERL_NIF_TERM pixmap_flip(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc,
 				 const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2597,7 +2617,50 @@ static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_copy_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_scale_area(ErlNifEnv* env, int argc,
+				      const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_pixmap_t* src;
+    epx_pixmap_t* dst;
+    int x_src;
+    int y_src;
+    unsigned int w_src;
+    unsigned int h_src;
+    int x_dst;
+    int y_dst;
+    unsigned int w_dst;
+    unsigned int h_dst;
+    epx_flags_t flags;
+
+    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[2], &x_src))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[3], &y_src))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[4], &x_dst))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[5], &y_dst))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[6], &w_src))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[7], &h_src))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[8], &w_dst))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[9], &h_dst))
+	return enif_make_badarg(env);
+    if (!get_flags(env, argv[10], &flags))
+	return enif_make_badarg(env);
+    epx_pixmap_scale_area(src, dst, x_src, y_src, x_dst, y_dst, 
+			  w_src, h_src, w_dst, h_dst, flags);
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM pixmap_copy_area(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2630,11 +2693,11 @@ static ERL_NIF_TERM pixmap_copy_area(ErlNifEnv* env, int argc,
     if (!get_flags(env, argv[8], &flags))
 	return enif_make_badarg(env);
     epx_pixmap_copy_area(src, dst, x_src, y_src, x_dst, y_dst,
-			 width, height, flags);    
+			 width, height, flags);
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_alpha_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_alpha_area(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2671,7 +2734,7 @@ static ERL_NIF_TERM pixmap_alpha_area(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_fade_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_fade_area(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2708,7 +2771,7 @@ static ERL_NIF_TERM pixmap_fade_area(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_shadow_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_shadow_area(ErlNifEnv* env, int argc,
 				       const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2745,7 +2808,7 @@ static ERL_NIF_TERM pixmap_shadow_area(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_operation_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_operation_area(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2764,7 +2827,7 @@ static ERL_NIF_TERM pixmap_operation_area(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
 	return enif_make_badarg(env);
     if (!get_operation(env, argv[2], &op))
-	return enif_make_badarg(env);	
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[3], &x_src))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[4], &y_src))
@@ -2782,7 +2845,7 @@ static ERL_NIF_TERM pixmap_operation_area(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_add_color_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_add_color_area(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2826,7 +2889,7 @@ static ERL_NIF_TERM pixmap_add_color_area(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_filter_area(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_filter_area(ErlNifEnv* env, int argc,
 				       const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2910,13 +2973,13 @@ static ERL_NIF_TERM pixmap_rotate_area(ErlNifEnv* env, int argc,
     if (!get_flags(env, argv[11], &flags))
 	return enif_make_badarg(env);
     epx_pixmap_rotate_area(src, dst, angle,
-			   x_src, y_src, 
+			   x_src, y_src,
 			   xc_src, yc_src, xc_dst, yc_dst,
 			   width, height, flags);
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_scroll(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_scroll(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -2937,7 +3000,7 @@ static ERL_NIF_TERM pixmap_scroll(ErlNifEnv* env, int argc,
     	return enif_make_badarg(env);
     if (!get_bool(env, argv[4], &rotate))
     	return enif_make_badarg(env);
-    if (!get_color(env, argv[5], &fill)) 
+    if (!get_color(env, argv[5], &fill))
     	return enif_make_badarg(env);
     epx_pixmap_scroll(src, dst, horizontal, vertical, rotate, fill);
     return ATOM(ok);
@@ -2962,7 +3025,7 @@ static ERL_NIF_TERM pixmap_attach(ErlNifEnv* env, int argc,
 
     // make sure backend survive until EPX_MESSAGE_PIXMAP is processed
     enif_keep_resource(backend); // pixmap is using backend!!!
-    pixmap->user = backend;      
+    pixmap->user = backend;
 
     enif_keep_resource(pixmap);  // keep pixmap until attach is completed
     m.type = EPX_MESSAGE_PIXMAP_ATTACH;
@@ -3036,36 +3099,69 @@ static ERL_NIF_TERM pixmap_draw(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
+
+// Send a sync signal to the backend thread,
+// the backend thread should responed with a
+// synced event.
+//
+static ERL_NIF_TERM pixmap_sync(ErlNifEnv* env, int argc,
+				const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_nif_backend_t* backend;
+    epx_pixmap_t* pixmap;
+    epx_window_t* window;
+    epx_message_t m;
+
+    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[1], &window_res, (void**) &window))
+	return enif_make_badarg(env);
+
+    if (!(backend = pixmap->user))
+	return enif_make_badarg(env);
+    if (backend != window->user)
+	return enif_make_badarg(env);
+    m.wsync.pixmap = pixmap;
+    m.wsync.window = window;
+    enif_keep_resource(window);
+    enif_keep_resource(pixmap);
+    m.type = EPX_MESSAGE_PIXMAP_SYNC;
+    epx_message_send(backend->main, 0, &m);
+    return ATOM(ok);
+}
+
+
 // epx:pixmap_draw_point(Pixmap, Gc, X, Y)
-static ERL_NIF_TERM pixmap_draw_point(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_draw_point(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[])
 {
     (void) argc;
     epx_pixmap_t* pixmap;
     epx_gc_t* gc;
     int x;
-    int y;    
+    int y;
 
     if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[2], &x))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[3], &y))
 	return enif_make_badarg(env);
     epx_pixmap_draw_point(pixmap, gc, x, y);
-    return ATOM(ok);    
+    return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_draw_line(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_draw_line(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[])
 {
     (void) argc;
     epx_pixmap_t* pixmap;
     epx_gc_t* gc;
     int x1;
-    int y1;    
+    int y1;
     int x2;
     int y2;
 
@@ -3074,25 +3170,55 @@ static ERL_NIF_TERM pixmap_draw_line(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[2], &x1))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[3], &y1))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[4], &x2))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[5], &y2))
 	return enif_make_badarg(env);
     epx_pixmap_draw_line(pixmap, gc, x1, y1, x2, y2);
-    return ATOM(ok);    
+    return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_draw_rectangle(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_draw_triangle(ErlNifEnv* env, int argc,
+					 const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_pixmap_t* pixmap;
+    epx_gc_t* gc;
+    int x0, y0;
+    int x1, y1;
+    int x2, y2;
+
+    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[2], &x0))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[3], &y0))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[4], &x1))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[5], &y1))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[6], &x2))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[7], &y2))
+	return enif_make_badarg(env);
+    epx_pixmap_draw_triangle(pixmap, gc, x0, y0, x1, y1, x2, y2);
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM pixmap_draw_rectangle(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[])
 {
     (void) argc;
     epx_pixmap_t* pixmap;
     epx_gc_t* gc;
     int x;
-    int y;    
+    int y;
     unsigned int width;
     unsigned int height;
 
@@ -3101,26 +3227,25 @@ static ERL_NIF_TERM pixmap_draw_rectangle(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[2], &x))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[3], &y))
 	return enif_make_badarg(env);
     if (!enif_get_uint(env, argv[4], &width))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_uint(env, argv[5], &height))
 	return enif_make_badarg(env);
     epx_pixmap_draw_rectangle(pixmap, gc, x, y, width, height);
-    return ATOM(ok);    
+    return ATOM(ok);
 }
 
-
-static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc,
 					const ERL_NIF_TERM argv[])
 {
     (void) argc;
     epx_pixmap_t* pixmap;
     epx_gc_t* gc;
     int x;
-    int y;    
+    int y;
     unsigned int width;
     unsigned int height;
 
@@ -3129,16 +3254,17 @@ static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[2], &x))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[3], &y))
 	return enif_make_badarg(env);
     if (!enif_get_uint(env, argv[4], &width))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_uint(env, argv[5], &height))
 	return enif_make_badarg(env);
     epx_pixmap_draw_ellipse(pixmap, gc, x, y, width, height);
-    return ATOM(ok);    
+    return ATOM(ok);
 }
+
 
 static ERL_NIF_TERM animation_open(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[])
@@ -3149,12 +3275,12 @@ static ERL_NIF_TERM animation_open(ErlNifEnv* env, int argc,
     epx_animation_t* anim;
     ERL_NIF_TERM t;
 
-    if (!(r=enif_get_string(env, argv[0], path, sizeof(path), ERL_NIF_LATIN1)) 
+    if (!(r=enif_get_string(env, argv[0], path, sizeof(path), ERL_NIF_LATIN1))
 	|| (r < 0))
 	return enif_make_badarg(env);
     anim = epx_resource_alloc(&anim_res, sizeof(epx_animation_t));
     if (!anim)
-	return enif_make_badarg(env); // reason?    
+	return enif_make_badarg(env); // reason?
     if (epx_anim_open_init(anim, path) < 0) {
 	enif_release_resource(anim);
 	return enif_make_badarg(env); // reason?
@@ -3165,7 +3291,7 @@ static ERL_NIF_TERM animation_open(ErlNifEnv* env, int argc,
     return t;
 }
 
-static ERL_NIF_TERM animation_copy(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM animation_copy(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3173,7 +3299,7 @@ static ERL_NIF_TERM animation_copy(ErlNifEnv* env, int argc,
     epx_gc_t* gc;
     epx_animation_t* anim;
     int x;
-    int y;    
+    int y;
     unsigned int index;
     epx_anim_pixels_t* base;
     epx_anim_pixels_t* current;
@@ -3187,7 +3313,7 @@ static ERL_NIF_TERM animation_copy(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[3], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[4], &x))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[5], &y))
 	return enif_make_badarg(env);
 
@@ -3195,15 +3321,15 @@ static ERL_NIF_TERM animation_copy(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!(current = epx_anim_get_pixels(anim, (int)index)))
 	return enif_make_badarg(env);
-    epx_anim_copy_frame(pixmap, gc, x, y, 
-			anim->hdr.width, 
-			anim->hdr.height, 
-			anim->hdr.pixel_format, 
+    epx_anim_copy_frame(pixmap, gc, x, y,
+			anim->hdr.width,
+			anim->hdr.height,
+			anim->hdr.pixel_format,
 			base, current);
-    return ATOM(ok);    
+    return ATOM(ok);
 }
 
-static ERL_NIF_TERM animation_draw(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM animation_draw(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3211,7 +3337,7 @@ static ERL_NIF_TERM animation_draw(ErlNifEnv* env, int argc,
     epx_gc_t* gc;
     epx_animation_t* anim;
     int x;
-    int y;    
+    int y;
     unsigned int index;
     epx_anim_pixels_t* base;
     epx_anim_pixels_t* current;
@@ -3225,28 +3351,28 @@ static ERL_NIF_TERM animation_draw(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[3], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[4], &x))
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[5], &y))
 	return enif_make_badarg(env);
 
     if (!(base = epx_anim_get_pixels(anim, 0)))
-	return enif_make_badarg(env);	
+	return enif_make_badarg(env);
     if (!(current = epx_anim_get_pixels(anim, (int) index)))
-	return enif_make_badarg(env);	    
-    epx_anim_draw_frame(pixmap, gc, x, y, 
-			anim->hdr.width, 
-			anim->hdr.height, 
-			anim->hdr.pixel_format, 
+	return enif_make_badarg(env);
+    epx_anim_draw_frame(pixmap, gc, x, y,
+			anim->hdr.width,
+			anim->hdr.height,
+			anim->hdr.pixel_format,
 			base, current);
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM animation_info(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM animation_info(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[])
 {
     (void) argc;
     epx_animation_t* anim;
-    
+
     if (!get_object(env, argv[0], &anim_res, (void**) &anim))
 	return enif_make_badarg(env);
     if (argv[1] == ATOM(file_name)) {
@@ -3270,7 +3396,7 @@ static ERL_NIF_TERM animation_info(ErlNifEnv* env, int argc,
     else if (argv[1] == ATOM(epx_pixel_format)) {
 	return make_epx_pixel_format(env, anim->hdr.pixel_format);
     }
-    else 
+    else
 	return enif_make_badarg(env);
 }
 
@@ -3289,7 +3415,7 @@ typedef union dict_data_buf_t
 // Load data into dictionary item
 // Handles:
 //       integer/float/boolean/string/binary
-// TODO: 
+// TODO:
 //       sequence/dict
 //
 static int get_dict_data(ErlNifEnv* env, const ERL_NIF_TERM t,
@@ -3359,7 +3485,7 @@ static ERL_NIF_TERM dict_create(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
     return t;
 }
 
-static ERL_NIF_TERM dict_copy(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_copy(ErlNifEnv* env, int argc,
 			      const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3384,7 +3510,7 @@ static ERL_NIF_TERM dict_copy(ErlNifEnv* env, int argc,
 }
 
 
-static ERL_NIF_TERM dict_set(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_set(ErlNifEnv* env, int argc,
 			     const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3398,17 +3524,17 @@ static ERL_NIF_TERM dict_set(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
 
     if (!get_dict_data(env, argv[1], &key, &key_data))
-	return enif_make_badarg(env);	
+	return enif_make_badarg(env);
 
     if (!get_dict_data(env, argv[2], &value, &value_data))
-	return enif_make_badarg(env);	
+	return enif_make_badarg(env);
 
     if (epx_dict_set_ent(dict, &key, &value) < 0)
 	return enif_make_badarg(env);
     return argv[2];
 }
 
-static ERL_NIF_TERM dict_get(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_get(ErlNifEnv* env, int argc,
 			     const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3447,7 +3573,7 @@ static ERL_NIF_TERM dict_get(ErlNifEnv* env, int argc,
 	enif_release_binary(&bin);
 	return bt;
     }
-	
+
     case EPX_DICT_SEQUENCE:   // sequence of (epx_dict_data_)
 	// not yet
 	return enif_make_badarg(env);
@@ -3458,7 +3584,7 @@ static ERL_NIF_TERM dict_get(ErlNifEnv* env, int argc,
 
 // Specialized getters where key is "string"
 // return value is boolean
-static ERL_NIF_TERM dict_get_boolean(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_get_boolean(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3479,7 +3605,7 @@ static ERL_NIF_TERM dict_get_boolean(ErlNifEnv* env, int argc,
 
 // Specialized getters where key is "string"
 // return value is integer
-static ERL_NIF_TERM dict_get_integer(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_get_integer(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3499,7 +3625,7 @@ static ERL_NIF_TERM dict_get_integer(ErlNifEnv* env, int argc,
 
 // Specialized getters where key is "string"
 // return value is float
-static ERL_NIF_TERM dict_get_float(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_get_float(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3520,7 +3646,7 @@ static ERL_NIF_TERM dict_get_float(ErlNifEnv* env, int argc,
 
 // Specialized getters where key is "string"
 // return value is string
-static ERL_NIF_TERM dict_get_string(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_get_string(ErlNifEnv* env, int argc,
 				    const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3541,7 +3667,7 @@ static ERL_NIF_TERM dict_get_string(ErlNifEnv* env, int argc,
 
 // Specialized getters where key is "string"
 // return value is binary
-static ERL_NIF_TERM dict_get_binary(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_get_binary(ErlNifEnv* env, int argc,
 				    const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3562,11 +3688,11 @@ static ERL_NIF_TERM dict_get_binary(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     memcpy(bin.data, value, len);
     bt = enif_make_binary(env, &bin);
-    enif_release_binary(&bin);    
+    enif_release_binary(&bin);
     return bt;
 }
 
-static ERL_NIF_TERM dict_is_key(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_is_key(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3582,7 +3708,7 @@ static ERL_NIF_TERM dict_is_key(ErlNifEnv* env, int argc,
     return ATOM(false);
 }
 
-static ERL_NIF_TERM dict_first(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_first(ErlNifEnv* env, int argc,
 			       const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3599,7 +3725,7 @@ static ERL_NIF_TERM dict_first(ErlNifEnv* env, int argc,
     return enif_make_string_len(env, value, len, ERL_NIF_LATIN1);
 }
 
-static ERL_NIF_TERM dict_next(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_next(ErlNifEnv* env, int argc,
 			      const ERL_NIF_TERM argv[])
 {
     (void) argc;
@@ -3618,12 +3744,12 @@ static ERL_NIF_TERM dict_next(ErlNifEnv* env, int argc,
     return enif_make_string_len(env, value, len, ERL_NIF_LATIN1);
 }
 
-static ERL_NIF_TERM dict_info(ErlNifEnv* env, int argc, 
+static ERL_NIF_TERM dict_info(ErlNifEnv* env, int argc,
 			      const ERL_NIF_TERM argv[])
 {
     (void) argc;
     epx_dict_t* dict;
-    
+
     if (!get_object(env, argv[0], &dict_res, (void**) &dict))
 	return enif_make_badarg(env);
     if (argv[1] == ATOM(size)) {
@@ -3632,7 +3758,7 @@ static ERL_NIF_TERM dict_info(ErlNifEnv* env, int argc,
     else if (argv[1] == ATOM(sorted)) {
 	return dict->is_sorted ? ATOM(true) : ATOM(false);
     }
-    else 
+    else
 	return enif_make_badarg(env);
 }
 
@@ -3678,7 +3804,7 @@ static ERL_NIF_TERM gc_copy(ErlNifEnv* env, int argc,
     epx_object_ref(dst);
     t = make_object(env, ATOM(epx_gc), dst);
     enif_release_resource(dst);
-    return t;    
+    return t;
 }
 
 
@@ -3710,7 +3836,7 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
     else if (argv[1] == ATOM(fill_color)) {
 	epx_pixel_t color;
 	if (!get_color(env, argv[2], &color))
-	    return enif_make_badarg(env);	
+	    return enif_make_badarg(env);
 	epx_gc_set_fill_color(src, color);
 	return ATOM(ok);
     }
@@ -3719,7 +3845,7 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
 	if (!get_texture(env, argv[2], &texture))
 	    return enif_make_badarg(env);
 	epx_gc_set_fill_texture(src, texture);
-	return ATOM(ok);	
+	return ATOM(ok);
     }
     else if (argv[1] == ATOM(line_style)) {
 	epx_flags_t style;
@@ -3747,7 +3873,7 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
 	if (!enif_get_uint(env, argv[2], &width))
 	    return enif_make_badarg(env);
 	epx_gc_set_line_width(src, width);
-	return ATOM(ok);	
+	return ATOM(ok);
     }
     else if (argv[1] == ATOM(line_texture)) {
 	epx_pixmap_t* texture;
@@ -3762,14 +3888,14 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
 	    return enif_make_badarg(env);
 	epx_gc_set_border_style(src, style);
 	return ATOM(ok);
-    }    
+    }
     else if (argv[1] == ATOM(border_join_style)) {
 	epx_join_style_t style;
 	if (!get_join_style(env, argv[2], &style))
 	    return enif_make_badarg(env);
 	epx_gc_set_border_join_style(src, style);
 	return ATOM(ok);
-    }    
+    }
     else if (argv[1] == ATOM(border_cap_style)) {
 	epx_cap_style_t style;
 	if (!get_cap_style(env, argv[2], &style))
@@ -3780,7 +3906,7 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
     else if (argv[1] == ATOM(border_color)) {
 	epx_pixel_t color;
 	if (!get_color(env, argv[2], &color))
-	    return enif_make_badarg(env);	
+	    return enif_make_badarg(env);
 	epx_gc_set_border_color(src, color);
 	return ATOM(ok);
     }
@@ -3801,14 +3927,14 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
     else if (argv[1] == ATOM(foreground_color)) {
 	epx_pixel_t color;
 	if (!get_color(env, argv[2], &color))
-	    return enif_make_badarg(env);	
+	    return enif_make_badarg(env);
 	epx_gc_set_foreground_color(src, color);
 	return ATOM(ok);
     }
     else if (argv[1] == ATOM(background_color)) {
 	epx_pixel_t color;
 	if (!get_color(env, argv[2], &color))
-	    return enif_make_badarg(env);	
+	    return enif_make_badarg(env);
 	epx_gc_set_background_color(src, color);
 	return ATOM(ok);
     }
@@ -3824,7 +3950,7 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
 	if (!get_font(env, argv[2], &font))
 	    return enif_make_badarg(env);
 	epx_gc_set_font(src, font);
-	return ATOM(ok);	
+	return ATOM(ok);
     }
     else if (argv[1] == ATOM(glyph_delta_x)) {
 	int x;
@@ -3845,14 +3971,14 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
 	if (!enif_get_uint(env, argv[2], &width))
 	    return enif_make_badarg(env);
 	epx_gc_set_glyph_fixed_width(src, width);
-	return ATOM(ok);	
+	return ATOM(ok);
     }
     else if (argv[1] == ATOM(glyph_dot_kern)) {
 	unsigned int kern;
 	if (!enif_get_uint(env, argv[2], &kern))
 	    return enif_make_badarg(env);
 	epx_gc_set_glyph_dot_kern(src, kern);
-	return ATOM(ok);	
+	return ATOM(ok);
     }
     else
 	return enif_make_badarg(env);
@@ -3893,10 +4019,10 @@ static ERL_NIF_TERM gc_get(ErlNifEnv* env, int argc,
     }
     else if (argv[1] == ATOM(border_style)) {
 	return make_flags(env, epx_gc_get_border_style(src));
-    }    
+    }
     else if (argv[1] == ATOM(border_join_style)) {
 	return make_join_style(env, epx_gc_get_border_join_style(src));
-    }    
+    }
     else if (argv[1] == ATOM(border_cap_style)) {
 	return make_cap_style(env, epx_gc_get_border_cap_style(src));
     }
@@ -3935,7 +4061,7 @@ static ERL_NIF_TERM gc_get(ErlNifEnv* env, int argc,
 	return enif_make_uint(env, epx_gc_get_glyph_dot_kern(src));
     }
     else
-	return enif_make_badarg(env);	
+	return enif_make_badarg(env);
 }
 
 
@@ -3954,7 +4080,7 @@ static ERL_NIF_TERM font_open(ErlNifEnv* env, int argc,
     epx_font_t* font;
     ERL_NIF_TERM t;
 
-    if (!(r=enif_get_string(env, argv[0], path, sizeof(path), ERL_NIF_LATIN1)) 
+    if (!(r=enif_get_string(env, argv[0], path, sizeof(path), ERL_NIF_LATIN1))
 	|| (r < 0))
 	return enif_make_badarg(env);
     font = epx_resource_alloc(&font_res, sizeof(epx_font_t));
@@ -3979,6 +4105,8 @@ static ERL_NIF_TERM font_load(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &font_res, (void**) &font))
 	return enif_make_badarg(env);
+    if (epx_font_is_loaded(font) || epx_font_is_mapped(font))
+	return ATOM(ok);
     if (epx_font_load(font) < 0)
 	return ATOM(error); // fixme - reason
     return ATOM(ok);
@@ -4004,6 +4132,8 @@ static ERL_NIF_TERM font_map(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &font_res, (void**) &font))
 	return enif_make_badarg(env);
+    if (epx_font_is_loaded(font) || epx_font_is_mapped(font))
+	return ATOM(ok);
     if (epx_font_map(font) < 0)
 	return ATOM(error); // fixme - reason
     return ATOM(ok);
@@ -4026,7 +4156,7 @@ static ERL_NIF_TERM font_info(ErlNifEnv* env, int argc,
 {
     (void) argc;
     epx_font_t* font;
-    
+
     if (!get_object(env, argv[0], &font_res, (void**) &font))
 	return enif_make_badarg(env);
     if (argv[1] == ATOM(file_name))
@@ -4131,7 +4261,7 @@ static ERL_NIF_TERM font_draw_string(ErlNifEnv* env, int argc,
     return enif_make_tuple2(env, enif_make_int(env,x), enif_make_int(env,y));
 }
 
-// Draw string with io-list utf8 
+// Draw string with io-list utf8
 static ERL_NIF_TERM font_draw_utf8(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[])
 {
@@ -4175,7 +4305,7 @@ static void* reaper_main(void* arg)
 	void* exit_value;
 
 	epx_message_recv(self, &from, &m);
-	
+
 	switch(m.type) {
 	case EPX_MESSAGE_KILL:
 	    EPX_DBGFMT("reaper_main: kill thread=%p", m.thread);
@@ -4206,13 +4336,14 @@ static void* reaper_main(void* arg)
 	case EPX_MESSAGE_PIXMAP_ATTACH:
 	case EPX_MESSAGE_PIXMAP_DETACH:
 	case EPX_MESSAGE_PIXMAP_DRAW:
+	case EPX_MESSAGE_PIXMAP_SYNC:
 	case EPX_MESSAGE_SYNC_ACK:
 	default:
-	    EPX_DBGFMT("reaper: unhandled message %s", 
+	    EPX_DBGFMT("reaper: unhandled message %s",
 		       format_message(&m));
 	    break;
 	}
-    }    
+    }
     return 0;
 }
 
@@ -4293,7 +4424,7 @@ static void* backend_poll(void* arg)
 
 	    while(do_poll) {
 		int n;
-		
+
 		if ((n = poll(fds, nfd, timeout)) > 0) {
 		    if (fds[0].revents & POLLIN) {
 			EPX_DBGFMT("backend_poll: read fd=%d", fds[0].fd);
@@ -4335,6 +4466,7 @@ static void* backend_poll(void* arg)
 	case EPX_MESSAGE_PIXMAP_ATTACH:
 	case EPX_MESSAGE_PIXMAP_DETACH:
 	case EPX_MESSAGE_PIXMAP_DRAW:
+	case EPX_MESSAGE_PIXMAP_SYNC:
 	case EPX_MESSAGE_SYNC_ACK:
 	default:
 	    EPX_DBGFMT("backend_poll: unhanded message %s",
@@ -4519,6 +4651,25 @@ static void* backend_main(void* arg)
 	    enif_release_resource(m.wdraw.window);
 	    break;
 
+	case EPX_MESSAGE_PIXMAP_SYNC: {
+	    ERL_NIF_TERM msg;
+	    ErlNifPid* pid;
+	    EPX_DBGFMT("backend_main: EPX_MESSAGE_PIXMAP_SYNC");
+	    pid = m.wsync.window->owner;
+	    msg = enif_make_tuple3(priv->env,
+				   ATOM(epx_event),
+				   make_object(priv->env,
+					       ATOM(epx_window),
+					       m.wsync.window),
+				    ATOM(synced));
+	    enif_send(0, pid, priv->env, msg);
+	    enif_clear_env(priv->env);
+
+	    enif_release_resource(m.wsync.pixmap);
+	    enif_release_resource(m.wsync.window);
+	    break;
+	}
+
 	case EPX_MESSAGE_POLL:
 	case EPX_MESSAGE_KILL:
 	case EPX_MESSAGE_STOP:
@@ -4603,7 +4754,7 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
     (void) argc;
     epx_nif_backend_t* backend;
     epx_backend_t* be;
-    
+
     if (!get_object(env, argv[0], &backend_res, (void**) &backend))
 	return enif_make_badarg(env);
     be = backend->backend;
@@ -4629,7 +4780,7 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
 
 	while(window) {
 	    list =
-		enif_make_list_cell(env, 
+		enif_make_list_cell(env,
 				    make_object(env, ATOM(epx_window), window),
 				    list);
 	    window = window->next;
@@ -4646,7 +4797,7 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
 
 	while(pixmap) {
 	    list =
-		enif_make_list_cell(env, 
+		enif_make_list_cell(env,
 				    make_object(env, ATOM(epx_pixmap), pixmap),
 				    list);
 	    pixmap = pixmap->next;
@@ -4678,7 +4829,7 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
 	}
 	return list;
     }
-    return enif_make_badarg(env);    
+    return enif_make_badarg(env);
 }
 
 static ERL_NIF_TERM backend_adjust(ErlNifEnv* env, int argc,
@@ -4686,7 +4837,7 @@ static ERL_NIF_TERM backend_adjust(ErlNifEnv* env, int argc,
 {
     (void) argc;
     (void) argv;
-    return enif_make_badarg(env);    
+    return enif_make_badarg(env);
 }
 
 
@@ -4705,12 +4856,12 @@ static ERL_NIF_TERM window_create(ErlNifEnv* env, int argc,
     ErlNifPid* caller;
     uint32_t events = 0;
 
-    if (!enif_get_int(env, argv[0], &x)) 
+    if (!enif_get_int(env, argv[0], &x))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &y))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[2], &width)) 
-	return enif_make_badarg(env);    
+    if (!enif_get_uint(env, argv[2], &width))
+	return enif_make_badarg(env);
     if (!enif_get_uint(env, argv[3], &height))
 	return enif_make_badarg(env);
     if (argc == 5) {
@@ -4734,7 +4885,7 @@ static ERL_NIF_TERM window_create(ErlNifEnv* env, int argc,
 error:
     if (window)
 	enif_release_resource(window);
-    return enif_make_badarg(env);    
+    return enif_make_badarg(env);
 }
 
 static ERL_NIF_TERM window_adjust(ErlNifEnv* env, int argc,
@@ -4742,7 +4893,7 @@ static ERL_NIF_TERM window_adjust(ErlNifEnv* env, int argc,
 {
     (void) argc;
     (void) argv;
-    return enif_make_badarg(env);    
+    return enif_make_badarg(env);
 }
 
 static ERL_NIF_TERM window_info(ErlNifEnv* env, int argc,
@@ -4776,7 +4927,7 @@ static ERL_NIF_TERM window_info(ErlNifEnv* env, int argc,
 	return make_event_flags(env, win->mask);
     }
     else
-	return enif_make_badarg(env);    
+	return enif_make_badarg(env);
 }
 
 static ERL_NIF_TERM window_attach(ErlNifEnv* env, int argc,
@@ -4893,7 +5044,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(alert);
     LOAD_ATOM(emergency);
     LOAD_ATOM(none);
-    
+
     // Type names
     LOAD_ATOM(epx_pixmap);
     LOAD_ATOM(epx_window);
@@ -4948,7 +5099,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
 
     // window_info
     LOAD_ATOM(x);
-    LOAD_ATOM(y);    
+    LOAD_ATOM(y);
     LOAD_ATOM(event_mask);
 
     // epx_cap_style_t
@@ -5120,6 +5271,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(configure);
     LOAD_ATOM(resize);
     LOAD_ATOM(crossing);
+    LOAD_ATOM(synced);
     // Event-buttons
     LOAD_ATOM(left);
     LOAD_ATOM(right);
@@ -5131,7 +5283,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(wheel_right);
     LOAD_ATOM(wheel);  // wheel mask
     LOAD_ATOM(all);    // all mask
-    
+
     // Operations
     LOAD_ATOM(clear);
     LOAD_ATOM(src);
@@ -5253,7 +5405,7 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     return 0;
 }
 
-static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data, 
+static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
 		       ERL_NIF_TERM load_info)
 {
     (void) env;
@@ -5307,7 +5459,6 @@ static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
 	EPX_DBGFMT("epx_upgrade: send upgrade func=%p to %p",
 		   backend_main, bp->main);
 	epx_message_send(bp->main, 0, &m);
-	
 	m.type   = EPX_MESSAGE_SYNC;
 	m.reply_q = &ctx->q;
 	EPX_DBGFMT("epx_upgrade: send sync to %p", bp->main);
@@ -5352,5 +5503,3 @@ static void epx_unload(ErlNifEnv* env, void* priv_data)
 ERL_NIF_INIT(epx, epx_funcs,
 	     epx_load, NULL,
 	     epx_upgrade, epx_unload)
-
-    

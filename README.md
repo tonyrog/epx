@@ -40,3 +40,8 @@ Then the fb driver may be probed:
 
     sudo modprobe uvesafb
 
+## Packages needed to build epx using top-level Makefile on Raspberry pi and Ubuntu
+
+	sudo apt-get install libx11-dev autoconf libgif-dev
+
+

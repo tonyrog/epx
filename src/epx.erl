@@ -43,6 +43,8 @@
 -export([pixmap_copy_to/2]).
 -export([pixmap_flip/1]).
 -export([pixmap_scale/4]).
+-export([pixmap_scale_area/6,pixmap_scale_area/7]).
+-export([pixmap_scale_area/11]).
 -export([pixmap_get_pixel/3]).
 -export([pixmap_get_pixels/5]).
 -export([pixmap_put_pixel/4,pixmap_put_pixel/5]).
@@ -59,8 +61,11 @@
 -export([pixmap_attach/2, pixmap_attach/1]).
 -export([pixmap_detach/1]).
 -export([pixmap_draw/8]).
+-export([pixmap_sync/2]).
+-export([sync/2]).
 -export([pixmap_draw_point/4]).
 -export([pixmap_draw_line/6]).
+-export([pixmap_draw_triangle/8]).
 -export([pixmap_draw_rectangle/6]).
 -export([pixmap_draw_ellipse/6]).
 %% Animation
@@ -130,6 +135,7 @@
 %% Utils
 -export([draw_point/3, draw_point/2]).
 -export([draw_line/5]).
+-export([draw_triangle/2, draw_triangle/4]).
 -export([draw_rectangle/5, draw_rectangle/2, draw_rectangle/3]).
 -export([draw_ellipse/5]).
 -export([draw_char/4]).
@@ -211,7 +217,7 @@
 	epx_pixel_format_simple() | atom() | string() |
 	#epx_pixel_format {}.
 
--type epx_pixmap_operation() :: 
+-type epx_pixmap_operation() ::
 	clear | src | dst | src_over | dst_over | src_in | dst_in |
 	src_out | dst_out | src_atop | dst_atop | 'xor' | copy |
 	add | sub | src_blend | dst_blend.
@@ -490,6 +496,47 @@ pixmap_scale(_Src, _Dst, _Width, _Height) ->
     erlang:error(nif_not_loaded).
 
 %% @doc
+%%  Scale `Src' pixmap to size (`Width' and `Height') and put the result
+%%  in the `Dst' pixmap at offset `XDst', `YDst'.
+%% @end
+-spec pixmap_scale_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			XDst::integer(),YDst::integer(),
+			Width::unsigned(), Height::unsigned()) -> void().
+pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height) ->
+    pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height, []).
+
+%% @doc
+%%  Scale `Src' pixmap to size (`Width' and `Height') and put the result
+%%  in the `Dst' pixmap at offset `XDst', `YDst'.
+%% @end
+-spec pixmap_scale_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			XDst::integer(),YDst::integer(),
+			Width::unsigned(), Height::unsigned(),
+			Flags::epx_flags()) -> void().
+pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height, _Flags) ->
+    WSrc = pixmap_info(_Src, width),
+    HSrc = pixmap_info(_Src, height),
+    pixmap_scale_area(_Src, _Dst, 0, 0, _XDst, _YDst,
+		      WSrc, HSrc, _Width, _Height, _Flags).
+
+%% @doc
+%%  Scale `Src' pixmap rectangle (XSrc,YSrc, into destination rectangle 
+%%  to size (`Width' and `Height') and put the result
+%%  in the `Dst' pixmap at offset `XDst', `YDst'.
+%% @end
+-spec pixmap_scale_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			XSrc::integer(),YSrc::integer(),
+			XDst::integer(),YDst::integer(),
+			WSrc::unsigned(),HSrc::unsigned(),
+			WDst::unsigned(), HDst::unsigned(),
+			Flags::epx_flags()) -> void().
+pixmap_scale_area(_Src, _Dst,
+		  _XSrc, _YSrc, _XDst, _YDst,
+		  _WSrc, _HSrc, _WDst, _HDst,
+		  _Flags) ->
+    erlang:error(nif_not_loaded).
+
+%% @doc
 %%   Read the pixel value at position (`X',`Y') in pixmap `Src', return
 %%   a pixel in {A,R,G,B} form or {255,0,0,0} (black) if position is
 %%   outside the pixmap.
@@ -732,7 +779,7 @@ pixmap_detach(_Pixmap) ->
 %% @doc
 %%   Draw pixels from the area (`XSrc',`YSrc',`Width',`Height') in `Pixmap'
 %%   pixmap to the area (`XDst',`YDst',`Width',`Height') on to the `Window'
-%%   window. Both the pixmap and the window must be "attached" for this 
+%%   window. Both the pixmap and the window must be "attached" for this
 %%   operation to succeed.
 %% @end
 -spec pixmap_draw(Pixmap::epx_pixmap(), Win::epx_window(),
@@ -743,10 +790,27 @@ pixmap_detach(_Pixmap) ->
 pixmap_draw(_Pixmap, _Win, _XSrx, _YSrc, _XDst, _YDst, _Width, _Height) ->
     erlang:error(nif_not_loaded).
 
+%% Send a sync event to the window, the response from the
+%% window is to send a synced event back.
+-spec pixmap_sync(Pixmap::epx_pixmap(), Win::epx_window()) ->
+			 ok.
+pixmap_sync(_Pixmap, _Win) ->
+    erlang:error(nif_not_loaded).
+
+sync(Pixmap, Win) ->
+    pixmap_sync(Pixmap, Win),
+    receive
+	{epx_event,Win,synced} ->
+	    ok
+    end.
+
 pixmap_draw_point(_Pixmap, _Gc, _X, _Y) ->
     erlang:error(nif_not_loaded).
 
 pixmap_draw_line(_Pixmap, _Gc, _X1, _Y1, _X2, _Y2) ->
+    erlang:error(nif_not_loaded).
+
+pixmap_draw_triangle(_Pixmap, _Gc, _X0, _Y0, _X1, _Y1, _X2, _Y2) ->
     erlang:error(nif_not_loaded).
 
 pixmap_draw_rectangle(_Pixmap, _Gc, _X, _Y, _Width, _Height) ->
@@ -1127,6 +1191,12 @@ draw_point(Pixmap,X,Y) ->
 
 draw_line(Pixmap, X1, Y1, X2, Y2) ->
     pixmap_draw_line(Pixmap,epx_gc:current(),X1,Y1,X2,Y2).
+
+draw_triangle(Pixmap, {X0,Y0}, {X1,Y1}, {X2,Y2}) ->
+    pixmap_draw_triangle(Pixmap, epx_gc:current(), X0,Y0,X1,Y1,X2,Y2).
+
+draw_triangle(Pixmap, [{X0,Y0},{X1,Y1},{X2,Y2}|_]) ->
+    pixmap_draw_triangle(Pixmap, epx_gc:current(), X0,Y0,X1,Y1,X2,Y2).
 
 draw_rectangle(Pixmap, Gc, {X, Y, Width, Height}) ->
     pixmap_draw_rectangle(Pixmap, Gc, X, Y, Width, Height).

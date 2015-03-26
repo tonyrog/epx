@@ -1,6 +1,6 @@
 /***************************************************************************
  *
- * Copyright (C) 2007 - 2012, Rogvall Invest AB, <tony@rogvall.se>
+ * Copyright (C) 2007 - 2015, Rogvall Invest AB, <tony@rogvall.se>
  *
  * This software is licensed as described in the file COPYRIGHT, which
  * you should have received as part of this distribution. The terms
