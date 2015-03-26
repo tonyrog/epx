@@ -4390,6 +4390,9 @@ static void* backend_poll(void* arg)
 	    from = priv->from;
 	    priv->state = 0;
 	    break;
+	default:
+	    EPX_DBGFMT("backend_poll: bad state");
+	    break;
 	}
 
 	switch(m.type) {
