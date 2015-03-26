@@ -5194,6 +5194,8 @@ epx_lock_t epx_nif_locker(epx_lock_command_t cmd, epx_lock_t lock)
     case EPX_LOCK_UNLOCK:
 	enif_rwlock_rwunlock((ErlNifRWLock*)lock);
 	return 0;
+    default:
+	return 0;
     }
 }
 
