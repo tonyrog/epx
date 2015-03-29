@@ -1409,7 +1409,7 @@ int main(int argc, char *argv[])
     char format_string[512];
     char cache_name[512];
     int stepping = 1;
-    char c;
+    int c;
     int image_count = 0;
     int start_image_ind = 0;
     int image_ind = 0;
