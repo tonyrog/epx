@@ -20,7 +20,9 @@
 //
 #ifndef __EPX_H__
 #define  __EPX_H__
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -63,4 +65,10 @@ extern int epx_gl_load_texture(epx_pixmap_t* pic, GLuint* textureName,
 			       unsigned int width, unsigned int height);
 #endif
 
+
+#ifdef __cplusplus
+}
 #endif
+
+#endif
+
