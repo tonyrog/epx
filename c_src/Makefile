@@ -222,6 +222,7 @@ LIB_OBJS = \
 	epx_line.o \
 	epx_ellipse.o \
 	epx_draw.o \
+	epx_lock.o \
 	epx_backend.o \
 	epx_window.o \
 	epx_font.o \
