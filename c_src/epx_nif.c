@@ -4390,6 +4390,9 @@ static void* backend_poll(void* arg)
 	    from = priv->from;
 	    priv->state = 0;
 	    break;
+	default:
+	    EPX_DBGFMT("backend_poll: bad state");
+	    break;
 	}
 
 	switch(m.type) {
@@ -5345,6 +5348,8 @@ epx_lock_t epx_nif_locker(epx_lock_command_t cmd, epx_lock_t lock)
 	return 0;
     case EPX_LOCK_UNLOCK:
 	enif_rwlock_rwunlock((ErlNifRWLock*)lock);
+	return 0;
+    default:
 	return 0;
     }
 }
