@@ -165,6 +165,7 @@ done:
     else if (CI_RGB(5,6,5))   fmt = EPX_FMT_RGB565;
     else if (CI_TEST(1,0,0,0,0)) fmt = EPX_FMT_ALPHA;
     else if (CI_TEST(0,1,0,0,0)) fmt = EPX_FMT_GRAY;
+    else if (CI_TEST(1,1,0,0,0)) fmt = EPX_FMT_GRAY;
     else if (CI_TEST(0,0,1,0,0))  fmt = EPX_FMT_RED;
     else if (CI_TEST(0,0,0,1,0))  fmt = EPX_FMT_GREEN;
     else if (CI_TEST(0,0,0,0,1))  fmt = EPX_FMT_BLUE;
@@ -707,6 +708,16 @@ epx_pixel_t epx_unpack_a8l8(uint8_t* src)
     return p;
 }
 
+epx_pixel_t epx_unpack_l8a8(uint8_t* src)
+{
+    epx_pixel_t p;
+    p.a = src[1];
+    p.r = src[0];
+    p.g = src[0];
+    p.b = src[0];
+    return p;
+}
+
 epx_pixel_unpack_t epx_pixel_unpack_func(epx_format_t fmt)
 {
     switch (fmt) {
@@ -752,6 +763,7 @@ epx_pixel_unpack_t epx_pixel_unpack_func(epx_format_t fmt)
     case EPX_FORMAT_B5G6R5_BE: return epx_unpack_b5g6r5_be;
     case EPX_FORMAT_B5G6R5_LE: return epx_unpack_b5g6r5_le;
     case EPX_FORMAT_A8L8_BE:   return epx_unpack_a8l8;
+    case EPX_FORMAT_L8A8_BE:   return epx_unpack_l8a8;
     default:
 	EPX_DBGFMT("epx_pixel_unpack_func: undefined func: %x", fmt);
 	return 0;
@@ -902,6 +914,11 @@ void epx_pack_a8l8(epx_pixel_t p, uint8_t* dst)
     dst[1] = epx_pixel_luminance(p);
 }
 
+void epx_pack_l8a8(epx_pixel_t p, uint8_t* dst)
+{
+    dst[1] = p.a;
+    dst[0] = epx_pixel_luminance(p);
+}
 
 epx_pixel_pack_t epx_pixel_pack_func(epx_format_t fmt)
 {
@@ -949,6 +966,7 @@ epx_pixel_pack_t epx_pixel_pack_func(epx_format_t fmt)
     case EPX_FORMAT_B5G6R5_BE:   return epx_pack_b5g6r5_be;
     case EPX_FORMAT_B5G6R5_LE:   return epx_pack_b5g6r5_le;
     case EPX_FORMAT_A8L8_BE:     return epx_pack_a8l8;
+    case EPX_FORMAT_L8A8_BE:     return epx_pack_l8a8;
     default:
 	EPX_DBGFMT("epx_pixel_pack_func: undefined func: %x", fmt);
 	return 0;

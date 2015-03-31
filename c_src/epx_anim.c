@@ -632,7 +632,7 @@ no_clip:
 		break;
 
 	    case EPX_ANIM_RGBA:
-		epx_fade_row(src,EPX_FORMAT_BGRA,
+		epx_fade_row(src,EPX_FORMAT_RGBA, // BGRA,
 			       dst, dst_format, fader, pcount);
 		src += pcount*4;
 		break;

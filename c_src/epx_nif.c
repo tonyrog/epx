@@ -59,6 +59,8 @@ static ERL_NIF_TERM pixmap_flip(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc,
 				 const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM pixmap_scale_area(ErlNifEnv* env, int argc,
+				      const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc,
@@ -340,6 +342,7 @@ ErlNifFunc epx_funcs[] =
     NIF_FUNC("pixmap_copy_to", 2, pixmap_copy_to),
     NIF_FUNC("pixmap_flip", 1, pixmap_flip),
     NIF_FUNC("pixmap_scale", 4, pixmap_scale),
+    NIF_FUNC("pixmap_scale_area", 11, pixmap_scale_area),
     NIF_FUNC("pixmap_put_pixel", 5, pixmap_put_pixel),
     NIF_FUNC("pixmap_put_pixels", 8, pixmap_put_pixels),
     NIF_FUNC("pixmap_get_pixel", 3, pixmap_get_pixel),
@@ -2614,6 +2617,49 @@ static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
+static ERL_NIF_TERM pixmap_scale_area(ErlNifEnv* env, int argc,
+				      const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_pixmap_t* src;
+    epx_pixmap_t* dst;
+    int x_src;
+    int y_src;
+    unsigned int w_src;
+    unsigned int h_src;
+    int x_dst;
+    int y_dst;
+    unsigned int w_dst;
+    unsigned int h_dst;
+    epx_flags_t flags;
+
+    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[2], &x_src))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[3], &y_src))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[4], &x_dst))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[5], &y_dst))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[6], &w_src))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[7], &h_src))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[8], &w_dst))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[9], &h_dst))
+	return enif_make_badarg(env);
+    if (!get_flags(env, argv[10], &flags))
+	return enif_make_badarg(env);
+    epx_pixmap_scale_area(src, dst, x_src, y_src, x_dst, y_dst, 
+			  w_src, h_src, w_dst, h_dst, flags);
+    return ATOM(ok);
+}
+
 static ERL_NIF_TERM pixmap_copy_area(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[])
 {
@@ -4059,6 +4105,8 @@ static ERL_NIF_TERM font_load(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &font_res, (void**) &font))
 	return enif_make_badarg(env);
+    if (epx_font_is_loaded(font) || epx_font_is_mapped(font))
+	return ATOM(ok);
     if (epx_font_load(font) < 0)
 	return ATOM(error); // fixme - reason
     return ATOM(ok);
@@ -4084,6 +4132,8 @@ static ERL_NIF_TERM font_map(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &font_res, (void**) &font))
 	return enif_make_badarg(env);
+    if (epx_font_is_loaded(font) || epx_font_is_mapped(font))
+	return ATOM(ok);
     if (epx_font_map(font) < 0)
 	return ATOM(error); // fixme - reason
     return ATOM(ok);
@@ -4339,6 +4389,9 @@ static void* backend_poll(void* arg)
 	    m = priv->message;
 	    from = priv->from;
 	    priv->state = 0;
+	    break;
+	default:
+	    EPX_DBGFMT("backend_poll: bad state");
 	    break;
 	}
 
@@ -5295,6 +5348,8 @@ epx_lock_t epx_nif_locker(epx_lock_command_t cmd, epx_lock_t lock)
 	return 0;
     case EPX_LOCK_UNLOCK:
 	enif_rwlock_rwunlock((ErlNifRWLock*)lock);
+	return 0;
+    default:
 	return 0;
     }
 }

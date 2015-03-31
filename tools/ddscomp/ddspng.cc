@@ -53,12 +53,14 @@ int DDSPng::load(char* file_name, int start, int stop)
     png_byte header[8];	// 8 is the maximum size that can be checked
     png_bytep* row_pointers;
     int rowbytes;
-    png_byte color_type;
     png_structp png_ptr;
     png_infop info_ptr;
-    int width;
-    int height;
     int useAlpha = 0;
+    png_uint_32 width;
+    png_uint_32 height;
+    int bit_depth;
+    int color_type;
+
 
     /* open file and test for it being a png */
     FILE *fp = fopen(file_name, "rb");
@@ -95,14 +97,16 @@ int DDSPng::load(char* file_name, int start, int stop)
     png_set_sig_bytes(png_ptr, 8);
 
     png_read_info(png_ptr, info_ptr);
-
-    width       = info_ptr->width;
-    height      = info_ptr->height;
-    color_type  = info_ptr->color_type;
+    // width       = info_ptr->width;
+    // height      = info_ptr->height;
+    // color_type  = info_ptr->color_type;
+    png_get_IHDR(png_ptr, info_ptr, &width, &height,
+		 &bit_depth, &color_type, NULL,  NULL, NULL);
 
     png_read_update_info(png_ptr, info_ptr);
 
-    rowbytes = info_ptr->rowbytes;
+    rowbytes = png_get_rowbytes(png_ptr, info_ptr);
+    // rowbytes = info_ptr->rowbytes;
 
     /* read file */
     if (setjmp(png_jmpbuf(png_ptr))) {
@@ -118,7 +122,7 @@ int DDSPng::load(char* file_name, int start, int stop)
     }
 
     memset(row_pointers, 0, sizeof(png_bytep)*height);
-    for (y=0; y < height; y++) {
+    for (y=0; y < (int)height; y++) {
 	if ((row_pointers[y] = (png_byte*) malloc(rowbytes)) == NULL) {
 	    error("%s: unable to allocate %d bytes",
 		  file_name, rowbytes);
@@ -134,14 +138,14 @@ int DDSPng::load(char* file_name, int start, int stop)
 
     mPixmap = epx_pixmap_create(width, height, EPX_FORMAT_RGBA);
 
-    for (y = 0; y < height; y++) {
+    for (y = 0; y < (int)height; y++) {
 	static int c_warn = 1;
 	int x;
 	png_byte* ptr = row_pointers[y];
 
 	switch(color_type) {
 	case PNG_COLOR_TYPE_RGBA:
-	    for (x = 0; x < width; x++) {
+	    for (x = 0; x < (int)width; x++) {
 		epx_pixel_t p;
 		p.r = ptr[0];
 		p.g = ptr[1];
@@ -153,13 +157,13 @@ int DDSPng::load(char* file_name, int start, int stop)
 	    }
 	    break;
 	case PNG_COLOR_TYPE_RGB:
-	    for (x = 0; x < width; x++) {
+	    for (x = 0; x < (int)width; x++) {
 		epx_pixel_t p;
 		p.r = ptr[0];
 		p.g = ptr[1];
 		p.b = ptr[2];
-		epx_pixmap_put_pixel(mPixmap, x, y, 0, p);
 		p.a = 255;
+		epx_pixmap_put_pixel(mPixmap, x, y, 0, p);
 		ptr += 3;
 	    }
 	    break;

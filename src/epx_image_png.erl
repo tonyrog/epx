@@ -111,11 +111,11 @@ scan_info(Fd, IMG, false, ?zTXt, Length) ->
 scan_info(Fd, IMG, false, ?bKGD, Length) ->
     CT = attribute(IMG, 'ColorType', undefined),
     case read_chunk_crc(Fd, Length) of
-	{ok, <<Index:8>>} when CT==3 ->
+	{ok, <<Index:8>>} when CT=:=3 ->
 	    scan_info(Fd, set_attribute(IMG, 'Background', Index), false);
-	{ok, <<Gray:16>>} when CT==0; CT==4 ->
+	{ok, <<Gray:16>>} when CT=:=0; CT=:=4 ->
 	    scan_info(Fd, set_attribute(IMG, 'Background', Gray), false);
-	{ok, <<R:16,G:16,B:16>>} when CT==2; CT==6 ->
+	{ok, <<R:16,G:16,B:16>>} when CT=:=2; CT=:=6 ->
 	    scan_info(Fd, set_attribute(IMG, 'Background', {R,G,B}), false);
 	{ok, _Data} ->
 	    ?dbg("bKGD other=~p\n", [_Data]),
@@ -165,53 +165,53 @@ update_txt(IMG, Txt) ->
 
 
 %% determine the epx_image format
-bytes_per_row(gray1,W) -> W div 8;
-bytes_per_row(gray2,W) -> W div 4;
-bytes_per_row(gray4,W) -> W div 2;
-bytes_per_row(gray8,W) -> W;
-bytes_per_row(gray16,W) -> W*2;
+bytes_per_row(l1,W) -> W div 8;
+bytes_per_row(l2,W) -> W div 4;
+bytes_per_row(l4,W) -> W div 2;
+bytes_per_row(l8,W) -> W;
+bytes_per_row(l16,W) -> W*2;
 bytes_per_row(r8g8b8,W) -> W*3;
 bytes_per_row(r16g16b16,W) -> W*6;
 bytes_per_row(palette1,W) -> W div 8;
 bytes_per_row(palette2,W) -> W div 4;
 bytes_per_row(palette4,W) -> W div 2;
 bytes_per_row(palette8,W) -> W;
-bytes_per_row(gray8a8,W) -> W*2;
-bytes_per_row(gray16a16,W) -> W*4;
+bytes_per_row(l8a8,W) -> W*2;
+bytes_per_row(l16a16,W) -> W*4;
 bytes_per_row(r8g8b8a8,W) -> W*4;
 bytes_per_row(r16g16b16a16,W) -> W*8.
 
 
-bpp(gray1) -> 1;
-bpp(gray2) -> 1;
-bpp(gray4) -> 1;
-bpp(gray8) -> 1;
-bpp(gray16) -> 2;
+bpp(l1) -> 1;
+bpp(l2) -> 1;
+bpp(l4) -> 1;
+bpp(l8) -> 1;
+bpp(l16) -> 2;
 bpp(r8g8b8) -> 3;
 bpp(r16g16b16) -> 6;
 bpp(palette1) -> 1;
 bpp(palette2) -> 1;
 bpp(palette4) -> 1;
 bpp(palette8) -> 1;
-bpp(gray8a8)  -> 2;
-bpp(gray16a16) -> 4;
+bpp(l8a8)  -> 2;
+bpp(l16a16) -> 4;
 bpp(r8g8b8a8) -> 4;
 bpp(r16g16b16a16) -> 8.
 
 
-format(0, 1)  -> gray1;
-format(0, 2)  -> gray2;
-format(0, 4)  -> gray4;
-format(0, 8)  -> gray8;
-format(0, 16) -> gray16;
+format(0, 1)  -> l1;
+format(0, 2)  -> l2;
+format(0, 4)  -> l4;
+format(0, 8)  -> l8;
+format(0, 16) -> l16;
 format(2, 8)  -> r8g8b8;
 format(2, 16) -> r16g16b16;
 format(3, 1)  -> palette1;
 format(3, 2)  -> palette2;
 format(3, 4)  -> palette4;
 format(3, 8)  -> palette8;
-format(4, 8)  -> gray8a8;
-format(4, 16) -> gray16a16;
+format(4, 8)  -> l8a8;
+format(4, 16) -> l16a16;
 format(6, 8)  -> r8g8b8a8;
 format(6, 16) -> r16g16b16a16.
 

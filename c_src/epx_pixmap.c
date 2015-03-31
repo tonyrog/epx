@@ -1376,8 +1376,8 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
      // To get gcc 4.1.2 to shut up about implicit declaration
      // without having to resort to -std=99, which triggers a shitload
      // of compile errors.
-     extern float truncf(float);    
-     extern float roundf(float);    
+     extern float truncf(float);
+     extern float roundf(float);
 
      int y0 = truncf(y-0.5);
      int y1 = truncf(y+0.5);
@@ -1415,14 +1415,12 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
      else
 	 p2 = epx_pixel_transparent;
 
-
      if (epx_point_xy_in_rect(x1,y1, &pic->clip)) {
 	 ptr = EPX_PIXEL_ADDR(pic, x1, y1);
 	 p3 = pic->func.unpack(ptr);
      }
      else
 	 p3 = epx_pixel_transparent;
-
 
      // This could probably be done in ALTIVEC || SSE2
      p.r = roundf(f0*p0.r + f1*p1.r + f2*p2.r + f3*p3.r);
@@ -2419,38 +2417,69 @@ void epx_pixmap_rotate_area(epx_pixmap_t* src, epx_pixmap_t* dst, float angle,
 // Take the src pixels and transform them to new width,height
 // and place pixels in dst.
 //
-void epx_pixmap_scale(epx_pixmap_t* src, epx_pixmap_t* dst, 
-		      unsigned int width, unsigned int height)
+void epx_pixmap_scale_area(epx_pixmap_t* src, epx_pixmap_t* dst,
+			   int x_src, int y_src,
+			   int x_dst, int y_dst,
+			   unsigned int w_src, unsigned int h_src,
+			   unsigned int w_dst, unsigned int h_dst,
+			   epx_flags_t flags)
 {
     epx_rect_t sr, dr;
     int y;
     unsigned h;
     float xs, ys;
-
-    if (epx_clip_dst(src,dst,0,0,0,0, width, height, &sr, &dr) < 0)
+    float ysf;
+    if (epx_clip_dst(src,dst,x_src,y_src,x_dst,y_dst,w_dst,h_dst,&sr,&dr) < 0)
 	return;
-    // The scale factor is still (width/src->width, height/src-height)
     // The inverted scale is:
-    xs = src->width/(float) width;
-    ys = src->height/(float) height;
+    xs = w_src/(float) w_dst;
+    ys = h_src/(float) h_dst;
 
     y = dr.xy.y;
     h = dr.wh.height;
+    ysf = y_src;
     while(h--) {
-	float ysf = y*ys;
 	int x = dr.xy.x;
 	unsigned w = dr.wh.width;
+	uint8_t* dst_addr = EPX_PIXEL_ADDR(dst,x,y);
+	unsigned int bytes_per_pixel = dst->bytes_per_pixel;
+	float xsf = x_src;
 
-	while(w--) {
-	    float xsf = x*xs;
-	    epx_pixel_t p = epixel_interp(src, xsf, ysf);
-	    uint8_t* addr = EPX_PIXEL_ADDR(dst,x,y);
-	    dst->func.pack(p, addr);
-	    x++;
+	if (flags & EPX_FLAG_BLEND) {
+	    while(w--) {
+		epx_pixel_t s = epixel_interp(src, xsf, ysf);
+		epx_pixel_t d = dst->func.unpack(dst_addr);
+		d = epx_pixel_blend(s.a, s, d);
+		dst->func.pack(d, dst_addr);
+		dst_addr += bytes_per_pixel;
+		xsf += xs;
+	    }
+	}
+	else {
+	    while(w--) {
+		epx_pixel_t p = epixel_interp(src, xsf, ysf);
+		dst->func.pack(p, dst_addr);
+		dst_addr += bytes_per_pixel;
+		xsf += xs;
+	    }
 	}
 	y++;
+	ysf += ys;
     }
 }
+
+//
+// Take the src pixels and transform them to new width,height
+// and place pixels in dst.
+//
+void epx_pixmap_scale(epx_pixmap_t* src, epx_pixmap_t* dst, 
+		      unsigned int width, unsigned int height)
+{
+    epx_pixmap_scale_area(src, dst, 0, 0, 0, 0,
+			  src->width, src->height,
+			  width, height, 0);
+}
+
 
 //
 // Binary operation Dst = Func(Fade,Color,Src,Dst)

@@ -18,7 +18,7 @@ GIF_CFLAGS := -I@LIBUNGIF_DIR@/include
 GIF_LIBS   := -lgif
 GIF_LFLAGS := -L@LIBUNGIF_DIR@/lib
 
-AV_LIBS   := -lswscale -lavformat -lavcodec -lavutil -lz
+AV_LIBS   := # -lswscale -lavformat -lavcodec -lavutil -lz
 
 OBJ =	 ddsgif.o ddspng.o ddscomp.o lhash.o # ddsmpg.o
 

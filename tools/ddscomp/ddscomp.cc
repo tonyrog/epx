@@ -79,9 +79,7 @@
 #include "ddspng.hh"
 #include "ddsgif.hh"
 // #include "ddsmpg.hh" // Disabled when moved to exosense
-extern "C" {
-#include <libswscale/swscale.h>
-}
+
 #define DDS_FORMAT_VERSION 0x00000001
 
 int skip_block_count = 0;
@@ -696,131 +694,16 @@ FrameBlock* find_block(int frame, epx_anim_pixels_t* hdr)
     return b;
 }
 
-enum PixelFormat pixelType2PixelFormat(int aPixelType)
-{
-    switch(aPixelType) {
-    case EPX_FORMAT_RGB:      return PIX_FMT_RGB24;
-    case EPX_FORMAT_BGR:      return PIX_FMT_BGR24;
-    case EPX_FORMAT_RGBA:     return PIX_FMT_RGBA;
-    case EPX_FORMAT_ARGB:     return PIX_FMT_ARGB;
-    case EPX_FORMAT_BGRA:     return PIX_FMT_BGRA;
-    case EPX_FORMAT_ABGR:     return PIX_FMT_ABGR;
-    case EPX_FORMAT_565_LE:
-#if BYTE_ORDER == BIG_ENDIAN
-	return PIX_FMT_BGR565;
-#else
-	return PIX_FMT_RGB565;
-#endif
-    case EPX_FORMAT_565_BE:
-#if BYTE_ORDER == BIG_ENDIAN
-	return PIX_FMT_RGB565;
-#else
-	return PIX_FMT_BGR565;
-#endif
-//    case EPX_FORMAT_A1R5G5B5: FIXME: TONY
-//    case EPX_FORMAT_X1R5G5B5: FIXME: TONY
-#if BYTE_ORDER == BIG_ENDIAN
-	return PIX_FMT_RGB555;
-#else
-	return PIX_FMT_BGR555;
-#endif
-	/* no R5G5B5A1 version in ffmpeg */
-    default: return PIX_FMT_NONE;
-    }
-}
-
-
-epx_pixmap_t* scale_pixmap(epx_pixmap_t* aSrcImage, int aWidth, int aHeight, int aAlpha)
+epx_pixmap_t* scale_pixmap(epx_pixmap_t* aSrcImage, int aWidth, int aHeight)
 {
     epx_pixmap_t*  dstImage;
-    PixelFormat       srcFmt = pixelType2PixelFormat(aSrcImage->pixel_format);
-    PixelFormat       dstFmt = srcFmt;
-    u_int8_t* srcData[4];
-    int       srcLineSize[4];
-    u_int8_t* dstData[4];
-    int       dstLineSize[4];
-    SwsContext* ctx1 = NULL;
 
     dstImage = epx_pixmap_create(aWidth, aHeight, aSrcImage->pixel_format);
     if (!dstImage)
 	return NULL;
-
-    // scale srcImage into dstImage
-    ctx1 = sws_getCachedContext(NULL,
-				aSrcImage->width,
-				aSrcImage->height,
-				srcFmt,
-				dstImage->width,
-				dstImage->height,
-				dstFmt,
-				SWS_BICUBIC, NULL, NULL, NULL);
-    srcData[0]     = aSrcImage->data;
-    srcLineSize[0] = aSrcImage->bytes_per_row;
-
-    dstData[0]     = dstImage->data;
-    dstLineSize[0] = dstImage->bytes_per_row;
-
-    sws_scale(ctx1, srcData, srcLineSize, 0,
-	      aSrcImage->height, dstData, dstLineSize);
-    sws_freeContext(ctx1);
-
-
-    if (aAlpha) {
-	epx_pixmap_t*  srcAlphaImage = NULL;
-	epx_pixmap_t*  dstAlphaImage = NULL;
-	SwsContext* ctx2 = NULL;
-
-	// If alpha scaling is needed then produce an alpha image
-	ctx2 = sws_getCachedContext(NULL,
-				    aSrcImage->width,
-				    aSrcImage->height,
-				    PIX_FMT_GRAY8,
-				    dstImage->width,
-				    dstImage->height,
-				    PIX_FMT_GRAY8,
-				    SWS_BICUBIC, NULL, NULL, NULL);
-
-	if ((srcAlphaImage = epx_pixmap_create(aSrcImage->width,
-					   aSrcImage->height,
-					   EPX_FORMAT_ALPHA)) == 0) {
-	    sws_freeContext(ctx2);
-	    goto error;
-	}
-	if ((dstAlphaImage = epx_pixmap_create(dstImage->width,
-					   dstImage->height,
-					   EPX_FORMAT_ALPHA)) == 0) {
-	    sws_freeContext(ctx2);
-	    epx_pixmap_destroy(srcAlphaImage);
-	    goto error;
-	}
-	// copy the alpha channel (treat it as PIX_FMT_GRAY8)
-	epx_pixmap_copy_to(aSrcImage, srcAlphaImage);
-	srcData[0]     = srcAlphaImage->data;
-	srcLineSize[0] = srcAlphaImage->bytes_per_row;
-	dstData[0]     = dstAlphaImage->data;
-	dstLineSize[0] = dstAlphaImage->bytes_per_row;
-
-	sws_scale(ctx2, srcData, srcLineSize, 0,
-		  srcAlphaImage->height, dstData, dstLineSize);
-	sws_freeContext(ctx2);
-
-	// add the alpha channel to dstImage!
-	epx_pixmap_copy_area(dstAlphaImage, dstImage,
-			     0, 0, 0, 0,
-			     dstAlphaImage->width,
-			     dstAlphaImage->height,
-			     EPX_FLAG_SUM);
-	epx_pixmap_destroy(srcAlphaImage);
-	epx_pixmap_destroy(dstAlphaImage);
-
-    }
+    epx_pixmap_scale(aSrcImage, dstImage, aWidth, aHeight);
     return dstImage;
-error:
-    if (dstImage)
-	epx_pixmap_destroy(dstImage);
-    return NULL;
 }
-
 
 int scale_img(DDSImage* aImg, int aWidth, int aHeight)
 {
@@ -828,8 +711,7 @@ int scale_img(DDSImage* aImg, int aWidth, int aHeight)
 
     for (i = 0; i < aImg->frames(); i++) {
 	epx_pixmap_t* pixmap   = aImg->getPixmap(i);
-	int      useAlpha = aImg->useAlpha(i);
-	pixmap = scale_pixmap(pixmap, aWidth, aHeight, useAlpha);
+	pixmap = scale_pixmap(pixmap, aWidth, aHeight);
 	if (!pixmap)
 	    return -1;
 	aImg->setPixmap(i, pixmap);
@@ -1376,7 +1258,7 @@ void usage(char *aProgName)
   puts(" -C rgb|rgba|argb     Specifies both pixel size and format.\n");
   puts("    gbr|gbra|agbr\n");
   puts(" -b 0-255  Default 0. Specifies neighboring pixel color and alpha variations allowed while still classifying");
-  puts("                      two pixels as identical. Not used right now");
+  puts("                      two pixels as identical.");
   puts(" -B bright Default 0. Specifies a brightness adjustment (positive or negative) to be applied");
   puts("                      to each image.");
   puts(" -c outfile           Specifies the name of the DDS file to generate.\n");
