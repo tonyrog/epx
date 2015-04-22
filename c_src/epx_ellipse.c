@@ -333,7 +333,7 @@ void epx_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
 		    if (do_aalias) {
 			epx_pixel_t c = fc;
 			double xt = a*sqrt(1-(double)(yo*yo)/(double)b2);
-			int alpha = abs(90*(xo-xt)+37); // fc.a*(xo - xt);
+			int alpha = fabs(90*(xo-xt)+37); // fc.a*(xo - xt);
 
 			line_ellipse2(pixmap, xc, yc, xo, yo, ff, fc);
 
