@@ -63,6 +63,13 @@ static struct _backend_item {
     backend_upgrade_t upgrade;
 } backend_item [] =
 {
+#ifdef X11
+    { .name = "x11",
+      .init = x11_init,
+      .upgrade = x11_upgrade
+    },
+#endif
+
 #if defined(__APPLE__) && !defined(__x86_64__)
     { .name = "macos",
       .init = carbon_init,
@@ -81,13 +88,6 @@ static struct _backend_item {
     { .name = "win32",
       .init = win32_init,
       .upgrade = win32_upgrade
-    },
-#endif
-
-#ifdef X11
-    { .name = "x11",
-      .init = x11_init,
-      .upgrade = x11_upgrade
     },
 #endif
 
