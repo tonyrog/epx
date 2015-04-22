@@ -6,8 +6,6 @@ MACHINE := $(shell uname -m)
 CC = gcc
 RANLIB = ranlib
 
-ERLDIR	:= $(shell erl -noshell -eval "io:format([126,115,126,110],[code:root_dir()])" -s erlang halt)
-ERL_C_INCLUDE_DIR := $(ERLDIR)/usr/include
 EPX_DIR := $(shell cd ..; pwd)
 
 include ../vsn.mk
@@ -224,6 +222,7 @@ LIB_OBJS = \
 	epx_line.o \
 	epx_ellipse.o \
 	epx_draw.o \
+	epx_lock.o \
 	epx_backend.o \
 	epx_window.o \
 	epx_font.o \
@@ -243,7 +242,7 @@ SRC = $(LIB_OBJS:%.o=%.c) $(SIMD_OBJS:%.o=%.c) $(BE_OBJS:%.o=%.c)
 
 WARN = -Wall -Wextra -Wswitch-default -Wswitch-enum 
 
-DFLAGS += -I ../include -I$(ERL_C_INCLUDE_DIR)
+DFLAGS += -I ../include 
 CFLAGS += $(WARN) -g -fPIC
 
 nif:
