@@ -102,7 +102,7 @@ start_link() ->
 init([]) ->
     Tab = ets:new(?TABLE, [named_table,set,public]),
     {ok,Cwd} = file:get_cwd(),
-    %% always search in driectory we started from and current directory
+    %% always search in directory we started from and current directory
     {ok, #state{ paths=[Cwd,"."], tab=Tab }}.
 
 %%--------------------------------------------------------------------
