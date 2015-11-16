@@ -54,7 +54,7 @@ epx_pixmap_t* epx_image_load_png(char* file_name, epx_format_t format)
     png_structp png_ptr = 0;
     png_infop info_ptr = 0;
     int width;
-    int height;
+    int height = 0;
     epx_pixmap_t* pixmap;
     png_byte interlace;
 

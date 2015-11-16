@@ -106,6 +106,8 @@ static ERL_NIF_TERM pixmap_draw_rectangle(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc,
 					const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM pixmap_draw_roundrect(ErlNifEnv* env, int argc,
+					  const ERL_NIF_TERM argv[]);
 // Pixmap animations
 static ERL_NIF_TERM animation_open(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[]);
@@ -365,6 +367,7 @@ ErlNifFunc epx_funcs[] =
     NIF_FUNC("pixmap_draw_triangle", 8, pixmap_draw_triangle),
     NIF_FUNC("pixmap_draw_rectangle", 6, pixmap_draw_rectangle),
     NIF_FUNC("pixmap_draw_ellipse", 6, pixmap_draw_ellipse),
+    NIF_FUNC("pixmap_draw_roundrect", 8, pixmap_draw_roundrect),
 
     // Dictionary interface
     NIF_FUNC("dict_create", 0, dict_create),
@@ -3262,6 +3265,39 @@ static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc,
     if (!enif_get_uint(env, argv[5], &height))
 	return enif_make_badarg(env);
     epx_pixmap_draw_ellipse(pixmap, gc, x, y, width, height);
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM pixmap_draw_roundrect(ErlNifEnv* env, int argc,
+					  const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_pixmap_t* pixmap;
+    epx_gc_t* gc;
+    int x;
+    int y;
+    unsigned int width;
+    unsigned int height;
+    unsigned int rw;
+    unsigned int rh;
+
+    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[2], &x))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[3], &y))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[4], &width))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[5], &height))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[6], &rw))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[7], &rh))
+	return enif_make_badarg(env);
+    epx_pixmap_draw_roundrect(pixmap, gc, x, y, width, height, rw, rh);
     return ATOM(ok);
 }
 

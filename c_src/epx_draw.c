@@ -41,10 +41,13 @@ extern void epx_draw_line_thick(epx_pixmap_t* pixmap,
 				int flags, epx_pixel_t fg);
 extern void epx_draw_ellipse(epx_pixmap_t* pic, epx_gc_t* gc,
 			     int x, int y,
-			     unsigned int width, unsigned int height);
+			     unsigned int width, unsigned int height,
+			     unsigned int ww, unsigned int hh);
+
 extern void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 				    int x, int y,
-				    unsigned int width, unsigned int height);
+				    unsigned int width, unsigned int height,
+				    unsigned int ww, unsigned int hh);
 
 extern void epx_fill_triangle(epx_pixmap_t* pixmap,
 			      int x0, int y0,
@@ -85,7 +88,7 @@ void epx_pixmap_draw_point(epx_pixmap_t* pic, epx_gc_t* gc, int x, int y)
 
 
 // Draw rectangle (x,y,w,h)
-void epx_pixmap_draw_rectangle(epx_pixmap_t* pic, epx_gc_t* gc,
+void epx_pixmap_draw_rectangle(epx_pixmap_t* pixmap, epx_gc_t* gc,
 			       int x, int y,
 			       unsigned int width,
 			       unsigned int height)
@@ -95,7 +98,7 @@ void epx_pixmap_draw_rectangle(epx_pixmap_t* pic, epx_gc_t* gc,
 
     if (!gc) gc = &epx_default_gc;
 
-    if (!epx_rect_intersect(&r, &pic->clip, &r))  // FIXME add border
+    if (!epx_rect_intersect(&r, &pixmap->clip, &r))  // FIXME add border
 	return;
 
     x = epx_rect_left(&r);
@@ -107,10 +110,10 @@ void epx_pixmap_draw_rectangle(epx_pixmap_t* pic, epx_gc_t* gc,
 	unsigned int bw = gc->border_width;
 	int x1 = epx_rect_right(&r);
 	int y1 = epx_rect_bottom(&r);
-	epx_draw_line(pic,x,y,x1,y,bw,bf,bc);
-	epx_draw_line(pic,x1,y,x1,y1,bw,bf,bc);
-	epx_draw_line(pic,x1,y1,x,y1,bw,bf,bc);
-	epx_draw_line(pic,x,y1,x,y,bw,bf,bc);
+	epx_draw_line(pixmap,x,y,x1,y,bw,bf,bc);
+	epx_draw_line(pixmap,x1,y,x1,y1,bw,bf,bc);
+	epx_draw_line(pixmap,x1,y1,x,y1,bw,bf,bc);
+	epx_draw_line(pixmap,x,y1,x,y,bw,bf,bc);
 	return;
     }
     else {
@@ -126,29 +129,30 @@ void epx_pixmap_draw_rectangle(epx_pixmap_t* pic, epx_gc_t* gc,
 	    ((bf & EPX_BORDER_STYLE_NBORDER) != EPX_BORDER_STYLE_NBORDER)) {
 	    epx_pixel_t bc = gc->border_color;
 	    if (!(bf & EPX_BORDER_STYLE_NBOTTOM))
-		epx_draw_line(pic,x,y-1,x1,y-1,bw,bf,bc);
+		epx_draw_line(pixmap,x,y-1,x1,y-1,bw,bf,bc);
 	    if (!(bf & EPX_BORDER_STYLE_NLEFT))
-		epx_draw_line(pic,x1+1,y,x1+1,y1,bw,bf,bc);
+		epx_draw_line(pixmap,x1+1,y,x1+1,y1,bw,bf,bc);
 	    if (!(bf & EPX_BORDER_STYLE_NTOP))
-		epx_draw_line(pic,x1,y1+1,x,y1+1,bw,bf,bc);
+		epx_draw_line(pixmap,x1,y1+1,x,y1+1,bw,bf,bc);
 	    if (!(bf & EPX_BORDER_STYLE_NRIGHT))
-		epx_draw_line(pic,x-1,y1,x-1,y,bw,bf,bc);
+		epx_draw_line(pixmap,x-1,y1,x-1,y,bw,bf,bc);
 	}
-	ptr = EPX_PIXEL_ADDR(pic,x,y);
+	ptr = EPX_PIXEL_ADDR(pixmap,x,y);
 	width  = epx_rect_width(&r);
 	height = epx_rect_height(&r);
 
 	if (((ff & EPX_FLAG_BLEND)==0) || (fc.a == EPX_ALPHA_OPAQUE))
-	    epx_fill_area(ptr,pic->bytes_per_row,pic->pixel_format,fc,
+	    epx_fill_area(ptr,pixmap->bytes_per_row,pixmap->pixel_format,fc,
 			  width,height);
 	else if (fc.a != EPX_ALPHA_TRANSPARENT) {
-	    epx_fill_area_blend(ptr,pic->bytes_per_row,pic->pixel_format,fc,
+	    epx_fill_area_blend(ptr,pixmap->bytes_per_row,
+				pixmap->pixel_format,fc,
 				width,height);
 	}
     }
 }
 
-void epx_pixmap_draw_line(epx_pixmap_t* pic, epx_gc_t* gc,
+void epx_pixmap_draw_line(epx_pixmap_t* pixmap, epx_gc_t* gc,
 			  int x0, int y0,
 			  int x1, int y1)
 {
@@ -156,21 +160,21 @@ void epx_pixmap_draw_line(epx_pixmap_t* pic, epx_gc_t* gc,
 
     if (gc->line_width == 1) {
 	if (y1 == y0)
-	    epx_draw_line_horizontal(pic,x0,x1,y0,
+	    epx_draw_line_horizontal(pixmap,x0,x1,y0,
 				     gc->line_style,
 				     gc->foreground_color);
 	else if (x1 == x0) {
-	    epx_draw_line_vertical(pic,x0,y0,y1,
+	    epx_draw_line_vertical(pixmap,x0,y0,y1,
 				   gc->line_style,
 				   gc->foreground_color);
 	}
 	else
-	    epx_draw_line_plain(pic,x0,y0,x1,y1,
+	    epx_draw_line_plain(pixmap,x0,y0,x1,y1,
 				gc->line_style,
 				gc->foreground_color);
     }
     else if (gc->line_width > 1)
-	epx_draw_line_thick(pic,x0,y0,x1,y1,gc->line_width,gc->line_style,
+	epx_draw_line_thick(pixmap,x0,y0,x1,y1,gc->line_width,gc->line_style,
 			    gc->foreground_color);
 }
 
@@ -182,10 +186,33 @@ void epx_pixmap_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
 
     if (((gc->border_style & EPX_BORDER_STYLE_NBORDER) ==
 	 EPX_BORDER_STYLE_NBORDER) || (gc->border_width == 0)) {
-	epx_draw_ellipse(pixmap, gc, x, y, width, height);
+	epx_draw_ellipse(pixmap, gc, x, y, width, height, 0, 0);
     }
     else {
-	epx_draw_ellipse_border(pixmap, gc, x, y, width, height);
+	epx_draw_ellipse_border(pixmap, gc, x, y, width, height, 0, 0);
+    }
+}
+
+void epx_pixmap_draw_roundrect(epx_pixmap_t* pixmap, epx_gc_t* gc,
+			       int x, int y,
+			       unsigned int width, unsigned int height,
+			       unsigned int rw, unsigned int rh)
+{
+    if (gc == NULL) gc = &epx_default_gc;
+    unsigned int ww;
+    unsigned int hh;
+
+    ww = (width < 2*rw) ? 0  : width - 2*rw;
+    hh = (height < 2*rh) ? 0 : height - 2*rh;
+
+    if (((gc->border_style & EPX_BORDER_STYLE_NBORDER) ==
+	 EPX_BORDER_STYLE_NBORDER) || (gc->border_width == 0)) {
+	epx_draw_ellipse(pixmap, gc, x, y, width-ww, height-hh, ww, hh);
+	epx_pixmap_draw_rectangle(pixmap, gc, x, y+rh+1, width+1, hh);
+    }
+    else {
+	epx_draw_ellipse_border(pixmap, gc, x, y, width-ww, height-hh, ww, hh);
+	epx_pixmap_draw_rectangle(pixmap, gc, x, y+rh+1, width+1, hh);
     }
 }
 

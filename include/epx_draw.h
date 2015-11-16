@@ -40,6 +40,11 @@ extern void epx_pixmap_draw_rectangle(epx_pixmap_t* pixmap, epx_gc_t* gc,
 				      unsigned int width,
 				      unsigned int height);
 
+extern void epx_pixmap_draw_roundrect(epx_pixmap_t* pixmap, epx_gc_t* gc,
+				      int x, int y,
+				      unsigned int width, unsigned int height,
+				      unsigned int rw, unsigned int rh);
+
 extern void epx_pixmap_draw_point(epx_pixmap_t* pic, epx_gc_t* gc,
 				  int x, int y);
 
@@ -54,9 +59,7 @@ extern void epx_pixmap_draw_triangle(epx_pixmap_t* pixmap, epx_gc_t* gc,
 
 extern void epx_pixmap_draw_ellipse(epx_pixmap_t* pic, epx_gc_t* gc,
 				    int x0, int y0,
-				    unsigned int width,
-				    unsigned int height);
-
+				    unsigned int width, unsigned int height);
 
 // NOT YET - SOON
 #if 0

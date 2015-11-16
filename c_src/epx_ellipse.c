@@ -30,22 +30,24 @@ extern void epx_draw_line_horizontal(epx_pixmap_t* pixmap,
 static inline void plot_ellipse4(epx_pixmap_t* pixmap,
 				 int xc, int yc,
 				 int x, int y, int flags,
-				 epx_pixel_t color)
+				 epx_pixel_t color,
+				 unsigned int ww, unsigned int hh)
 {
-    epx_pixmap_put_pixel(pixmap,xc-x,yc+y,flags,color);
-    epx_pixmap_put_pixel(pixmap,xc+x,yc+y,flags,color);
+    epx_pixmap_put_pixel(pixmap,xc-x,hh+yc+y,flags,color);
+    epx_pixmap_put_pixel(pixmap,ww+xc+x,hh+yc+y,flags,color);
     epx_pixmap_put_pixel(pixmap,xc-x,yc-y,flags,color);
-    epx_pixmap_put_pixel(pixmap,xc+x,yc-y,flags,color);
+    epx_pixmap_put_pixel(pixmap,ww+xc+x,yc-y,flags,color);
 }
 
 /* draw upper and lower ellipse fill line */
 static inline void line_ellipse2(epx_pixmap_t* pixmap,
 				 int xc, int yc,
 				 int x, int y, int flags,
-				 epx_pixel_t color)
+				 epx_pixel_t color,
+				 unsigned int ww, unsigned int hh)
 {
-    epx_draw_line_horizontal(pixmap,xc-x,xc+x,yc-y,flags,color);
-    epx_draw_line_horizontal(pixmap,xc-x,xc+x,yc+y,flags,color);
+    epx_draw_line_horizontal(pixmap,xc-x,ww+xc+x,yc-y,flags,color);
+    epx_draw_line_horizontal(pixmap,xc-x,ww+xc+x,hh+yc+y,flags,color);
 }
 
 
@@ -58,7 +60,8 @@ static inline void line_ellipse2(epx_pixmap_t* pixmap,
 //
 void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 			     int x, int y,
-			     unsigned int width, unsigned int height)
+			     unsigned int width, unsigned int height,
+			     unsigned int ww, unsigned int hh)
 {
     unsigned int a = width  >> 1;
     unsigned int b = height >> 1;
@@ -139,11 +142,11 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 		}
 	    }
 	    else {
-		plot_ellipse4(pixmap, xc, yc, xo, yi, bf, bc);
+		plot_ellipse4(pixmap, xc, yc, xo, yi, bf, bc, ww, hh);
 	    }
 	    if (do_fill) {
 		if (do_yi) {
-		    line_ellipse2(pixmap, xc, yc, xi-1, yi, ff, fill);
+		    line_ellipse2(pixmap, xc, yc, xi-1, yi, ff, fill, ww, hh);
 		}
 	    }
 	}
@@ -209,11 +212,11 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 	else {
 	    if (border_width > 1) {
 		if (do_yo) {
-		    line_ellipse2(pixmap, xc, yc, xo, yo, bf, bc);
+		    line_ellipse2(pixmap, xc, yc, xo, yo, bf, bc, ww, hh);
 		}
 	    }
 	    else {
-		plot_ellipse4(pixmap, xc, yc, xo, yo, bf, bc);
+		plot_ellipse4(pixmap, xc, yc, xo, yo, bf, bc, ww, hh);
 	    }
 	}
 
@@ -252,7 +255,8 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 
 
 void epx_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
-		      int x, int y, unsigned int width, unsigned int height)
+		      int x, int y, unsigned int width, unsigned int height,
+		      unsigned int ww, unsigned int hh)
 {
     unsigned int a = width  >> 1;
     unsigned int b = height >> 1;
@@ -286,21 +290,27 @@ void epx_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
     while((xo >= 0) && (yo <= (int)b)) {
 	if ((xo == 0) && (yo == 0)) {
 	    if (do_fill) {
-		if (do_y)
+		if (do_y) {
 		    epx_pixmap_put_pixel(pixmap, xc, yc, ff, fc);
+		    if (ww)
+			epx_pixmap_put_pixel(pixmap, ww+xc, yc, ff, fc);
+		}
 	    }
-	    else
+	    else {
 		epx_pixmap_put_pixel(pixmap, xc, yc, lf, lc);
+		if (ww)
+		    epx_pixmap_put_pixel(pixmap, ww+xc, yc, lf, lc);
+	    }
 	}
 	else if (xo == 0) {
 	    if (do_fill) {
 		if (do_y) {
-		    epx_pixmap_put_pixel(pixmap,xc,yc+yo, ff, fc);
+		    epx_pixmap_put_pixel(pixmap,xc,hh+yc+yo, ff, fc);
 		    epx_pixmap_put_pixel(pixmap,xc,yc-yo, ff, fc);
 		}
 	    }
 	    else {
-		epx_pixmap_put_pixel(pixmap,xc,yc+yo, lf, lc);
+		epx_pixmap_put_pixel(pixmap,xc,hh+yc+yo, lf, lc);
 		epx_pixmap_put_pixel(pixmap,xc,yc-yo, lf, lc);
 	    }
 	}
@@ -310,21 +320,21 @@ void epx_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
 		    if (do_aalias) {
 			epx_pixel_t c = lc;
 			double xt = a*sqrt(1-(double)(yo*yo)/(double)b2);
-			int alpha = c.a*(xo - xt);
-			epx_draw_line_horizontal(pixmap,xc-xo,xc+xo,yc,ff,c);
+			epx_draw_line_horizontal(pixmap,xc-xo,ww+xc+xo,yc,ff,c);
 
-			c.a = (c.a-alpha);
+			c.a = c.a*(1-(xo - xt));
 			epx_pixmap_put_pixel(pixmap,xc-xo-1,yc,ff,c);
-			epx_pixmap_put_pixel(pixmap,xc+xo+1,yc,ff,c);
+			epx_pixmap_put_pixel(pixmap,ww+xc+xo+1,yc,ff,c);
 		    }
 		    else {
-			epx_draw_line_horizontal(pixmap,xc-xo,xc+xo,yc,ff,fc);
+			epx_draw_line_horizontal(pixmap,xc-xo,ww+xc+xo,
+						 yc,ff,fc);
 		    }
 		}
 	    }
 	    else {
 		epx_pixmap_put_pixel(pixmap,xc-xo,yc,lf,lc);
-		epx_pixmap_put_pixel(pixmap,xc+xo,yc,lf,lc);
+		epx_pixmap_put_pixel(pixmap,ww+xc+xo,yc,lf,lc);
 	    }
 	}
 	else {
@@ -332,16 +342,13 @@ void epx_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
 		if (do_y) {
 		    if (do_aalias) {
 			epx_pixel_t c = fc;
-			double xt = a*sqrt(1-(double)(yo*yo)/(double)b2);
-			int alpha = fabs(90*(xo-xt)+37); // fc.a*(xo - xt);
-
-			line_ellipse2(pixmap, xc, yc, xo, yo, ff, fc);
-
-			c.a = alpha; // fc.a - alpha;
-			plot_ellipse4(pixmap, xc, yc, xo+1, yo, ff, c);
+			double xt = a*sqrt(1.0-(double)(yo*yo)/(double)b2);
+			line_ellipse2(pixmap, xc, yc, xo, yo, ff, fc, ww, hh);
+			c.a = c.a*(1 - (xo - xt));
+			plot_ellipse4(pixmap, xc, yc, xo+1, yo, ff, c, ww, hh);
 		    }
 		    else {
-			line_ellipse2(pixmap, xc, yc, xo, yo, ff, fc);
+			line_ellipse2(pixmap, xc, yc, xo, yo, ff, fc, ww, hh);
 		    }
 		}
 	    }
@@ -350,28 +357,26 @@ void epx_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
 		    if (do_y) {
 			epx_pixel_t c = lc;
 			double xt = a*sqrt(1.0-(double)(yo*yo)/(double)b2);
-			int alpha = c.a*(xo - xt);
 
-			c.a = alpha;
-			plot_ellipse4(pixmap, xc, yc, xo, yo, lf, c);
+			c.a = c.a*(1-(xo-xt));
+			plot_ellipse4(pixmap, xc, yc, xo, yo, lf, c, ww, hh);
 
-			c.a = (lc.a-alpha);
-			plot_ellipse4(pixmap, xc, yc, xo+1, yo, lf, c);
+			c.a = c.a*(1-((xo+1)-xt));
+			plot_ellipse4(pixmap, xc, yc, xo+1, yo, lf, c, ww, hh);
 		    }
 		    else {
 			epx_pixel_t c = lc;
 			double yt = b*sqrt(1.0-(double)(xo*xo)/(double)a2);
-			int alpha = c.a*(yo - yt);
 
-			c.a = alpha;
-			plot_ellipse4(pixmap, xc, yc, xo, yo, lf, c);
+			c.a = c.a*(1-(yo-yt));
+			plot_ellipse4(pixmap, xc, yc, xo, yo, lf, c, ww, hh);
 
-			c.a = (lc.a-alpha);
-			plot_ellipse4(pixmap, xc, yc, xo, yo+1, lf, c);
+			c.a = c.a*(1-((yo+1) - yt));
+			plot_ellipse4(pixmap, xc, yc, xo, yo+1, lf, c, ww, hh);
 		    }
 		}
 		else {
-		    plot_ellipse4(pixmap, xc, yc, xo, yo, lf, lc);
+		    plot_ellipse4(pixmap, xc, yc, xo, yo, lf, lc, ww, hh);
 		}
 	    }
 	}

@@ -68,6 +68,8 @@
 -export([pixmap_draw_triangle/8]).
 -export([pixmap_draw_rectangle/6]).
 -export([pixmap_draw_ellipse/6]).
+-export([pixmap_draw_roundrect/8]).
+
 %% Animation
 -export([animation_open/1]).
 -export([animation_copy/6]).
@@ -137,6 +139,7 @@
 -export([draw_line/5]).
 -export([draw_triangle/2, draw_triangle/4]).
 -export([draw_rectangle/5, draw_rectangle/2, draw_rectangle/3]).
+-export([draw_roundrect/7, draw_roundrect/4, draw_roundrect/5]).
 -export([draw_ellipse/5]).
 -export([draw_char/4]).
 -export([draw_string/4]).
@@ -819,6 +822,9 @@ pixmap_draw_rectangle(_Pixmap, _Gc, _X, _Y, _Width, _Height) ->
 pixmap_draw_ellipse(_Pixmap, _Gc, _X, _Y, _Width, _Height) ->
     erlang:error(nif_not_loaded).
 
+pixmap_draw_roundrect(_Pixmap, _Gc, _X, _Y, _Width, _Height, _Rw, _Rh) ->
+    erlang:error(nif_not_loaded).
+
 %%
 %% Animation
 %%
@@ -1206,6 +1212,16 @@ draw_rectangle(Pixmap, {X,Y,Width,Height}) ->
 
 draw_rectangle(Pixmap, X, Y, Width, Height) ->
     pixmap_draw_rectangle(Pixmap,epx_gc:current(), X, Y, Width, Height).
+
+draw_roundrect(Pixmap, Gc, {X, Y, Width, Height}, Rw, Rh) ->
+    pixmap_draw_roundrect(Pixmap, Gc, X, Y, Width, Height, Rw, Rh).
+
+draw_roundrect(Pixmap, {X,Y,Width,Height}, Rw, Rh) ->
+    draw_roundrect(Pixmap, X, Y, Width, Height, Rw, Rh).
+
+draw_roundrect(Pixmap, X, Y, Width, Height, Rw, Rh) ->
+    pixmap_draw_roundrect(Pixmap,epx_gc:current(), X, Y, Width, Height, Rw, Rh).
+
 
 draw_ellipse(Pixmap, X, Y, Width, Height) ->
     pixmap_draw_ellipse(Pixmap,epx_gc:current(), X, Y, Width, Height).
