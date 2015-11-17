@@ -22,10 +22,6 @@
 #include "../include/epx.h"
 #include <math.h>
 
-extern void epx_draw_line_horizontal(epx_pixmap_t* pixmap,
-				     int x1, int x2, int y,
-				     int flags, epx_pixel_t fg);
-
 /* plot 4 pixels - one in each quadrant */
 static inline void plot_ellipse4(epx_pixmap_t* pixmap,
 				 int xc, int yc,
@@ -68,7 +64,7 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
     int xc = x + a;
     int yc = y + b;
     unsigned int border_width = gc->border_width;
-    epx_pixel_t bc = gc->border_color;
+    epx_pixel_t bc     = gc->border_color;
     epx_pixel_t fill   = gc->fill_color;
     epx_flags_t ff     = gc->fill_style;
     epx_flags_t bf     = gc->border_style;
@@ -274,9 +270,9 @@ void epx_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
     long fx, fxy, fy;
     unsigned long ax, axy, ay;
     epx_flags_t ff = gc->fill_style;
-    epx_flags_t lf = gc->line_style;
     epx_pixel_t fc = gc->fill_color;
-    epx_pixel_t lc = gc->foreground_color;
+    epx_flags_t lf = gc->border_style;   // gc->line_style;
+    epx_pixel_t lc = gc->border_color; // foreground_color;
     int xo  = a;
     int yo = 0;
 

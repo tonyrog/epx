@@ -22,39 +22,6 @@
 #include "../include/epx_gc.h"
 #include "../include/epx_draw.h"
 
-extern void epx_draw_line_horizontal(epx_pixmap_t* pixmap,
-				     int x1, int x2, int y,
-				     int flags, epx_pixel_t fg);
-extern void epx_draw_line_vertical(epx_pixmap_t* pixmap,
-				   int x, int y1, int y2,
-				   int flags, epx_pixel_t fg);
-extern void epx_draw_line_plain(epx_pixmap_t* pixmap,
-				int x1, int y1,int x2,int y2,
-				int flags, epx_pixel_t fg);
-extern void epx_draw_line(epx_pixmap_t* pixmap,
-			  int x0, int y0, int x1, int y1,
-			  unsigned int line_width, int flags,
-			  epx_pixel_t p);
-extern void epx_draw_line_thick(epx_pixmap_t* pixmap,
-				int x0, int y0,
-				int x1, int y1, int line_width,
-				int flags, epx_pixel_t fg);
-extern void epx_draw_ellipse(epx_pixmap_t* pic, epx_gc_t* gc,
-			     int x, int y,
-			     unsigned int width, unsigned int height,
-			     unsigned int ww, unsigned int hh);
-
-extern void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
-				    int x, int y,
-				    unsigned int width, unsigned int height,
-				    unsigned int ww, unsigned int hh);
-
-extern void epx_fill_triangle(epx_pixmap_t* pixmap,
-			      int x0, int y0,
-			      int x1, int y1,
-			      int x2, int y2,
-			      int flags, epx_pixel_t fg);
-
 /* put pixel given address */
 static inline void put_apixel(uint8_t* addr,
 			      epx_pixel_unpack_t unpack,
@@ -86,48 +53,31 @@ void epx_pixmap_draw_point(epx_pixmap_t* pic, epx_gc_t* gc, int x, int y)
 	       gc->line_style,gc->foreground_color);
 }
 
-
-// Draw rectangle (x,y,w,h)
-void epx_pixmap_draw_rectangle(epx_pixmap_t* pixmap, epx_gc_t* gc,
-			       int x, int y,
-			       unsigned int width,
-			       unsigned int height)
+void epx_draw_rectangle(epx_pixmap_t* pixmap,
+			int x, int y, unsigned int width, unsigned int height,
+			epx_flags_t ff, epx_pixel_t fc,
+			unsigned int bw, epx_flags_t bf, epx_pixel_t bc)
 {
     epx_rect_t r = {{x, y}, {width, height}};
-    epx_flags_t ff;
-
-    if (!gc) gc = &epx_default_gc;
-
-    if (!epx_rect_intersect(&r, &pixmap->clip, &r))  // FIXME add border
+    int x1, y1;
+    if (!epx_rect_intersect(&r, &pixmap->clip, &r))
 	return;
-
     x = epx_rect_left(&r);
     y = epx_rect_top(&r);
-    ff = gc->fill_style;
+    x1 = epx_rect_right(&r);
+    y1 = epx_rect_bottom(&r);
     if (ff == EPX_FILL_STYLE_NONE) {
-	epx_flags_t bf     = gc->border_style | EPX_LINE_STYLE_NFIRST;
-	epx_pixel_t bc     = gc->border_color;
-	unsigned int bw = gc->border_width;
-	int x1 = epx_rect_right(&r);
-	int y1 = epx_rect_bottom(&r);
+
+	bf |= EPX_LINE_STYLE_NFIRST;
 	epx_draw_line(pixmap,x,y,x1,y,bw,bf,bc);
 	epx_draw_line(pixmap,x1,y,x1,y1,bw,bf,bc);
 	epx_draw_line(pixmap,x1,y1,x,y1,bw,bf,bc);
 	epx_draw_line(pixmap,x,y1,x,y,bw,bf,bc);
-	return;
     }
     else {
 	uint8_t* ptr;
-	int x1, y1;
-	epx_flags_t  bf = gc->border_style;
-	epx_pixel_t fc  = gc->fill_color;
-	int bw          = gc->border_width;
-	x1 = epx_rect_right(&r);
-	y1 = epx_rect_bottom(&r);
-
 	if ((bw > 0) &&
 	    ((bf & EPX_BORDER_STYLE_NBORDER) != EPX_BORDER_STYLE_NBORDER)) {
-	    epx_pixel_t bc = gc->border_color;
 	    if (!(bf & EPX_BORDER_STYLE_NBOTTOM))
 		epx_draw_line(pixmap,x,y-1,x1,y-1,bw,bf,bc);
 	    if (!(bf & EPX_BORDER_STYLE_NLEFT))
@@ -150,6 +100,20 @@ void epx_pixmap_draw_rectangle(epx_pixmap_t* pixmap, epx_gc_t* gc,
 				width,height);
 	}
     }
+}
+
+
+// Draw rectangle (x,y,w,h)
+void epx_pixmap_draw_rectangle(epx_pixmap_t* pixmap, epx_gc_t* gc,
+			       int x, int y,
+			       unsigned int width,
+			       unsigned int height)
+{
+    if (!gc) gc = &epx_default_gc;
+
+    epx_draw_rectangle(pixmap, x, y, width, height,
+		       gc->fill_style, gc->fill_color,
+		       gc->border_width, gc->border_style, gc->border_color);
 }
 
 void epx_pixmap_draw_line(epx_pixmap_t* pixmap, epx_gc_t* gc,
@@ -208,11 +172,38 @@ void epx_pixmap_draw_roundrect(epx_pixmap_t* pixmap, epx_gc_t* gc,
     if (((gc->border_style & EPX_BORDER_STYLE_NBORDER) ==
 	 EPX_BORDER_STYLE_NBORDER) || (gc->border_width == 0)) {
 	epx_draw_ellipse(pixmap, gc, x, y, width-ww, height-hh, ww, hh);
-	epx_pixmap_draw_rectangle(pixmap, gc, x, y+rh+1, width+1, hh);
+	if (gc->fill_style == EPX_FILL_STYLE_NONE) {
+	    epx_flags_t bf = gc->border_style | EPX_LINE_STYLE_NFIRST;
+	    epx_pixel_t bc = gc->border_color;
+	    unsigned int bw = gc->border_width;
+	    int x0 = x+rw;
+	    int y0 = y+rh;
+	    int x1 = x+width-rh;
+	    int y1 = y+height-rh;
+	    epx_draw_line(pixmap, x0, y, x1, y, bw, bf, bc);
+	    epx_draw_line(pixmap, x0, y+height, x1, y+height, bw, bf, bc);
+	    epx_draw_line(pixmap, x, y0, x, y1, bw, bf, bc);
+	    epx_draw_line(pixmap, x+width, y0, x+width, y1, bw, bf, bc);
+	}
+	else {
+	    epx_pixmap_draw_rectangle(pixmap, gc, x, y+rh+1, width+1, hh);
+	}
     }
     else {
+	epx_flags_t bf = gc->border_style | EPX_LINE_STYLE_NFIRST;
+	epx_pixel_t bc = gc->border_color;
+	unsigned int bw = gc->border_width;
+	int x0 = x+rw;
+	int y0 = y+rh;
+	int x1 = x+width-rh;
+	int y1 = y+height-rh;
 	epx_draw_ellipse_border(pixmap, gc, x, y, width-ww, height-hh, ww, hh);
-	epx_pixmap_draw_rectangle(pixmap, gc, x, y+rh+1, width+1, hh);
+	epx_draw_rectangle(pixmap, x, y+rh+1, width+1, hh, gc->fill_style, 
+			   gc->fill_color, 0, 0, bc);
+	epx_draw_line(pixmap, x0, y, x1, y, bw, bf, bc);
+	epx_draw_line(pixmap, x0, y+height, x1, y+height, bw, bf, bc);
+	epx_draw_line(pixmap, x, y0, x, y1, bw, bf, bc);
+	epx_draw_line(pixmap, x+width, y0, x+width, y1, bw, bf, bc);
     }
 }
 
