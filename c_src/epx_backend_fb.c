@@ -309,15 +309,13 @@ static int load_pixel_format(epx_backend_t* backend,
     else if ((r_size==0) && (g_size==0) && (b_size>0))
 	fmt = EPX_FMT_BLUE;
 
-    if (!little_endian) {
-      if (alpha && alpha_first) alpha_first = 0;
-      // bgr = !bgr;
-    }
+    DEBUGF("little_endian: %d", little_endian);
+    DEBUGF("bgr: %d", bgr);
+    DEBUGF("alpha: %d", alpha);
+    DEBUGF("alpha_first: %d", alpha_first);
+    DEBUGF("bits_per_pixel: %d", bits_per_pixel);
+    DEBUGF("fmt: %d", fmt);
 
-    // Work-around handling the "native" pixel format
-    //    if (little_endian && (bits_per_pixel == 32)) {
-    //      little_endian = 0;  // why is this?
-    // }
     f = EPX_FMT(fmt,bgr,alpha,alpha_first,little_endian,bits_per_pixel);
     backend->formats[0] = f;
     backend->nformats = 1;
