@@ -471,6 +471,14 @@ static int show_cursor(FbBackend* be, int timeout)
 
 #endif
 
+//
+//  Fixme: blank can also be disabled with 
+//    echo 0 > /sys/class/graphics/fb0/blank
+//  
+//  stop blink:
+//    echo 0 > /sys/class/graphics/fbcon/cursor_blink
+// http://www.armadeus.com/wiki/index.php?title=Framebuffer
+//
 
 static void send_cursor_off(int fd)
 {
