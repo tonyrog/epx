@@ -41,11 +41,10 @@ extern epx_backend_t* carbon_init(epx_dict_t* param);
 extern int carbon_upgrade(epx_backend_t* backend);
 #endif
 
-#if 0 && defined(__APPLE__)
+#if defined(__APPLE__)
 extern epx_backend_t* cocoa_init(epx_dict_t* param);
 extern int cocoa_upgrade(epx_backend_t* backend);
 #endif
-
 
 #if defined(WIN32)
 extern epx_backend_t* win32_init(epx_dict_t* param);
@@ -75,10 +74,8 @@ static struct _backend_item {
       .init = carbon_init,
       .upgrade = carbon_upgrade
     },
-#endif
-
-#if 0 && defined(__APPLE__)
-    { .name = "cocoa",
+#elif defined(__APPLE__) && defined(__x86_64__)
+    { .name = "macos",
       .init = cocoa_init,
       .upgrade = cocoa_upgrade
     },

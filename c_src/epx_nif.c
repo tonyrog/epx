@@ -179,6 +179,24 @@ static ERL_NIF_TERM font_draw_string(ErlNifEnv* env, int argc,
 static ERL_NIF_TERM font_draw_utf8(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[]);
 
+#ifdef __APPLE__
+extern int erl_drv_stolen_main_thread_join(ErlNifTid tid, void **respp);
+extern int erl_drv_steal_main_thread(char *name,
+				     ErlNifTid *dtid,
+				     void* (*func)(void*),
+				     void* arg,
+				     ErlDrvThreadOpts *opts);
+#endif
+
+#define DO_STEAL      1
+#define DO_NOT_STEAL  0
+
+#define DO_WAKEUP     1
+#define DO_NOT_WAKEUP 0
+
+#define STACK_SIZE_AUTO -1
+#define STACK_SIZE_IN_KBYTES(k) (k)
+
 typedef enum {
     EPX_MESSAGE_STOP,           // time to die
     EPX_MESSAGE_UPGRADE,        // upgrade thread
@@ -256,6 +274,7 @@ typedef struct _epx_thread_t {
     ErlNifTid   tid;     // thread id
     epx_queue_t q;       // message queue
     void*       arg;     // thread init argument
+    int         stolen;  // if stolen main thread
     int         wake[2]; // wakeup pipe (very unix, fixme)
     void*       priv;    // private (upgrade) data
 } epx_thread_t;
@@ -953,8 +972,25 @@ static epx_message_t* epx_message_peek(epx_thread_t* thr, epx_thread_t** from)
 }
 #endif
 
+static int epx_posix_steal_pthread(pthread_t* pthr,
+				   const pthread_attr_t *attr, 
+				   void *(*start_routine)(void *),
+				   void *arg)
+{
+#ifdef __APPLE__
+    ErlNifTid tid;
+    EPX_DBGFMT("epx_posix_steal_pthread");
+    return erl_drv_steal_main_thread((char *)"epx_thread",
+				     &tid,start_routine,arg,NULL);
+#else
+    return -1;
+#endif
+}
+
+
 static epx_thread_t* epx_thread_start(void* (*func)(void* arg),
-				      void* arg, int wake, int stack_size)
+				      void* arg, int wakeup, int steal, 
+				      int stack_size)
 {
     ErlNifThreadOpts* opts;
     epx_thread_t* thr;
@@ -965,7 +1001,7 @@ static epx_thread_t* epx_thread_start(void* (*func)(void* arg),
     thr->priv = NULL;
     if (epx_queue_init(&thr->q) < 0)
 	goto error;
-    if (wake) {
+    if (wakeup) {
 	if (pipe(thr->wake) < 0)
 	    goto error;
     }
@@ -974,7 +1010,18 @@ static epx_thread_t* epx_thread_start(void* (*func)(void* arg),
     opts->suggested_stack_size = stack_size;
     thr->arg = arg;
 
-    enif_thread_create("epx_thread", &thr->tid, func, thr, opts);
+    if (steal) {
+#ifdef __APPLE__
+	(void) erl_drv_steal_main_thread((char *)"epx_thread",
+					 &thr->tid,func, thr, opts);
+	thr->stolen = 1;
+#else
+	enif_thread_create("epx_thread", &thr->tid, func, thr, opts);
+#endif
+    }
+    else {
+	enif_thread_create("epx_thread", &thr->tid, func, thr, opts);
+    }
     enif_thread_opts_destroy(opts);
     return thr;
 error:
@@ -993,7 +1040,17 @@ static int epx_thread_stop(epx_thread_t* thr, epx_thread_t* sender,
 
     m.type = EPX_MESSAGE_STOP;
     epx_message_send(thr, sender, &m);
-    r=enif_thread_join(thr->tid, exit_value);
+
+    if (thr->stolen) {
+#ifdef __APPLE__
+	r=erl_drv_stolen_main_thread_join(thr->tid, exit_value);
+#else
+	r=enif_thread_join(thr->tid, exit_value);
+#endif
+    }
+    else {
+	r=enif_thread_join(thr->tid, exit_value);
+    }
     EPX_DBGFMT("enif_thread_join: return=%d, exit_value=%p", r, *exit_value);
     epx_queue_destroy(&thr->q);
     if (thr->wake[0] >= 0) close(thr->wake[0]);
@@ -4546,7 +4603,10 @@ static void* backend_main(void* arg)
 	priv = enif_alloc(sizeof(backend_priv_t));
 	priv->env = enif_alloc_env();
 	priv->handle = epx_backend_event_attach(backend);
-	priv->poll_thr = epx_thread_start(backend_poll, 0, 1, 4);
+	priv->poll_thr = epx_thread_start(backend_poll, 0,
+					  DO_WAKEUP, 
+					  DO_NOT_STEAL,
+					  STACK_SIZE_IN_KBYTES(4));
 	self->priv = priv;
     }
 
@@ -4762,6 +4822,9 @@ static ERL_NIF_TERM backend_open(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &dict_res, (void**) &param))
 	return enif_make_badarg(env);
+#ifdef __APPLE__
+    param->opaque = epx_posix_steal_pthread;
+#endif
     if (!(be = epx_backend_create(name, param)))
 	return enif_make_badarg(env);
     backend = epx_resource_alloc(&backend_res,sizeof(epx_nif_backend_t));
@@ -4774,7 +4837,10 @@ static ERL_NIF_TERM backend_open(ErlNifEnv* env, int argc,
     backend->backend = be;
 
     // start the backend thread stack size = default - FIXME handle error
-    backend->main = epx_thread_start(backend_main, backend, 0, -1);
+    backend->main = epx_thread_start(backend_main, backend,
+				     DO_NOT_WAKEUP, 
+				     DO_NOT_STEAL,
+				     STACK_SIZE_AUTO);
 
     // add backend to list
     enif_rwlock_rwlock(ctx->backend_list_lock);
@@ -5438,7 +5504,10 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 
     load_atoms(env, ctx);
 
-    ctx->reaper = epx_thread_start(reaper_main, 0, 0, 4);
+    ctx->reaper = epx_thread_start(reaper_main, 0, 
+				   DO_NOT_WAKEUP,
+				   DO_NOT_STEAL,
+				   STACK_SIZE_IN_KBYTES(4));
 
     *priv_data = ctx;
     return 0;

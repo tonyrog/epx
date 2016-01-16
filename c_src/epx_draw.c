@@ -198,7 +198,7 @@ void epx_pixmap_draw_roundrect(epx_pixmap_t* pixmap, epx_gc_t* gc,
 	int x1 = x+width-rh;
 	int y1 = y+height-rh;
 	epx_draw_ellipse_border(pixmap, gc, x, y, width-ww, height-hh, ww, hh);
-	epx_draw_rectangle(pixmap, x, y+rh+1, width+1, hh, gc->fill_style, 
+	epx_draw_rectangle(pixmap, x, y+rh, width+1, hh, gc->fill_style, 
 			   gc->fill_color, 0, 0, bc);
 	epx_draw_line(pixmap, x0, y, x1, y, bw, bf, bc);
 	epx_draw_line(pixmap, x0, y+height, x1, y+height, bw, bf, bc);
