@@ -4457,8 +4457,8 @@ static void* backend_poll(void* arg)
     epx_thread_t* self = arg;
     poll_priv_t* priv;
 
-    EPX_DBGFMT("backend_poll: started (addr=%p,%p,priv=%p)",
-	       &self, self, self->priv);
+    //    EPX_DBGFMT("backend_poll: started (addr=%p,%p,priv=%p)",
+    // &self, self, self->priv);
     if ((priv = (poll_priv_t*) self->priv) == NULL) {
 	priv = enif_alloc(sizeof(poll_priv_t));
 	priv->state = 0;

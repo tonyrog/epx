@@ -282,7 +282,7 @@ static int load_pixel_format(epx_backend_t* backend,
 #endif
     bgr = (b_offs > g_offs);
     alpha = (a_size > 0);   // alpha channel present 
-    alpha_first = alpha && (a_offs < r_offs);
+    alpha_first = alpha && (a_offs > r_offs);
     bits_per_pixel = vinfo->bits_per_pixel;
     if (vinfo->grayscale) fmt = EPX_FMT_GRAY;
     else if ((r_size==g_size) && (g_size==b_size)) {
@@ -309,10 +309,13 @@ static int load_pixel_format(epx_backend_t* backend,
     else if ((r_size==0) && (g_size==0) && (b_size>0))
 	fmt = EPX_FMT_BLUE;
 
-    // Work-around handling the "native" pixel format
-    if (little_endian && (bits_per_pixel == 32)) {
-      little_endian = 0;  // why is this?
-    }
+    DEBUGF("little_endian: %d", little_endian);
+    DEBUGF("bgr: %d", bgr);
+    DEBUGF("alpha: %d", alpha);
+    DEBUGF("alpha_first: %d", alpha_first);
+    DEBUGF("bits_per_pixel: %d", bits_per_pixel);
+    DEBUGF("fmt: %d", fmt);
+
     f = EPX_FMT(fmt,bgr,alpha,alpha_first,little_endian,bits_per_pixel);
     backend->formats[0] = f;
     backend->nformats = 1;
@@ -468,6 +471,14 @@ static int show_cursor(FbBackend* be, int timeout)
 
 #endif
 
+//
+//  Fixme: blank can also be disabled with 
+//    echo 0 > /sys/class/graphics/fb0/blank
+//  
+//  stop blink:
+//    echo 0 > /sys/class/graphics/fbcon/cursor_blink
+// http://www.armadeus.com/wiki/index.php?title=Framebuffer
+//
 
 static void send_cursor_off(int fd)
 {
@@ -1203,6 +1214,7 @@ static int setup_input_system(FbBackend* be, epx_dict_t *param)
 	struct epoll_event ev;
 	
 	/* Extract the value for the current parameter key */
+	DEBUGF("Find string value for key [%s]", input_param_keys[param_ind]);
 	if (epx_dict_lookup_string(param, 
 				   input_param_keys[param_ind], 
 				   &string_param, 
