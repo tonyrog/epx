@@ -977,6 +977,8 @@ static int epx_posix_steal_pthread(pthread_t* pthr,
 				   void *(*start_routine)(void *),
 				   void *arg)
 {
+    (void) pthr;
+    (void) attr;
 #ifdef __APPLE__
     ErlNifTid tid;
     EPX_DBGFMT("epx_posix_steal_pthread");
