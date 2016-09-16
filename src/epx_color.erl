@@ -23,10 +23,11 @@
 -module(epx_color).
 
 -export([from_name/1]).
--export([hsv_to_rgb01/1]).
--export([hsv_to_rgb/1]).
--export([rgb01_to_hsv/1]).
--export([rgb_to_hsv/1]).
+-export([hsv_to_rgb/1, hsv_to_rgb01/3]).
+-export([rgb_to_hsv/1, rgb01_to_hsv/3]).
+-export([hsl_to_rgb/1, hsl_to_rgb01/3]).
+-export([hsl_to_rgbw/1,hsl_to_rgbw01/3]).
+-export([rgb_to_hsl/1, rgb01_to_hsl/3]).
 -export([hsv_to_cc/1]).
 
 -define(PI, 3.141592653589793).
@@ -187,9 +188,79 @@ from_name(Name) when is_list(Name) ->
 	_ -> false
     end.
 
-hsv_to_rgb01({_H,S,V}) when S == 0 ->
+hsl_to_rgb({H,S,L}) ->
+    {R,G,B} = hsl_to_rgb01(H,S,L),
+    {trunc(R*255), trunc(G*255), trunc(B*255)}.
+
+hsl_to_rgb01(H,S,L) when 
+      is_number(H), H >= 0, H < 360,
+      is_number(S), S >= 0, S =< 1.0,
+      is_number(L), L >= 0, L =< 1.0 ->
+    C = (1 - abs(2*L -1))*S,
+    X = C*(1-abs(fmod(H/60,2)-1)),
+    M = L - C/2,
+    {R1,G1,B1} =
+	if H < 60  -> {C,X,0};
+	   H < 120 -> {X,C,0};
+	   H < 180 -> {0,C,X};
+	   H < 240 -> {0,X,C};
+	   H < 300 -> {X,0,C};
+	   H < 360 -> {C,0,X}
+	end,
+    {R1+M,G1+M,B1+M}.
+
+hsl_to_rgbw({H,S,L}) ->
+    {R,G,B,W} = hsl_to_rgbw01(H,S,L),
+    {trunc(R*255), trunc(G*255), trunc(B*255), trunc(W*255)}.
+
+hsl_to_rgbw01(H,S,L) when 
+      is_number(H), H >= 0, H < 360,
+      is_number(S), S >= 0, S =< 1.0,
+      is_number(L), L >= 0, L =< 1.0 ->
+    C = (1 - abs(2*L -1))*S,
+    X = C*(1-abs(fmod(H/60,2)-1)),
+    M = L - C/2,
+    W = (1-S)*L,
+    if H < 60  -> {C+M,X+M,0,W};
+       H < 120 -> {X+M,C+M,0,W};
+       H < 180 -> {0,C+M,X+M,W};
+       H < 240 -> {0,X+M,C+M,W};
+       H < 300 -> {X+M,0,C+M,W};
+       H < 360 -> {C+M,0,X+M,W}
+    end.
+       
+rgb_to_hsl(Color) when is_atom(Color); is_list(Color) ->
+    rgb_to_hsl(from_name(Color));       
+rgb_to_hsl({R,G,B}) ->
+    rgb01_to_hsl(R/255,G/255,B/255).
+
+rgb01_to_hsl(R,G,B) ->
+    Cmax = erlang:max(erlang:max(R,G),B),
+    Cmin = erlang:min(erlang:min(R,G),B),
+    D0 = Cmax - Cmin,
+    D = if D0 < 0.0001 -> 0;
+	   D0 > 0.9999 -> 1;
+	   true -> D0
+	end,
+    H0 = if D =:= 0 -> 0.0;
+	   Cmax =:= R -> 60*fmod((G-B)/D, 6);
+	   Cmax =:= G -> 60*((B-R)/D + 2);
+	   Cmax =:= B -> 60*((R-G)/D + 4)
+	end,
+    H = if H0 < 0 -> H0 + 360;
+	   true -> H0
+	end,
+    L = (Cmax + Cmin)/2,
+    S0 = if D =:= 0 -> 0.0;
+	   true -> D/(1-abs(2*L-1))
+	end,
+    S = erlang:min(S0,1.0),
+    {H,S,L}.
+
+
+hsv_to_rgb01(_H,S,V) when S =:= 0 ->
     {V, V, V};
-hsv_to_rgb01({H,S,V}) ->
+hsv_to_rgb01(H,S,V) ->
     H60 = H / 60,
     I = trunc(H60),
     F = H60 - I,
@@ -205,11 +276,11 @@ hsv_to_rgb01({H,S,V}) ->
 	5 -> { V, P, Q }
     end.
 
-hsv_to_rgb(HSV={_H,_S,_V}) ->
-    {R,G,B} = hsv_to_rgb01(HSV),
+hsv_to_rgb({H,S,V}) ->
+    {R,G,B} = hsv_to_rgb01(H,S,V),
     {trunc(R*255),trunc(G*255),trunc(B*255)}.
 
-rgb01_to_hsv({R,G,B}) ->
+rgb01_to_hsv(R,G,B) ->
     RgbMax = max(max(R,G),B),
     RgbMin = min(min(R,G),B),
     Delta = RgbMax - RgbMin,
@@ -232,11 +303,20 @@ rgb01_to_hsv({R,G,B}) ->
 		    {H1, S, V}
 	    end
     end.
-	       
+
+rgb_to_hsv(Color) when is_atom(Color); is_list(Color) ->
+    rgb_to_hsv(from_name(Color));
 rgb_to_hsv({R,G,B}) ->
-    rgb01_to_hsv({R/255.0,G/255.0,B/255.0}).
+    rgb01_to_hsv(R/255.0,G/255.0,B/255.0).
 
 %% HSV to "color code"
 hsv_to_cc({H,S,_V}) ->
     A = H*(2*?PI/360),
     { S * math:sin(A), S * math:cos(A) }.
+
+fmod(A, B) when is_number(A), is_number(B), B =/= 0 ->
+    AB = abs(A / B),
+    C = (AB - trunc(AB))*abs(B),
+    if A < 0 -> -C;
+       true -> C
+    end.
