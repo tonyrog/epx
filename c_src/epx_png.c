@@ -61,6 +61,8 @@ epx_pixmap_t* epx_image_load_png(char* file_name, epx_format_t format)
     /* open file and test for it being a png */
     FILE *fp = fopen(file_name, "rb");
 
+    // fprintf(stderr, "LOADING image %s\r\n", file_name);
+
     if (!fp) {
 	error("%s: could not be opened for reading", file_name);
 	goto error;
