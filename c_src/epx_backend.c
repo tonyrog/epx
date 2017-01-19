@@ -36,10 +36,10 @@ extern epx_backend_t* fb_init(epx_dict_t* param);
 extern int fb_upgrade(epx_backend_t* backend);
 #endif
 
-#if defined(__APPLE__) && !defined(__x86_64__)
-extern epx_backend_t* carbon_init(epx_dict_t* param);
-extern int carbon_upgrade(epx_backend_t* backend);
-#endif
+// #if defined(__APPLE__) && !defined(__x86_64__)
+// extern epx_backend_t* carbon_init(epx_dict_t* param);
+// extern int carbon_upgrade(epx_backend_t* backend);
+// #endif
 
 #if defined(__APPLE__)
 extern epx_backend_t* cocoa_init(epx_dict_t* param);
@@ -69,12 +69,13 @@ static struct _backend_item {
     },
 #endif
 
-#if defined(__APPLE__) && !defined(__x86_64__)
-    { .name = "macos",
-      .init = carbon_init,
-      .upgrade = carbon_upgrade
-    },
-#elif defined(__APPLE__) && defined(__x86_64__)
+// #if defined(__APPLE__) && !defined(__x86_64__)
+//    { .name = "macos",
+//      .init = carbon_init,
+//      .upgrade = carbon_upgrade
+//    },
+// #elif defined(__APPLE__) && defined(__x86_64__)
+#if defined(__APPLE__) //  && defined(__x86_64__)
     { .name = "macos",
       .init = cocoa_init,
       .upgrade = cocoa_upgrade

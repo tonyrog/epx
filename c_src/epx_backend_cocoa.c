@@ -307,6 +307,7 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 - (void)keyUp:(NSEvent*) theEvent;
 - (void)mouseEntered:(NSEvent*) theEvent;
 - (void)mouseExited:(NSEvent*) theEvent;
+- (void)flagsChanged:(NSEvent*) theEvent;
 
 - (void)crossing_event:(NSEvent*) theEvent andType:(int)type;
 - (void)pointer_event:(NSEvent*) theEvent andType:(int)type;
@@ -375,6 +376,27 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 - (void)mouseExited:(NSEvent*) theEvent
 {
     [self crossing_event: theEvent andType:EPX_EVENT_LEAVE];
+}
+
+- (void)flagsChanged:(NSEvent*) theEvent
+{
+    NSEventModifierFlags keyMod = [theEvent modifierFlags];
+    epx_event_t e;
+
+    if (keyMod & NSShiftKeyMask)
+	e.key.mod |= EPX_KBD_MOD_LSHIFT;
+    if (keyMod & NSControlKeyMask)
+	e.key.mod |= EPX_KBD_MOD_LCTRL;
+    if (keyMod & NSAlternateKeyMask)
+	e.key.mod |= EPX_KBD_MOD_LALT;
+    if (keyMod & NSAlphaShiftKeyMask)
+	e.key.mod |= EPX_KBD_MOD_CAPS;
+    if (keyMod & NSNumericPadKeyMask)
+	e.key.mod |= EPX_KBD_MOD_NUM;
+    if (keyMod & NSCommandKeyMask)
+	e.key.mod |= EPX_KBD_MOD_META;
+    // Fixme add FunctionKey to epx: NSFunctionKeyMask
+    // DBG(@"flagsChanged: %d\r", e.key.mod);
 }
 
 
@@ -764,10 +786,10 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     CocoaBackend* be;
     epx_window_t* ewin;
     NSTrackingArea *area = [[NSTrackingArea alloc]initWithRect:viewRect 
-			    options:NSTrackingMouseEnteredAndExited|
-			    NSTrackingActiveInActiveApp 
+			    options:NSTrackingMouseEnteredAndExited |
+			    NSTrackingActiveInActiveApp
+			    // NSTrackingMouseMoved
 			    owner:view userInfo:nil];
-
     ewin = cwin->ewin;
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
     [view setBackend:be];
@@ -791,6 +813,8 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     [[appwin contentView] addSubview:view];  // for mouse events
     [view addTrackingArea:area];  // for Enter/Exit callbacks
     [appwin setDelegate:appwin];  // Resize and Moved callbacks
+
+    [[appwin contentView] setAutoresizesSubviews:YES];
 
     [appwin makeFirstResponder: view];
     // [appwin makeFirstResponder: responder];
