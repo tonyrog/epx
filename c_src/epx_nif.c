@@ -972,6 +972,7 @@ static epx_message_t* epx_message_peek(epx_thread_t* thr, epx_thread_t** from)
 }
 #endif
 
+#ifdef __APPLE__
 static int epx_posix_steal_pthread(pthread_t* pthr,
 				   const pthread_attr_t *attr, 
 				   void *(*start_routine)(void *),
@@ -979,16 +980,13 @@ static int epx_posix_steal_pthread(pthread_t* pthr,
 {
     (void) pthr;
     (void) attr;
-#ifdef __APPLE__
     ErlNifTid tid;
     EPX_DBGFMT("epx_posix_steal_pthread");
     return erl_drv_steal_main_thread((char *)"epx_thread",
 				     &tid,start_routine,arg,NULL);
-#else
     return -1;
-#endif
 }
-
+#endif
 
 static epx_thread_t* epx_thread_start(void* (*func)(void* arg),
 				      void* arg, int wakeup, int steal, 
