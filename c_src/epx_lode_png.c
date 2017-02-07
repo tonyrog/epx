@@ -32,27 +32,27 @@
 epx_pixmap_t* epx_image_load_png(char* file_name, epx_format_t format)
 {
     unsigned error;
-    unsigned char* image;
+    unsigned char* image = 0;
     unsigned width, height;
     unsigned char* png = 0;
     size_t pngsize;
     LodePNGState state;
-    epx_pixmap_t* pixmap;
+    epx_pixmap_t* pixmap = NULL;
     int y;
 
     lodepng_state_init(&state); // optionally customize the state
 
-    error = lodepng_load_file(&png, &pngsize, file_name);
-    if(!error) 
-	error = lodepng_decode(&image, &width, &height, &state, png, pngsize);
-    if (error)
-	printf("error %u: %s\n", error, lodepng_error_text(error));
-    free(png);
+    if ((error = lodepng_load_file(&png, &pngsize, file_name)) != 0)
+	goto error;
 
-    if ((pixmap = epx_pixmap_create(width, height, format)) == NULL) {
-	free(image);
-	return NULL;
-    }
+    if ((error=lodepng_decode(&image,&width,&height,&state,png,pngsize)) != 0)
+	goto error;
+
+    free(png);
+    png = 0;
+
+    if ((pixmap = epx_pixmap_create(width, height, format)) == NULL)
+	goto cleanup;
 
     for (y = 0; y < height; y++) {
 	int x;
@@ -68,12 +68,12 @@ epx_pixmap_t* epx_image_load_png(char* file_name, epx_format_t format)
 	}
     }
 
+error:
+    printf("error %u: %s\n", error, lodepng_error_text(error));
 
-    /*use image here*/
-    /*state contains extra information about the PNG such as text chunks, ...*/
-
+cleanup:
     lodepng_state_cleanup(&state);
+    free(png);
     free(image);
-
     return pixmap;
 }
