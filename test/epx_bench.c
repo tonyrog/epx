@@ -79,19 +79,23 @@ void bench_plot1(int n,
     for (j = 0; j < n; j++) {
 	struct timeval t, t0, t1;
 	double tf;
-	gettimeofday(&t0, NULL);
+	int i;
 
-	src_ptr = EPX_PIXEL_ADDR(a, 0, 0);
-	for (y = 0; y < 480; y++) {
-	    u_int8_t* src1 = src_ptr;
-	    for (x = 0; x < 640; x++) {
-		epx_pixel_t p;
-		p = src_unpack(src1);
-		p.a = 100; p.r = 1; p.g = 1; p.b = 1;
-		dst_pack(p, src1);
-		src1 += bytesPerPixel;
+	gettimeofday(&t0, NULL);
+	
+	for (i = 0; i < 100; i++) {
+	    src_ptr = EPX_PIXEL_ADDR(a, 0, 0);
+	    for (y = 0; y < 480; y++) {
+		u_int8_t* src1 = src_ptr;
+		for (x = 0; x < 640; x++) {
+		    epx_pixel_t p;
+		    p = src_unpack(src1);
+		    p.a = 100; p.r = 1; p.g = 1; p.b = 1;
+		    dst_pack(p, src1);
+		    src1 += bytesPerPixel;
+		}
+		src_ptr += bytesPerRow;
 	    }
-	    src_ptr += bytesPerRow;
 	}
 	gettimeofday(&t1, NULL);
 	timersub(&t1, &t0, &t);
@@ -127,19 +131,24 @@ void bench_plot(int n, int src_pt, int dst_pt)
     for (j = 0; j < n; j++) {
 	struct timeval t, t0, t1;
 	double tf;
+	int i;
+
 	gettimeofday(&t0, NULL);
 
-	src_ptr = EPX_PIXEL_ADDR(a, 0, 0);
-	for (y = 0; y < 480; y++) {
-	    u_int8_t* src1 = src_ptr;
-	    for (x = 0; x < 640; x++) {
-		epx_pixel_t p = a->func.unpack(src1);
-		p.a = 100; p.r = 1; p.g = 1; p.b = 1;
-		a->func.pack(p, src1);
-		src1 += bytesPerPixel;
+	for (i = 0; i < 100; i++) {
+	    src_ptr = EPX_PIXEL_ADDR(a, 0, 0);
+	    for (y = 0; y < 480; y++) {
+		u_int8_t* src1 = src_ptr;
+		for (x = 0; x < 640; x++) {
+		    epx_pixel_t p = a->func.unpack(src1);
+		    p.a = 100; p.r = 1; p.g = 1; p.b = 1;
+		    a->func.pack(p, src1);
+		    src1 += bytesPerPixel;
+		}
+		src_ptr += bytesPerRow;
 	    }
-	    src_ptr += bytesPerRow;
 	}
+
 	gettimeofday(&t1, NULL);
 	timersub(&t1, &t0, &t);
 	tf = 100.0/(t.tv_sec+(t.tv_usec/1000000.0));
@@ -244,7 +253,7 @@ void bench_line(int n)
     epx_gc_t* gc;
     int x0 = 0, x1 = 639;
     int y0, y1;
-    int i;
+    int i, j;
     double tfsum = 0.0;
 
     gc = epx_gc_create();
@@ -253,18 +262,21 @@ void bench_line(int n)
     epx_gc_set_line_style(gc, EPX_FILL_STYLE_BLEND);
     epx_gc_set_foreground_color(gc, epx_pixel_argb(127,100,200,150));
 
-    for (i = 0; i < n; i++) {
+    for (j = 0; j < n; j++) {
 	struct timeval t, t0, t1;
 	double tf;
 
 	gettimeofday(&t0, NULL);
-	for (y0 = 0; y0 < 480; y0++) {
-	    y1 = 439-y0;
-	    epx_pixmap_draw_line(a, gc, x0, y0, x1, y1);
+
+	for (i = 0; i < 100; i++) {
+	    for (y0 = 0; y0 < 480; y0++) {
+		y1 = 439-y0;
+		epx_pixmap_draw_line(a, gc, x0, y0, x1, y1);
+	    }
 	}
 	gettimeofday(&t1, NULL);
 	timersub(&t1, &t0, &t);
-	tf = 480.0/(t.tv_sec+(t.tv_usec/1000000.0));
+	tf = 100.0/(t.tv_sec+(t.tv_usec/1000000.0));
 	tfsum += tf;
     }
     printf("LINE Avg: %f/s\n", tfsum/n);

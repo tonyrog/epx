@@ -790,6 +790,8 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 			    NSTrackingActiveInActiveApp
 			    // NSTrackingMouseMoved
 			    owner:view userInfo:nil];
+    // NSGraphicsContext* ctx;
+
     ewin = cwin->ewin;
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
     [view setBackend:be];
@@ -802,12 +804,19 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 	      backing:NSBackingStoreBuffered
 	      defer:NO];
     cwin->winNS = appwin;
+
+    // ctx = [cwin->winNS graphicsContext];
+    // cwin->ctx = [ctx graphicsPort];
+    // CGContextTranslateCTM(cwin->ctx, 0, cwin->winBounds.size.height);
+    // CGContextScaleCTM(cwin->ctx, 1.0, -1.0);
+
     if (!appwin) {
 	EPX_DBGFMT("EPxAppEventHandler: could not create window\n");
 	cwin->winErr = paramErr;  // error code?
 	cwin->winIsSetup = 1;
 	return;
     }
+
     appwin.cwindow = cwin;   // circular ref!
 
     [[appwin contentView] addSubview:view];  // for mouse events
@@ -1125,14 +1134,14 @@ static int cocoa_pix_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 }
 
 /* There must be a better way */
-static void draw_image(CGContextRef ctx, CGRect srcRect, CGRect dstRect,
+static void draw_image(CocoaWindow* cwin, CGRect srcRect, CGRect dstRect,
 		       epx_pixmap_t* pic)
 {
     CocoaPixels* pe = (CocoaPixels*) pic->opaque;
     CGImageRef img;
-    CGImageRef srcImg;
     unsigned int bytesPerRow   = pic->bytes_per_row;
     unsigned int bitsPerPixel  = pic->bits_per_pixel;
+    CGContextRef ctx = cwin->ctx;
 
     // Boring to create this every time!
     img = CGImageCreate(pic->width,               /* width in pixels */
@@ -1155,20 +1164,20 @@ static void draw_image(CGContextRef ctx, CGRect srcRect, CGRect dstRect,
 	(srcRect.origin.y == (CGFloat)0) &&
 	(srcRect.size.width == (CGFloat) pic->width) && 
 	(srcRect.size.height == (CGFloat) pic->height)) {
-	// Complete image
-	srcImg = img;
-    }
-    else {
-	// Sub image
-	srcImg = CGImageCreateWithImageInRect(img, srcRect);
-    }
 
-    if (srcImg != NULL) {
-	// dstRect = CGContextConvertRectToUserSpace(ctx, dstRect);
-	CGContextDrawImage(ctx, dstRect, srcImg);
+	CGContextDrawImage(ctx, dstRect, img);
     }
-    if (srcImg && (srcImg != img))
+    else { // Sub image
+	CGImageRef srcImg;
+	srcImg = CGImageCreateWithImageInRect(img, srcRect);
+
+	CGContextSaveGState(ctx);
+	// CGContextTranslateCTM(ctx, 0, srcRect.size.height);
+	// CGContextScaleCTM(ctx, 1.0, -1.0);
+	CGContextDrawImage(ctx, dstRect, srcImg);
+	CGContextRestoreGState(ctx);
 	CGImageRelease(srcImg);
+    }
     CGImageRelease(img);
 }
 
@@ -1176,16 +1185,11 @@ static int cocoa_begin(epx_window_t* ewin)
 {
     CocoaWindow* cwin = (CocoaWindow*) ewin->opaque;
     NSGraphicsContext* ctx;
-//    CGFloat scale;
 
     if (cwin == NULL)
 	return -1;
 
     ctx = [cwin->winNS graphicsContext];
-
-//    scale = [cwin->winNS backingScaleFactor];
-//    CGContextScaleCTM([ctx graphicsPort], scale, scale);
-
     cwin->ctx = [ctx graphicsPort];
 
     pthread_mutex_lock(&cocoa_lock);
@@ -1274,7 +1278,7 @@ static int cocoa_pix_draw(epx_backend_t* backend,
 			     (float)width, (float)height);
 	dstRect = CGRectMake((float)dst_x, (float)dst_y,   // +21?
 			     (float)width, (float)height);
-	draw_image(cwin->ctx, srcRect, dstRect, pic);
+	draw_image(cwin, srcRect, dstRect, pic);
     }
     return 0;
 }
