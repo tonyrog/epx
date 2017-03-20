@@ -12,7 +12,7 @@ start() ->
     epx:start(),
     W = 640,
     H = 480,
-    Win = epx:window_create(50,50,W,H,[button_press,key_press]),
+    Win = epx:window_create(50,50,W,H,[all]),
     epx:window_attach(Win),
     Pix = epx:pixmap_create(W,H,argb),
     epx:pixmap_fill(Pix, white),
@@ -21,12 +21,21 @@ start() ->
 
     draw(Win,Pix),
     draw_image(Win,Pix),
-    receive
-	{epx_event,Win, close} ->
-	    epx:window_detach(Win),
-	    epx:pixmap_detach(Pix),
-	    ok
-    end.
+
+    (fun Draw() ->
+	    receive
+		{epx_event,Win, close} ->
+		    epx:window_detach(Win),
+		    epx:pixmap_detach(Pix),
+		    ok;
+		Event ->
+		    io:format("Event: ~p\n", [Event]),
+		    %% epx:pixmap_draw(Pix,Win,0,0,0,0,W,H),
+		    Draw()
+	    end
+     end)().
+
+
 
 draw_2x_hor_line(Pix,X, Y, Len) ->
     epx:draw_line(Pix, X, Y, X+Len-1, Y),
