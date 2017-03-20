@@ -67,6 +67,7 @@ epx_pixmap_t* epx_image_load_png(char* file_name, epx_format_t format)
 	    ptr += 4;
 	}
     }
+    goto cleanup;
 
 error:
     printf("error %u: %s\n", error, lodepng_error_text(error));
