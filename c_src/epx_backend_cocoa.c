@@ -80,8 +80,9 @@ typedef struct CocoaWindow_ {
     NSUInteger       winAttrs;
     AppWindow*       winNS;       // application window
     CGContextRef     ctx;         // graphics port
-    int              winIsSetup;  // 1 when window setup is done
     OSStatus         winErr;      // indicate window setup error (!=noErr)
+    int              winIsSetup;  // 1 when window setup is done
+    pthread_mutex_t  winLock;     // used to wait for setup 
 #ifdef HAVE_OPENGL
     AGLContext       saveContext;
     AGLContext       aglContext;
@@ -297,6 +298,8 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 }
 @property CocoaBackend* backend;
 - (id)init;
+- (BOOL) isOpaque;
+- (void)drawRect:(NSRect)dirtyRect;
 - (void)mouseDown:(NSEvent*) theEvent;
 - (void)mouseUp:(NSEvent*) theEvent;
 - (void)mouseDragged:(NSEvent*) theEvent;
@@ -323,6 +326,22 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     if (self = [super init]) {
     }
     return self;
+}
+
+- (BOOL) isOpaque
+{
+    return YES;
+}
+
+- (void)drawRect:(NSRect)dirtyRect
+{
+    (void) dirtyRect;
+    // Draw nothing
+    // Using the default window colour,
+    // [[NSColor windowBackgroundColor] set];
+    // dirtyRect.size.width /= 2;
+    // Only draw the part you need.
+    // NSRectFill(dirtyRect);
 }
 
 - (void)mouseDown:(NSEvent*) theEvent
@@ -783,16 +802,13 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     WinView* view = [[WinView alloc] initWithFrame:viewRect];
     CocoaBackend* be;
     epx_window_t* ewin;
-    NSTrackingArea *area = [[NSTrackingArea alloc]initWithRect:viewRect 
-			    options:NSTrackingMouseEnteredAndExited |
-			    NSTrackingActiveInActiveApp
-			    // NSTrackingMouseMoved
-			    owner:view userInfo:nil];
+    NSTrackingArea *area;
     // NSGraphicsContext* ctx;
 
     ewin = cwin->ewin;
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
     [view setBackend:be];
+    // [view setBackgroundColor:[NSColor clearColor]];
     
     EPX_DBGFMT("create_window\n");
     
@@ -806,26 +822,37 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     if (!appwin) {
 	EPX_DBGFMT("EPxAppEventHandler: could not create window\n");
 	cwin->winErr = paramErr;  // error code?
+	pthread_mutex_lock(&cwin->winLock);
 	cwin->winIsSetup = 1;
+	pthread_mutex_unlock(&cwin->winLock);
 	return;
     }
 
     appwin.cwindow = cwin;   // circular ref!
     // [appwin setReleasedWhenClosed:NO]; ???
-
-    [[appwin contentView] addSubview:view];  // for mouse events
-    [view addTrackingArea:area];  // for Enter/Exit callbacks
     [appwin setDelegate:appwin];  // Resize and Moved callbacks
 
+    [[appwin contentView] addSubview:view];  // for mouse event
     [[appwin contentView] setAutoresizesSubviews:YES];
-
     [appwin makeFirstResponder: view];
 
-    [appwin setBackgroundColor:[NSColor blueColor]];
+    area = [[NSTrackingArea alloc]initWithRect:viewRect 
+	    options:NSTrackingMouseEnteredAndExited |
+	    NSTrackingActiveInActiveApp
+	    // NSTrackingMouseMoved
+	    owner:view userInfo:nil];
+    [view addTrackingArea:area];  // for Enter/Exit callbacks
+
+    //Tells the window manager that the window might have transparent parts.
+    // [appwin setOpaque:NO];
+     //Tells the window to use a transparent colour.
+    // [appwin setBackgroundColor:
+    //   [NSColor colorWithCalibratedWhite:1.0 alpha:0.0]];  
+//    [appwin setBackgroundColor:[NSColor clearColor]]; // blueColor
     [NSApp activateIgnoringOtherApps:YES];
 
-    [appwin setTitle: @"EPX"];
-    [appwin makeKeyAndOrderFront:self];
+    // [appwin setTitle: @"EPX"];
+    // [appwin makeKeyAndOrderFront:self];
 
     // fixme: callback when window event flags are changed!!!
     // [appwin setAcceptsMouseMovedEvents: YES];
@@ -839,7 +866,9 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 #endif
     }
     cwin->winErr = noErr;
+    pthread_mutex_lock(&cwin->winLock);
     cwin->winIsSetup = 1;
+    pthread_mutex_unlock(&cwin->winLock);
 }
 
 - (void)close_window:(NSEvent*) theEvent
@@ -1328,6 +1357,7 @@ static int cocoa_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 {
     CocoaBackend* be = (CocoaBackend*) backend;
     CocoaWindow* cwin;
+    int is_window_ready = 0;
 
     if (ewin->opaque != NULL)
 	return -1;
@@ -1337,6 +1367,7 @@ static int cocoa_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     memset(cwin, 0, sizeof(CocoaWindow));
     cwin->ewin   = ewin;
     cwin->winErr = noErr;
+    pthread_mutex_init(&cwin->winLock, NULL);
     cwin->winIsSetup = 0;
     ewin->opaque = (void*) cwin;
 
@@ -1374,12 +1405,21 @@ static int cocoa_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 
     DBG(@"cocoa_win_attach: post done\r\n");
 
-    while(cwin->winIsSetup == 0)
+    while(!is_window_ready) {
 	usleep(1000);
+	pthread_mutex_lock(&cwin->winLock);
+	is_window_ready = (cwin->winIsSetup == 1);
+	pthread_mutex_unlock(&cwin->winLock);
+    }
+
     DBG(@"cocoa_win_attach: is setup\r\n");
     if (cwin->winErr != noErr) {
 	free(cwin);
 	return -1;
+    }
+    else {
+	[cwin->winNS setTitle: @"EPX"];
+	[cwin->winNS makeKeyAndOrderFront:cwin->winNS];
     }
     return 0;
 }
