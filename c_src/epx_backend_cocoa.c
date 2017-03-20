@@ -756,8 +756,6 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     return FALSE;
 }
 
-
-
 @end
 
 @implementation AppApplication
@@ -805,11 +803,6 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 	      defer:NO];
     cwin->winNS = appwin;
 
-    // ctx = [cwin->winNS graphicsContext];
-    // cwin->ctx = [ctx graphicsPort];
-    // CGContextTranslateCTM(cwin->ctx, 0, cwin->winBounds.size.height);
-    // CGContextScaleCTM(cwin->ctx, 1.0, -1.0);
-
     if (!appwin) {
 	EPX_DBGFMT("EPxAppEventHandler: could not create window\n");
 	cwin->winErr = paramErr;  // error code?
@@ -818,6 +811,7 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     }
 
     appwin.cwindow = cwin;   // circular ref!
+    // [appwin setReleasedWhenClosed:NO]; ???
 
     [[appwin contentView] addSubview:view];  // for mouse events
     [view addTrackingArea:area];  // for Enter/Exit callbacks
@@ -826,12 +820,13 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     [[appwin contentView] setAutoresizesSubviews:YES];
 
     [appwin makeFirstResponder: view];
-    // [appwin makeFirstResponder: responder];
-    [appwin setTitle: @"EPX"];
-    [appwin makeKeyAndOrderFront:self];
+
     [appwin setBackgroundColor:[NSColor blueColor]];
     [NSApp activateIgnoringOtherApps:YES];
-    [appwin display];
+
+    [appwin setTitle: @"EPX"];
+    [appwin makeKeyAndOrderFront:self];
+
     // fixme: callback when window event flags are changed!!!
     // [appwin setAcceptsMouseMovedEvents: YES];
     // [cwin->winNS makeKeyAndOrderFront:NSApp];
@@ -1156,27 +1151,47 @@ static void draw_image(CocoaWindow* cwin, CGRect srcRect, CGRect dstRect,
 			false,
 			kCGRenderingIntentSaturation);
     if (!img) {
-	fprintf(stderr, "epix_cocoa: error CGImageCreate\n");
+	fprintf(stderr, "epx_cocoa: error CGImageCreate\n");
 	return;
     }
 
-    if ((srcRect.origin.x == (CGFloat)0) && 
+    if ((srcRect.origin.x == (CGFloat)0) &&
 	(srcRect.origin.y == (CGFloat)0) &&
-	(srcRect.size.width == (CGFloat) pic->width) && 
+	(srcRect.size.width == (CGFloat) pic->width) &&
 	(srcRect.size.height == (CGFloat) pic->height)) {
 
+	CGContextSaveGState(ctx);
+
+	CGContextTranslateCTM(ctx, 0, dstRect.size.height);
+	CGContextScaleCTM(ctx, 1.0, -1.0);
+
+//	printf("draw_image: (x=%g,y=%g,w=%g,h=%g)\r\n",
+//	       dstRect.origin.x,dstRect.origin.y,
+//	       dstRect.size.width,dstRect.size.height);
+	       
 	CGContextDrawImage(ctx, dstRect, img);
+	CGContextRestoreGState(ctx);
     }
-    else { // Sub image
-	CGImageRef srcImg;
-	srcImg = CGImageCreateWithImageInRect(img, srcRect);
+    else {
+	CGImageRef subImg;
+	subImg = CGImageCreateWithImageInRect(img, srcRect);
 
 	CGContextSaveGState(ctx);
-	// CGContextTranslateCTM(ctx, 0, srcRect.size.height);
-	// CGContextScaleCTM(ctx, 1.0, -1.0);
-	CGContextDrawImage(ctx, dstRect, srcImg);
+
+	CGContextTranslateCTM(ctx, dstRect.origin.x, 
+			      dstRect.origin.y+dstRect.size.height);
+	CGContextScaleCTM(ctx, 1.0, -1.0);
+
+	dstRect.origin.x = 0;
+	dstRect.origin.y = 0;
+//	printf("draw_sub_image: x=%g,y=%g, (x=%g,y=%g,w=%g,h=%g)\r\n",
+//	       srcRect.origin.x,srcRect.origin.y,
+//	       dstRect.origin.x,dstRect.origin.y,
+//	       dstRect.size.width,dstRect.size.height);
+
+	CGContextDrawImage(ctx, dstRect, subImg);
 	CGContextRestoreGState(ctx);
-	CGImageRelease(srcImg);
+	CGImageRelease(subImg);
     }
     CGImageRelease(img);
 }
@@ -1191,6 +1206,10 @@ static int cocoa_begin(epx_window_t* ewin)
 
     ctx = [cwin->winNS graphicsContext];
     cwin->ctx = [ctx graphicsPort];
+    CGContextSaveGState(cwin->ctx);
+    // Setup a flipped coordinate system 
+    CGContextTranslateCTM(cwin->ctx, 0, cwin->winBounds.size.height);
+    CGContextScaleCTM(cwin->ctx, 1.0, -1.0);
 
     pthread_mutex_lock(&cocoa_lock);
 
@@ -1226,6 +1245,8 @@ static int cocoa_end(epx_window_t* ewin, int off_screen)
 #endif
     }
     else {
+	CGContextRestoreGState(cwin->ctx);
+
 	[[cwin->winNS graphicsContext] flushGraphics];
 	[NSGraphicsContext restoreGraphicsState];
     }
