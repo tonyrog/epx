@@ -679,7 +679,6 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     CocoaWindow* cwin;
     epx_event_t e;
     AppWindow* appwin = (AppWindow*) self;
-    NSRect bounds;
 
     if (!appwin)
 	return;
@@ -689,14 +688,14 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 
     ewin = cwin->ewin;
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
+
+    cwin->winBounds = appwin.contentLayoutRect;
     
     e.window = ewin;
     e.type = EPX_EVENT_RESIZE;
     e.pointer.button = 0;
-    bounds = appwin.contentLayoutRect;
-
-    e.dimension.w = bounds.size.width;
-    e.dimension.h = bounds.size.height;
+    e.dimension.w = cwin->winBounds.size.width;
+    e.dimension.h = cwin->winBounds.size.height;
     e.dimension.d = 0;
 
     DBG(@"windowDidReszie: w=%d, h=%d, d=%d\r",
@@ -717,24 +716,28 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     (void)notification;
     epx_window_t* ewin;
     CocoaBackend* be;
+    CocoaWindow* cwin;
     epx_event_t e;
-    NSRect bounds;
+    AppWindow* appwin = (AppWindow*) self;
 
-    if (!cwindow)
+    if (!appwin)
 	return;
-
-    ewin = cwindow->ewin;
+    cwin = [appwin cwindow];  // get window proxy
+    if (!cwin)
+	return;
+    ewin = cwin->ewin;
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
+
+    cwin->winBounds = appwin.contentLayoutRect;
     
     e.window = ewin;
     e.type = EPX_EVENT_CONFIGURE;
     e.pointer.button = 0;
-    bounds = self.frame;
 
-    e.area.x = bounds.origin.x;
-    e.area.y = bounds.origin.y;
-    e.area.w = bounds.size.width;
-    e.area.h = bounds.size.height;
+    e.area.x = cwin->winBounds.origin.x;
+    e.area.y = cwin->winBounds.origin.y;
+    e.area.w = cwin->winBounds.size.width;
+    e.area.h = cwin->winBounds.size.height;
 
     DBG(@"windowDidMove: x=%d, y=%d, w=%d, h=%d\r",
 	  e.area.x, e.area.y, e.area.w, e.area.h);
@@ -754,11 +757,16 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     (void) sender;
     epx_window_t* ewin;
     CocoaBackend* be;
+    CocoaWindow* cwin;
     epx_event_t e;
+    AppWindow* appwin = (AppWindow*) self;
 
-    if (!cwindow) return FALSE;
-
-    ewin = cwindow->ewin;
+    if (!appwin)
+	return FALSE;
+    cwin = [appwin cwindow];  // get window proxy
+    if (!cwin)
+	return FALSE;
+    ewin = cwin->ewin;
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
     
     e.window = ewin;
