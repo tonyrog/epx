@@ -215,6 +215,25 @@ format(4, 16) -> l16a16;
 format(6, 8)  -> r8g8b8a8;
 format(6, 16) -> r16g16b16a16.
 
+%% return ColorType and BitDepth from format
+color_type(l1) -> {0, 1};
+color_type(l2) -> {0, 2};
+color_type(l4) -> {0, 4};
+color_type(l8) -> {0, 8};
+color_type(l16) -> {0, 16};
+color_type(r8g8b8) -> {2, 8};
+color_type(rgb) -> {2, 8};
+color_type(r16g16b16) -> {2, 16};
+color_type(palette1) -> {3, 1};
+color_type(palette2) -> {3, 2};
+color_type(palette4) -> {3, 4};
+color_type(palette8) -> {3, 8};
+color_type(l8a8) -> {4, 8};
+color_type(l16a16) -> {4, 16};
+color_type(r8g8b8a8) -> {6, 8};
+color_type(rgba) -> {6, 8};
+color_type(r16g16b16a16) -> {6, 16}.
+
 %% process text chunk
 txt([0|Value], RKey) ->
     {value, {list_to_atom(reverse(RKey)), Value}};
@@ -228,9 +247,23 @@ plte(<<R,G,B, Data/binary>>) ->
     [{R,G,B} | plte(Data)];
 plte(<<>>) -> [].
 
-%% IMPLEMENT This:
-write_info(_Fd, _IMG) ->
-    erlang:error(not_implemented).
+
+write_info(Fd, IMG) ->
+    [Pixmap] = IMG#epx_image.pixmaps,
+    Width  = epx:pixmap_info(Pixmap, width),
+    Height = epx:pixmap_info(Pixmap, height),
+    Format = epx:pixmap_info(Pixmap, pixel_format),
+    MAGIC = <<137, 80, 78, 71, 13, 10, 26, 10>>,
+    {ColorType,BitDepth} = color_type(Format),
+    CompressionMethod = 0,
+    FilterMethod = 0,
+    InterlaceMethod = 0,
+    IHDR = png_chunk(<<"IHDR">>,<< Width:32, Height:32,
+				   BitDepth:8,ColorType:8,
+				   CompressionMethod:8,FilterMethod:8, 
+				   InterlaceMethod:8 >>),
+    file:write(Fd, <<MAGIC/binary, IHDR/binary>>).
+
 
 
 read(Fd, IMG) ->
@@ -377,8 +410,44 @@ paethPredictor(A,B,C) ->
     end.
 	    
         
-write(_Fd, _IMG) ->
-    erlang:error(not_implemented).
+write(Fd, IMG) ->
+    [Pixmap] = IMG#epx_image.pixmaps,
+    Width  = epx:pixmap_info(Pixmap, width),
+    Height = epx:pixmap_info(Pixmap, height),
+    Format = epx:pixmap_info(Pixmap, pixel_format),
+    MAGIC = <<137, 80, 78, 71, 13, 10, 26, 10>>,
+    {ColorType,BitDepth} = color_type(Format),
+    CompressionMethod = 0,
+    FilterMethod = 0,
+    InterlaceMethod = 0,
+    IHDR = png_chunk(<<"IHDR">>,<< Width:32, Height:32,
+				   BitDepth:8,ColorType:8,
+				   CompressionMethod:8,FilterMethod:8, 
+				   InterlaceMethod:8 >>),
+    PixelData = get_pixel_data(Pixmap,Width,Height),
+    IDAT = png_chunk(<<"IDAT">>, PixelData),
+    IEND = png_chunk(<<"IEND">>, <<>>),
+    file:write(Fd, <<MAGIC/binary, IHDR/binary, IDAT/binary, IEND/binary>>).
+
+
+get_pixel_data(Pixmap,W,H) ->
+    Pixels = get_pixels(Pixmap,W,H),
+    zlib:compress(Pixels).
+
+get_pixels(Pixmap,W,H) ->
+    get_pixels(Pixmap,0,0,W,H).
+
+get_pixels(Pixmap,X,Y,W,H) when Y < H ->
+    Row = epx:pixmap_get_pixels(Pixmap,X,Y,W,1),
+    [<<0>>,Row | get_pixels(Pixmap,X,Y+1,W,H)];
+get_pixels(_Pixmap,_X,_Y,_W,_H) ->
+    [].
+
+%% format a png chunk
+png_chunk(Type, Bin) ->
+    Length = byte_size(Bin),
+    CRC = erlang:crc32(<<Type/binary, Bin/binary>>),
+    <<Length:32, Type/binary, Bin/binary, CRC:32>>.
 
 
 read_image(Fd, Acc, Palette, Z) ->
