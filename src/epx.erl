@@ -804,6 +804,7 @@ sync(Pixmap, Win) ->
     pixmap_sync(Pixmap, Win),
     receive
 	{epx_event,Win,synced} ->
+	    %% io:format("Got SYNCED\r\n"),
 	    ok
     end.
 

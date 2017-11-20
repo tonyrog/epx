@@ -3,6 +3,7 @@
 #
 OSNAME := $(shell uname -s)
 MACHINE := $(shell uname -m)
+RELEASE := $(shell uname -r)
 CC = gcc
 RANLIB = ranlib
 
@@ -151,11 +152,17 @@ ifeq ($(AGL),Yes)
 endif
 
 ifeq ($(X11), Yes)
+ifeq ($(RELEASE), 16.7.0)
+	DFLAGS += -DX11 -I/usr/X11/include
+	BE_LD_FLAGS += -L/usr/X11/lib -lX11
+	CFG_LDFLAGS += -L/usr/X11/lib -lX11
+else
 	DFLAGS += -DX11 -I/usr/X11R6/include
-	CFLAGS +=
-	BE_OBJS += epx_backend_x11.o
 	BE_LD_FLAGS += -L/usr/X11R6/lib -lX11
 	CFG_LDFLAGS += -L/usr/X11R6/lib -lX11
+endif
+	CFLAGS +=
+	BE_OBJS += epx_backend_x11.o
 ifeq ($(GLX),Yes)
 	DFLAGS += -DX11_GLX -DHAVE_OPENGL
 	CFLAGS += 

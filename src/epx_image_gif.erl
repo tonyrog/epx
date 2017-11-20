@@ -379,36 +379,38 @@ write_data(Fd, IMG) ->
     write_pixmaps(Fd, IMG, IMG#epx_image.pixmaps).
 
 write_pixmaps(Fd, IMG, [Pm|Pms]) ->
-    DisposalMethod = attribute('DisposalMethod',Pm#ei_pixmap.attributes, 0),
-    UserInput = attribute('UserInput', Pm#ei_pixmap.attributes, 0),
-    DelayTime = attribute('DelayTime', Pm#ei_pixmap.attributes, 0),
-    Transparent = attribute('Transparent', Pm#ei_pixmap.attributes, 0),
+    DisposalMethod = attribute('DisposalMethod',IMG#epx_image.attributes, 0),
+    UserInput = attribute('UserInput', IMG#epx_image.attributes, 0),
+    DelayTime = attribute('DelayTime', IMG#epx_image.attributes, 0),
+    Transparent = attribute('Transparent', IMG#epx_image.attributes, 0),
     TransparentColor = attribute('TransparentColor', 
-				 Pm#ei_pixmap.attributes, 0),
+				 IMG#epx_image.attributes, 0),
     file:write(Fd, <<?EXTENSION, ?CTL_EXTENSION>>),
     write_blocks(Fd, <<0:3, DisposalMethod:3, 
 		      UserInput:1, Transparent:1, 
 		      DelayTime:16/unsigned-little,
 		      TransparentColor:8>>),
-    write_image(Fd, Pm),
+    write_image(Fd, IMG, Pm),
     write_pixmaps(Fd, IMG, Pms);
 write_pixmaps(_Fd, _IMG, []) ->
     ok.
 
 
-write_image(Fd, Pm) ->
+write_image(Fd, IMG, Pm) ->
     file:write(Fd, <<?IMAGE>>),
+    Left = 0, %% pixmap.left)
+    Top = 0,  %% pixmap.top
+    Width = epx:pixmap_info(Pm, width),
+    Height = epx:pixmap_info(Pm, height),
     file:write(Fd,
-	       <<(Pm#ei_pixmap.left):16/little,
-		(Pm#ei_pixmap.top):16/little,
-		(Pm#ei_pixmap.width):16/little,
-		(Pm#ei_pixmap.height):16/little>>),
-    Palette = Pm#ei_pixmap.palette,
-    Interlaced = attribute('Interlaced', Pm#ei_pixmap.attributes, 0),
+	       <<Left:16/little,Top:16/little,
+		 Width:16/little, Height:16/little>>),
+    Palette = IMG#epx_image.palette,
+    Interlaced = attribute('Interlaced', IMG#epx_image.attributes, 0),
     %% Special code for none compressed data!!!
-    Inline     = attribute('Inline', Pm#ei_pixmap.attributes, 0),
-    if is_tuple(Palette) ->
-	    PLen = tuple_size(Palette),
+    Inline     = attribute('Inline', IMG#epx_image.attributes, 0),
+    if is_list(Palette) ->
+	    PLen = length(Palette),
 	    ColorRes = if PLen > 0, PLen =< 256 ->
 			       trunc(math:log(PLen)/math:log(2))+1;
 			  PLen > 0 ->

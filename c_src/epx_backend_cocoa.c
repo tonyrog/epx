@@ -1,6 +1,6 @@
 /***************************************************************************
  *
- * Copyright (C) 2007 - 2012, Rogvall Invest AB, <tony@rogvall.se>
+ * Copyright (C) 2007 - 2017, Rogvall Invest AB, <tony@rogvall.se>
  *
  * This software is licensed as described in the file COPYRIGHT, which
  * you should have received as part of this distribution. The terms
@@ -21,18 +21,17 @@
  *  /System/Library/Frameworks/ApplicationServices.framework/Frameworks/
  *    CoreGraphics.framework/Headers
  */
-#include <Carbon/Carbon.h>
-#include <Cocoa/Cocoa.h>
-#include <objc/objc-runtime.h>
+#import <Foundation/Foundation.h>
+#import <Foundation/NSThread.h>
+#import <AppKit/AppKit.h>
+#import <Carbon/Carbon.h>
+#import <Cocoa/Cocoa.h>
 
+#include <objc/objc-runtime.h>
 #include <machine/endian.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <assert.h>
-
-#import <AppKit/AppKit.h>
-#import <Foundation/NSThread.h>
-#import <Foundation/Foundation.h>
 
 #undef HAVE_OPENGL   // not yet
 
@@ -46,6 +45,35 @@
 #define kEpxEventNew 1
 #define kEpxEventDel 2
 
+#if MAC_OS_X_VERSION_MAX_ALLOWED < 101200
+
+#define NSWindowStyleMaskBorderless NSBorderlessWindowMask
+#define NSWindowStyleMaskClosable NSClosableWindowMask
+#define NSWindowStyleMaskMiniaturizable NSMiniaturizableWindowMask
+#define NSWindowStyleMaskResizable NSResizableWindowMask
+#define NSWindowStyleMaskTitled NSTitledWindowMask
+#define NSEventModifierFlagCommand NSCommandKeyMask
+#define NSEventModifierFlagControl NSControlKeyMask
+#define NSEventModifierFlagOption NSAlternateKeyMask
+#define NSEventModifierFlagShift NSShiftKeyMask
+#define NSEventModifierFlagCapsLock NSAlphaShiftKeyMask
+#define NSEventModifierFlagNumericPad NSNumericPadKeyMask
+
+#define NSEventModifierFlagDeviceIndependentFlagsMask NSDeviceIndependentModifierFlagsMask
+#define NSEventMaskAny NSAnyEventMask
+#define NSEventTypeApplicationDefined NSApplicationDefined
+#define NSEventTypeKeyUp NSKeyUp
+
+#define NSEventTypeLeftMouseDown  NSLeftMouseDown
+#define NSEventTypeLeftMouseUp    NSLeftMouseUp
+#define NSEventTypeRightMouseDown NSRightMouseDown
+#define NSEventTypeRightMouseUp   NSRightMouseUp
+#define NSEventTypeMouseMoved     NSMouseMoved
+#define NSEventTypeLeftMouseDragged NSLeftMouseDragged
+#define NSEventTypeRightMouseDragged NSRightMouseDragged
+
+#endif
+
 struct CocoaWindow;
 struct CocoaBackend;
 
@@ -58,12 +86,32 @@ struct CocoaBackend;
 - (BOOL)windowShouldClose:(id)sender;
 @end
 
-@interface AppApplication : NSApplication {
-struct CocoaBackend_* backend;
+@interface AppView : NSView {
+    struct CocoaBackend_* backend;
+    struct CocoaWindow_* cwindow;    
 }
 @property struct CocoaBackend_* backend;
-- (void)create_window:(NSEvent*) theEvent;
-- (void)close_window:(NSEvent*) theEvent;
+@property struct CocoaWindow_* cwindow;
+- (id)init;
+- (BOOL) isOpaque;
+- (void)drawRect:(NSRect)dirtyRect;
+- (void)mouseDown:(NSEvent*) theEvent;
+- (void)mouseUp:(NSEvent*) theEvent;
+- (void)mouseDragged:(NSEvent*) theEvent;
+- (void)rightMouseDown:(NSEvent*) theEvent;
+- (void)rightMouseUp:(NSEvent*) theEvent;
+- (void)rightMouseDragged:(NSEvent*) theEvent;
+- (void)keyDown:(NSEvent*) theEvent;
+- (void)keyUp:(NSEvent*) theEvent;
+- (void)mouseEntered:(NSEvent*) theEvent;
+- (void)mouseExited:(NSEvent*) theEvent;
+- (void)flagsChanged:(NSEvent*) theEvent;
+
+- (void)crossing_event:(NSEvent*) theEvent andType:(int)type;
+- (void)pointer_event:(NSEvent*) theEvent andType:(int)type;
+- (void)key_event:(NSEvent*) theEvent andType:(int)type;
+- (void)refreshImage;
+- (void)sync;
 @end
 
 typedef struct CocoaBackend_ {
@@ -72,6 +120,7 @@ typedef struct CocoaBackend_ {
     NSMenu* menu;
     unsigned short modstate;    // modifier state
     unsigned short grab_key;    // grab key
+    pthread_mutex_t pending_lock; // atomic pending updates
 } CocoaBackend;
 
 typedef struct CocoaWindow_ {
@@ -79,10 +128,19 @@ typedef struct CocoaWindow_ {
     NSRect           winBounds;
     NSUInteger       winAttrs;
     AppWindow*       winNS;       // application window
-    CGContextRef     ctx;         // graphics port
+    AppView*         view;
+    NSGraphicsContext* ctx;       // current graphic context
+    CGLayerRef       layer;       // background layer
+    CGContextRef     layer_ctx;   // background layer context    
+    // CGContextRef     ctx;      // graphics port
     OSStatus         winErr;      // indicate window setup error (!=noErr)
     int              winIsSetup;  // 1 when window setup is done
-    pthread_mutex_t  winLock;     // used to wait for setup 
+    pthread_mutex_t  winLock;     // used to wait for setup
+    pthread_mutex_t  drawLock;    // used when drawing to layer
+    pthread_mutex_t  refreshLock; // used when update refresh queue
+    unsigned int     refreshQueueLen; // number of queued events
+    unsigned int     drawCount;   // number of frames drawn
+    unsigned int     prevCount;   // previous counter value
 #ifdef HAVE_OPENGL
     AGLContext       saveContext;
     AGLContext       aglContext;
@@ -101,14 +159,15 @@ epx_backend_t* cocoa_init(epx_dict_t* param);
 int cocoa_upgrade(epx_backend_t* be);
 
 static int cocoa_finish(epx_backend_t*);
-static int cocoa_pix_attach(epx_backend_t*, epx_pixmap_t* pic);
-static int cocoa_pix_detach(epx_backend_t*, epx_pixmap_t* pic);
+static int cocoa_pix_attach(epx_backend_t*, epx_pixmap_t* pix);
+static int cocoa_pix_detach(epx_backend_t*, epx_pixmap_t* pix);
 static int cocoa_begin(epx_window_t* ewin);
 static int cocoa_end(epx_window_t* ewin, int off_screen);
-static int cocoa_pix_draw(epx_backend_t*, epx_pixmap_t* pic, epx_window_t* win,
+static int cocoa_pix_draw(epx_backend_t*, epx_pixmap_t* pix, epx_window_t* win,
 			   int src_x, int src_y, int dst_x, int dst_y,
 			   unsigned int width,
 			   unsigned int height);
+static int cocoa_pix_sync(epx_backend_t*, epx_pixmap_t*, epx_window_t*);
 static int cocoa_win_attach(epx_backend_t*, epx_window_t* win);
 static int cocoa_win_detach(epx_backend_t*, epx_window_t* win);
 static int cocoa_win_swap(epx_backend_t*, epx_window_t* win);
@@ -125,6 +184,7 @@ static epx_callbacks_t cocoa_callbacks =
     .pix_attach = cocoa_pix_attach,
     .pix_detach = cocoa_pix_detach,
     .pix_draw   = cocoa_pix_draw,
+    .pix_sync   = cocoa_pix_sync,
     .win_attach = cocoa_win_attach,
     .win_detach = cocoa_win_detach,
     .evt_attach = cocoa_evt_attach,
@@ -146,6 +206,13 @@ static pthread_t cocoa_thr;
 static pthread_mutex_t cocoa_lock;
 
 static int FilterEvent(epx_event_t* e);
+
+static uint64_t get_thread_id()
+{
+    uint64_t tid;
+    pthread_threadid_np(NULL, &tid);
+    return tid;
+}
 
 #ifdef HAVE_OPENGL
 
@@ -293,33 +360,9 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 }
 @end
 
-@interface WinView : NSView {
-    CocoaBackend* backend;
-}
-@property CocoaBackend* backend;
-- (id)init;
-- (BOOL) isOpaque;
-- (void)drawRect:(NSRect)dirtyRect;
-- (void)mouseDown:(NSEvent*) theEvent;
-- (void)mouseUp:(NSEvent*) theEvent;
-- (void)mouseDragged:(NSEvent*) theEvent;
-- (void)rightMouseDown:(NSEvent*) theEvent;
-- (void)rightMouseUp:(NSEvent*) theEvent;
-- (void)rightMouseDragged:(NSEvent*) theEvent;
-- (void)keyDown:(NSEvent*) theEvent;
-- (void)keyUp:(NSEvent*) theEvent;
-- (void)mouseEntered:(NSEvent*) theEvent;
-- (void)mouseExited:(NSEvent*) theEvent;
-- (void)flagsChanged:(NSEvent*) theEvent;
-
-- (void)crossing_event:(NSEvent*) theEvent andType:(int)type;
-- (void)pointer_event:(NSEvent*) theEvent andType:(int)type;
-- (void)key_event:(NSEvent*) theEvent andType:(int)type;
-
-@end
-
-@implementation WinView
+@implementation AppView
 @synthesize backend;
+@synthesize cwindow;
 
 - (id)init
 {
@@ -335,13 +378,15 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 
 - (void)drawRect:(NSRect)dirtyRect
 {
-    (void) dirtyRect;
-    // Draw nothing
-    // Using the default window colour,
-    // [[NSColor windowBackgroundColor] set];
-    // dirtyRect.size.width /= 2;
-    // Only draw the part you need.
-    // NSRectFill(dirtyRect);
+    pthread_mutex_lock(&cwindow->drawLock);
+    if (cwindow->drawCount != cwindow->prevCount) {
+	cwindow->prevCount = cwindow->drawCount;
+	CGRect rect = CGRectMake(dirtyRect.origin.x,dirtyRect.origin.y,
+				 dirtyRect.size.width, dirtyRect.size.height);
+	CGContextDrawLayerInRect([[NSGraphicsContext currentContext] CGContext],
+				 rect, cwindow->layer);
+    }
+    pthread_mutex_unlock(&cwindow->drawLock);
 }
 
 - (void)mouseDown:(NSEvent*) theEvent
@@ -402,17 +447,17 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     NSEventModifierFlags keyMod = [theEvent modifierFlags];
     epx_event_t e;
 
-    if (keyMod & NSShiftKeyMask)
+    if (keyMod & NSEventModifierFlagShift)
 	e.key.mod |= EPX_KBD_MOD_LSHIFT;
-    if (keyMod & NSControlKeyMask)
+    if (keyMod & NSEventModifierFlagControl)
 	e.key.mod |= EPX_KBD_MOD_LCTRL;
-    if (keyMod & NSAlternateKeyMask)
+    if (keyMod &  NSEventModifierFlagOption)
 	e.key.mod |= EPX_KBD_MOD_LALT;
-    if (keyMod & NSAlphaShiftKeyMask)
+    if (keyMod & NSEventModifierFlagCapsLock)
 	e.key.mod |= EPX_KBD_MOD_CAPS;
-    if (keyMod & NSNumericPadKeyMask)
+    if (keyMod & NSEventModifierFlagNumericPad)
 	e.key.mod |= EPX_KBD_MOD_NUM;
-    if (keyMod & NSCommandKeyMask)
+    if (keyMod & NSEventModifierFlagCommand)
 	e.key.mod |= EPX_KBD_MOD_META;
     // Fixme add FunctionKey to epx: NSFunctionKeyMask
     // DBG(@"flagsChanged: %d\r", e.key.mod);
@@ -459,7 +504,9 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 	DBG(@"crossing_event: filtered\r");
 	return;
     }
+    pthread_mutex_lock(&be->pending_lock);
     be->b.pending++;
+    pthread_mutex_unlock(&be->pending_lock);
     write(be->ofd,(void*) &e, sizeof(e));
 }
 
@@ -477,6 +524,10 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     if (!appwin)
 	return;
     cwin = [appwin cwindow];  // get window proxy
+
+    EPX_DBGFMT("pointer_event: thread=%ld, win=%p, cwin=%p\r",
+	       get_thread_id(), appwin, cwin);
+    
     if (!cwin)
 	return;
 
@@ -490,13 +541,13 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     e.type = type;
     e.pointer.button = 0;
     nstype = [theEvent type];
-    if ((nstype == NSLeftMouseDown) || 
-	(nstype == NSLeftMouseUp) ||
-	(nstype == NSLeftMouseDragged))
+    if ((nstype == NSEventTypeLeftMouseDown) || 
+	(nstype == NSEventTypeLeftMouseUp) ||
+	(nstype == NSEventTypeLeftMouseDragged))
 	e.pointer.button |= EPX_BUTTON_LEFT;
-    else if ((nstype == NSRightMouseDown) || 
-	     (nstype == NSRightMouseUp) ||
-	     (nstype == NSRightMouseDragged))
+    else if ((nstype == NSEventTypeRightMouseDown) || 
+	     (nstype == NSEventTypeRightMouseUp) ||
+	     (nstype == NSEventTypeRightMouseDragged))
 	e.pointer.button |= EPX_BUTTON_RIGHT;
     bounds = appwin.contentLayoutRect;
 
@@ -513,7 +564,9 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 	DBG(@"pointer_event: filtered\r");
 	return;
     }
+    pthread_mutex_lock(&be->pending_lock);
     be->b.pending++;
+    pthread_mutex_unlock(&be->pending_lock);
     write(be->ofd,(void*) &e, sizeof(e));
 }
 
@@ -532,9 +585,15 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     if (!appwin)
 	return;
     cwin = [appwin cwindow];  // get window proxy
-    // DBG(@"key_event: win=%p, cwin=%p\r", win, cwin);
+
+    EPX_DBGFMT("key_event: thread=%ld, win=%p, cwin=%p\r",
+	       get_thread_id(), appwin, cwin);
     if (!cwin)
 	return;
+    if (theEvent.isARepeat) { // ???
+	DBG(@"key_event: repeat\r");
+	return;
+    }
 
     ewin = cwin->ewin;
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
@@ -550,17 +609,17 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     e.window = ewin;
 
     e.key.mod = 0;
-    if (keyMod & NSShiftKeyMask)
+    if (keyMod & NSEventModifierFlagShift)
 	e.key.mod |= EPX_KBD_MOD_LSHIFT;
-    if (keyMod & NSControlKeyMask)
+    if (keyMod &  NSEventModifierFlagControl)
 	e.key.mod |= EPX_KBD_MOD_LCTRL;
-    if (keyMod & NSAlternateKeyMask)
+    if (keyMod & NSEventModifierFlagOption)
 	e.key.mod |= EPX_KBD_MOD_LALT;
-    if (keyMod & NSAlphaShiftKeyMask)
+    if (keyMod & NSEventModifierFlagCapsLock)
 	e.key.mod |= EPX_KBD_MOD_CAPS;
-    if (keyMod & NSNumericPadKeyMask)
+    if (keyMod & NSEventModifierFlagNumericPad)
 	e.key.mod |= EPX_KBD_MOD_NUM;
-    if (keyMod & NSCommandKeyMask)
+    if (keyMod & NSEventModifierFlagCommand)
 	e.key.mod |= EPX_KBD_MOD_META;
 
     // keyMod & kEventKeyModifierFnMask
@@ -646,8 +705,8 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     }
     e.key.code = keyCode;
     
-//    DBG(@"key_event: keyMod=%x, keyCode=%x, KeySym=%x\r",
-//	  e.key.mod, e.key.code, e.key.sym);
+    DBG(@"key_event: keyMod=%x, keyCode=%x, KeySym=%x\r",
+	e.key.mod, e.key.code, e.key.sym);
 
     if (!be)
 	return;
@@ -655,12 +714,27 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 	DBG(@"key_event: filtered\r");
 	return;
     }
+    pthread_mutex_lock(&be->pending_lock);
     be->b.pending++;
+    pthread_mutex_unlock(&be->pending_lock);
     write(be->ofd,(void*) &e, sizeof(e));
 }
 
+- (void)refreshImage
+{
+    pthread_mutex_lock(&cwindow->refreshLock);
+    if (cwindow->refreshQueueLen > 0) {
+	cwindow->refreshQueueLen--;
+    }
+    pthread_mutex_unlock(&cwindow->refreshLock);
+    
+    [self setNeedsDisplay:YES];
+}
 
-
+- (void)sync
+{
+    // printf("epx_backend_cocoa: SYNC\r\n");
+}
 
 @end
 
@@ -690,6 +764,7 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
 
     cwin->winBounds = appwin.contentLayoutRect;
+    // fixme: change size of layer!?
     
     e.window = ewin;
     e.type = EPX_EVENT_RESIZE;
@@ -698,8 +773,8 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     e.dimension.h = cwin->winBounds.size.height;
     e.dimension.d = 0;
 
-    DBG(@"windowDidReszie: w=%d, h=%d, d=%d\r",
-	  e.dimension.w, e.dimension.h, e.dimension.d);
+    EPX_DBGFMT("windowDidReszie: thread=%ld, w=%d, h=%d, d=%d\r",
+	       get_thread_id(), e.dimension.w, e.dimension.h, e.dimension.d);
 
     if (!be)
 	return;
@@ -707,7 +782,9 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 	DBG(@"pointer_event: filtered\r");
 	return;
     }
+    pthread_mutex_lock(&be->pending_lock);
     be->b.pending++;
+    pthread_mutex_unlock(&be->pending_lock);
     write(be->ofd,(void*) &e, sizeof(e));    
 }
 
@@ -739,8 +816,8 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     e.area.w = cwin->winBounds.size.width;
     e.area.h = cwin->winBounds.size.height;
 
-    DBG(@"windowDidMove: x=%d, y=%d, w=%d, h=%d\r",
-	  e.area.x, e.area.y, e.area.w, e.area.h);
+    EPX_DBGFMT("windowDidMove: thread=%ld, x=%d, y=%d, w=%d, h=%d\r",
+	       get_thread_id(), e.area.x, e.area.y, e.area.w, e.area.h);
 
     if (!be)
 	return;
@@ -748,7 +825,9 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 	DBG(@"windowDidMove: filtered\r");
 	return;
     }
+    pthread_mutex_lock(&be->pending_lock);
     be->b.pending++;
+    pthread_mutex_unlock(&be->pending_lock);
     write(be->ofd,(void*) &e, sizeof(e));    
 }
 
@@ -778,47 +857,35 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 	DBG(@"pointer_event: filtered\r");
 	return FALSE;
     }
+    pthread_mutex_lock(&be->pending_lock);
     be->b.pending++;
+    pthread_mutex_unlock(&be->pending_lock);
     write(be->ofd,(void*) &e, sizeof(e));
     return FALSE;
 }
 
 @end
 
-@implementation AppApplication
-@synthesize backend;
-
--(void)sendEvent:(NSEvent *)theEvent
+//
+void create_window(CocoaWindow* cwin) 
 {
-    if ([theEvent type] == NSApplicationDefined) {
-	if ([theEvent data1] == kEpxEventNew)
-	    [self create_window: theEvent];
-	else if ([theEvent data1] == kEpxEventDel)
-	    [self close_window: theEvent];
-    }
-    else {
-	[super sendEvent:theEvent];
-    }
-} 
-
-- (void)create_window:(NSEvent*) theEvent
-{
-    CocoaWindow* cwin = (CocoaWindow*) [theEvent data2];
     AppWindow* appwin;
     NSRect viewRect = NSMakeRect(0,0,cwin->winBounds.size.width,
 				 cwin->winBounds.size.height);
-    WinView* view = [[WinView alloc] initWithFrame:viewRect];
+    AppView* view = [[AppView alloc] initWithFrame:viewRect];
     CocoaBackend* be;
     epx_window_t* ewin;
     NSTrackingArea *area;
     // NSGraphicsContext* ctx;
 
+    EPX_DBGFMT("create_window: thread=%ld", get_thread_id());
+
+    cwin->view = view;
     ewin = cwin->ewin;
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
     [view setBackend:be];
+    [view setCwindow:cwin];    
     // [view setBackgroundColor:[NSColor clearColor]];
-    
-    EPX_DBGFMT("create_window\n");
     
     appwin = [[AppWindow alloc]
 	      initWithContentRect:cwin->winBounds
@@ -828,13 +895,14 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     cwin->winNS = appwin;
 
     if (!appwin) {
-	EPX_DBGFMT("EPxAppEventHandler: could not create window\n");
+	EPX_DBGFMT("EPxAppEventHandler: could not create window");
 	cwin->winErr = paramErr;  // error code?
 	pthread_mutex_lock(&cwin->winLock);
 	cwin->winIsSetup = 1;
 	pthread_mutex_unlock(&cwin->winLock);
 	return;
     }
+    EPX_DBGFMT("create_window: create %p", appwin);
 
     appwin.cwindow = cwin;   // circular ref!
     // [appwin setReleasedWhenClosed:NO]; ???
@@ -851,23 +919,34 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 	    owner:view userInfo:nil];
     [view addTrackingArea:area];  // for Enter/Exit callbacks
 
+    CGFloat contentScale = [[NSScreen deepestScreen] backingScaleFactor];
+    
+    CGSize layerSize = CGSizeMake(cwin->winBounds.size.width*contentScale,
+				  cwin->winBounds.size.height*contentScale);
+				  
+    cwin->layer = CGLayerCreateWithContext([[appwin graphicsContext] CGContext],
+					   layerSize, NULL);
+    cwin->layer_ctx = CGLayerGetContext(cwin->layer);
+    CGContextScaleCTM(cwin->layer_ctx, contentScale, contentScale);
+    
     //Tells the window manager that the window might have transparent parts.
     // [appwin setOpaque:NO];
      //Tells the window to use a transparent colour.
     // [appwin setBackgroundColor:
     //   [NSColor colorWithCalibratedWhite:1.0 alpha:0.0]];  
-//    [appwin setBackgroundColor:[NSColor clearColor]]; // blueColor
-    [NSApp activateIgnoringOtherApps:YES];
+    // [appwin setBackgroundColor:[NSColor clearColor]]; // blueColor
+    // [NSApp activateIgnoringOtherApps:YES];
 
     // [appwin setTitle: @"EPX"];
     // [appwin makeKeyAndOrderFront:self];
-
+    // [appwin orderOut:appwin];
+    
     // fixme: callback when window event flags are changed!!!
     // [appwin setAcceptsMouseMovedEvents: YES];
     // [cwin->winNS makeKeyAndOrderFront:NSApp];
 
     cwin->ewin->opengl = 0;
-    if (self.backend->b.opengl && self.backend->b.use_opengl) {
+    if (be && be->b.opengl && be->b.use_opengl) {
 #ifdef HAVE_OPENGL
 	if ((cocoa_gl_setup(cwin) == noErr) && cwin->aglContext)
 	    cwin->ewin->opengl = 1;
@@ -875,15 +954,14 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     }
     cwin->winErr = noErr;
     pthread_mutex_lock(&cwin->winLock);
+    EPX_DBGFMT("create_window is setup");
     cwin->winIsSetup = 1;
     pthread_mutex_unlock(&cwin->winLock);
 }
 
-- (void)close_window:(NSEvent*) theEvent
+void close_window(CocoaWindow* cwin)
 {
-    CocoaWindow* cwin = (CocoaWindow*) [theEvent data2];
-
-    DBG(@"close_window\r\n");
+    EPX_DBGFMT("close_window: thread=%ld", get_thread_id());
 
 #ifdef HAVE_OPENGL
     if (cwin->aglContext)
@@ -892,8 +970,6 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     [cwin->winNS close];
     free(cwin);
 }
-
-@end
 
 
 @interface AppDelegate : NSObject <NSApplicationDelegate> {
@@ -912,22 +988,53 @@ CocoaBackend* backend;
 }
 @end
 
+extern OSErr  CPSSetProcessName (ProcessSerialNumber *psn, char *processname);
+
+#if 0
+static void init_process()
+{
+    ProcessSerialNumber psn;
+    if(!GetCurrentProcess(&psn)) {
+	TransformProcessType(&psn, kProcessTransformToForegroundApplication);
+#ifdef  MAC_OS_X_VERSION_10_6
+	[[NSRunningApplication currentApplication] activateWithOptions:
+	 (NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps)];
+#else 
+	SetFrontProcess(&psn);
+#endif
+    }
+}
+#endif
 
 void* cocoa_event_thread(void* arg)
 {
     CocoaBackend* be = (CocoaBackend*) arg;
-    AppApplication* application;
-    // OSStatus err;
-    // ProcessSerialNumber psn;
-
-    EPX_DBGFMT("cocoa_event_thread: running ofd=%d", be->ofd);
-
-    [CocoaMultithreading beginMultithreading];
+    //AppApplication* application;
+    NSApplication* application;
+    NSScreen* screen;
 
     [NSAutoreleasePool new];
-    application = (AppApplication*) [AppApplication sharedApplication];
-    [application setBackend:be];
+    application = [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+    
+    EPX_DBGFMT("cocoa_event_thread: thread=%ld running ofd=%d",
+	       get_thread_id(), be->ofd);
+
+    EPX_DBGFMT("cocoa_event_thread: isMultiThreaded=%d",
+	       [NSThread isMultiThreaded]);
+    [CocoaMultithreading beginMultithreading];
+    EPX_DBGFMT("cocoa_event_thread: isMultiThreaded=%d",
+	       [NSThread isMultiThreaded]);
+
+    // init_process();
+    
+    
+    screen = [NSScreen deepestScreen];
+
+    be->b.width  = screen.frame.size.width;
+    be->b.height = screen.frame.size.height;
+    EPX_DBGFMT("screen widthxheight = %dx%d",
+	       be->b.width, be->b.height);
 
     be->menu = [[NSMenu new] autorelease];
     id menubar = be->menu;
@@ -953,6 +1060,8 @@ void* cocoa_event_thread(void* arg)
 
     pthread_mutex_unlock(&cocoa_lock);
 
+    EPX_DBGFMT("cocoa_event_thread: run");
+
     [NSApp run];
 
     close(be->ofd);  // signal termination!
@@ -966,9 +1075,8 @@ epx_backend_t* cocoa_init(epx_dict_t* param)
     CocoaBackend* be;
     int int_param;
     int cocoa_pipe[2];
-    NSScreen* screen;
 
-    EPX_DBGFMT("cocoa_init");
+    EPX_DBGFMT("cocoa_init thread_id=%ld", get_thread_id());
 
     if ((be = (CocoaBackend*) malloc(sizeof(CocoaBackend))) == NULL)
 	return NULL;
@@ -993,14 +1101,11 @@ epx_backend_t* cocoa_init(epx_dict_t* param)
 #ifdef HAVE_OPENGL
     be->b.opengl = 1;
 #endif
-    screen = [NSScreen deepestScreen];
-
-    be->b.width  = screen.frame.size.width;
-    be->b.height = screen.frame.size.height;
-
     pipe(cocoa_pipe);
     be->b.event = (EPX_HANDLE_T) (long) cocoa_pipe[0];
     be->ofd     = cocoa_pipe[1];
+    pthread_mutex_init(&be->pending_lock, NULL);
+    
     pthread_mutex_init(&cocoa_lock, NULL);
     pthread_mutex_lock(&cocoa_lock);  // Lock until thread is initialised
 
@@ -1016,6 +1121,8 @@ epx_backend_t* cocoa_init(epx_dict_t* param)
     }
     pthread_mutex_lock(&cocoa_lock);    // Wait for init to complete
     pthread_mutex_unlock(&cocoa_lock);  // Wait for init to complete
+
+    EPX_DBGFMT("cocoa_init done");
 
     return (epx_backend_t*) &(be->b);
 }
@@ -1045,13 +1152,18 @@ static int cocoa_evt_detach(epx_backend_t* backend)
 
 static int cocoa_evt_read(epx_backend_t* backend, epx_event_t* e)
 {
-    int r = 0;
-    
-    if ((r=backend->pending) == 0) // LOCK atomic check
-	return 0;
-    if (read((int)backend->event, (void*) e, sizeof(epx_event_t)) < 0)
-	return -1;
-    backend->pending--;  // LOCK atomic! check
+    int r;
+    CocoaBackend* be = (CocoaBackend*) backend;
+
+    pthread_mutex_lock(&be->pending_lock);
+    if ((r = be->b.pending) > 0)
+	be->b.pending--;
+    pthread_mutex_unlock(&be->pending_lock);
+
+    if (r > 0) {
+	if (read((int)backend->event, (void*) e, sizeof(epx_event_t)) < 0)
+	    return -1;
+    }
     return r;
 }
 
@@ -1072,15 +1184,15 @@ static void pixel_ReleaseInfo(void *info)
 
 static const void* pixel_GetBytePointer(void* info)
 {
-    epx_pixmap_t* pic = (epx_pixmap_t*) info;
-    return (void*) pic->data;
+    epx_pixmap_t* pix = (epx_pixmap_t*) info;
+    return (void*) pix->data;
 }
 
 static size_t pixel_GetBytesAtOffset(void *info, void *buffer, 
 				     off_t offset, size_t count)
 {
-    epx_pixmap_t* pic = (epx_pixmap_t*) info;
-    memcpy(buffer, pic->data+offset, count);
+    epx_pixmap_t* pix = (epx_pixmap_t*) info;
+    memcpy(buffer, pix->data+offset, count);
     return count;
 }
 
@@ -1137,7 +1249,7 @@ static int cocoa_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 	pe->bitmapinfo |= kCGImageAlphaNoneSkipLast;
 	break;
     default:
-	fprintf(stderr, "macos: unhandled pixelType = %d\n", pixmap->pixel_format);
+	fprintf(stderr, "epx_cocoa: unhandled pixelType = %d\n", pixmap->pixel_format);
 	free(pe);
 	return -1;
     }
@@ -1167,17 +1279,16 @@ static int cocoa_pix_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 
 /* There must be a better way */
 static void draw_image(CocoaWindow* cwin, CGRect srcRect, CGRect dstRect,
-		       epx_pixmap_t* pic)
+		       epx_pixmap_t* pix)
 {
-    CocoaPixels* pe = (CocoaPixels*) pic->opaque;
+    CocoaPixels* pe = (CocoaPixels*) pix->opaque;
     CGImageRef img;
-    unsigned int bytesPerRow   = pic->bytes_per_row;
-    unsigned int bitsPerPixel  = pic->bits_per_pixel;
-    CGContextRef ctx = cwin->ctx;
-
+    unsigned int bytesPerRow   = pix->bytes_per_row;
+    unsigned int bitsPerPixel  = pix->bits_per_pixel;
+    
     // Boring to create this every time!
-    img = CGImageCreate(pic->width,               /* width in pixels */
-			pic->height,              /* height in pixels */
+    img = CGImageCreate(pix->width,               /* width in pixels */
+			pix->height,              /* height in pixels */
 			8,                        /* bitsPerComponent */
 			bitsPerPixel,             /* bitsPerPixel */
 			bytesPerRow,              /* bytesPerRow */
@@ -1194,30 +1305,28 @@ static void draw_image(CocoaWindow* cwin, CGRect srcRect, CGRect dstRect,
 
     if ((srcRect.origin.x == (CGFloat)0) &&
 	(srcRect.origin.y == (CGFloat)0) &&
-	(srcRect.size.width == (CGFloat) pic->width) &&
-	(srcRect.size.height == (CGFloat) pic->height)) {
+	(srcRect.size.width == (CGFloat) pix->width) &&
+	(srcRect.size.height == (CGFloat) pix->height)) {
 
-	CGContextSaveGState(ctx);
-
-	CGContextTranslateCTM(ctx, 0, dstRect.size.height);
-	CGContextScaleCTM(ctx, 1.0, -1.0);
+	CGContextSaveGState(cwin->layer_ctx);
+	CGContextTranslateCTM(cwin->layer_ctx, 0.0, dstRect.size.height);
+	CGContextScaleCTM(cwin->layer_ctx, 1.0, -1.0);
 
 //	printf("draw_image: (x=%g,y=%g,w=%g,h=%g)\r\n",
 //	       dstRect.origin.x,dstRect.origin.y,
 //	       dstRect.size.width,dstRect.size.height);
-	       
-	CGContextDrawImage(ctx, dstRect, img);
-	CGContextRestoreGState(ctx);
+
+	CGContextDrawImage(cwin->layer_ctx, dstRect, img);
+	CGContextRestoreGState(cwin->layer_ctx);
     }
     else {
 	CGImageRef subImg;
 	subImg = CGImageCreateWithImageInRect(img, srcRect);
 
-	CGContextSaveGState(ctx);
-
-	CGContextTranslateCTM(ctx, dstRect.origin.x, 
+	CGContextSaveGState(cwin->layer_ctx);
+	CGContextTranslateCTM(cwin->layer_ctx, dstRect.origin.x,
 			      dstRect.origin.y+dstRect.size.height);
-	CGContextScaleCTM(ctx, 1.0, -1.0);
+	CGContextScaleCTM(cwin->layer_ctx, 1.0, -1.0);	
 
 	dstRect.origin.x = 0;
 	dstRect.origin.y = 0;
@@ -1225,9 +1334,9 @@ static void draw_image(CocoaWindow* cwin, CGRect srcRect, CGRect dstRect,
 //	       srcRect.origin.x,srcRect.origin.y,
 //	       dstRect.origin.x,dstRect.origin.y,
 //	       dstRect.size.width,dstRect.size.height);
+	CGContextDrawImage(cwin->layer_ctx, dstRect, subImg);
+	CGContextRestoreGState(cwin->layer_ctx);	
 
-	CGContextDrawImage(ctx, dstRect, subImg);
-	CGContextRestoreGState(ctx);
 	CGImageRelease(subImg);
     }
     CGImageRelease(img);
@@ -1236,30 +1345,25 @@ static void draw_image(CocoaWindow* cwin, CGRect srcRect, CGRect dstRect,
 static int cocoa_begin(epx_window_t* ewin)
 {
     CocoaWindow* cwin = (CocoaWindow*) ewin->opaque;
-    NSGraphicsContext* ctx;
 
     if (cwin == NULL)
 	return -1;
 
-    ctx = [cwin->winNS graphicsContext];
-    cwin->ctx = [ctx graphicsPort];
-    CGContextSaveGState(cwin->ctx);
-    // Setup a flipped coordinate system 
-    CGContextTranslateCTM(cwin->ctx, 0, cwin->winBounds.size.height);
-    CGContextScaleCTM(cwin->ctx, 1.0, -1.0);
+    pthread_mutex_lock(&cwin->drawLock);
 
-    pthread_mutex_lock(&cocoa_lock);
+    [NSGraphicsContext saveGraphicsState];
 
+    CGContextSaveGState(cwin->layer_ctx);
+    
+    CGContextTranslateCTM(cwin->layer_ctx, 0.0, cwin->winBounds.size.height);
+    CGContextScaleCTM(cwin->layer_ctx, 1.0, -1.0);
+    
     if (ewin->opengl) {
 #ifdef HAVE_OPENGL
 	cwin->saveContext = aglGetCurrentContext();
 	aglSetCurrentContext(cwin->aglContext);
 	aglUpdateContext(cwin->aglContext);
 #endif
-    }
-    else {
-	[NSGraphicsContext saveGraphicsState];
-	[NSGraphicsContext setCurrentContext:ctx];
     }
     return 0;
 }
@@ -1281,36 +1385,42 @@ static int cocoa_end(epx_window_t* ewin, int off_screen)
 	aglSetCurrentContext(cwin->saveContext);
 #endif
     }
-    else {
-	CGContextRestoreGState(cwin->ctx);
+    CGContextFlush(cwin->layer_ctx);
+    CGContextRestoreGState(cwin->layer_ctx);
+    [NSGraphicsContext restoreGraphicsState];
 
-	[[cwin->winNS graphicsContext] flushGraphics];
-	[NSGraphicsContext restoreGraphicsState];
+    cwin->drawCount++;
+    pthread_mutex_unlock(&cwin->drawLock);
+
+    pthread_mutex_lock(&cwin->refreshLock);
+    if (cwin->refreshQueueLen == 0) {
+	dispatch_async(dispatch_get_main_queue(), ^{
+		[cwin->view refreshImage];
+	    });
+	cwin->refreshQueueLen++;
     }
-    pthread_mutex_unlock(&cocoa_lock);
+    pthread_mutex_unlock(&cwin->refreshLock);
 
     return 0;
 }
 
-
-
-static int cocoa_pix_draw(epx_backend_t* backend, 
-			  epx_pixmap_t* pic, epx_window_t* ewin,
-			   int src_x, int src_y, int dst_x, int dst_y,
-			   unsigned int width,
-			   unsigned int height)
+static int cocoa_pix_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
+			  epx_window_t* window,
+			  int src_x, int src_y, int dst_x, int dst_y,
+			  unsigned int width,
+			  unsigned int height)
 {
     (void) backend;
-    CocoaWindow* cwin = (CocoaWindow*) ewin->opaque;
+    CocoaWindow* cwin = (CocoaWindow*) window->opaque;
 
-    DBG(@"cocoa_pix_draw: cwin=%p\r\n", cwin);
+    EPX_DBGFMT("cocoa_pix_draw: thread=%ld, cwin=%p", get_thread_id(), cwin);
 
     if (cwin == NULL) 
 	return -1;
-    if (ewin->opengl) {
+    if (window->opengl) {
 #ifdef HAVE_OPENGL
 	// Fixme check for errors
-	epx_gl_load_texture(pic, &cwin->textureName, 0, 1,  GL_REPEAT,
+	epx_gl_load_texture(pixmap, &cwin->textureName, 0, 1,  GL_REPEAT,
 			    src_x, src_y, width, height);
 	glEnable(GL_TEXTURE_RECTANGLE_EXT); // enable texturing
 	glBindTexture (GL_TEXTURE_RECTANGLE_ARB, cwin->textureName);
@@ -1336,18 +1446,37 @@ static int cocoa_pix_draw(epx_backend_t* backend,
 			     (float)width, (float)height);
 	dstRect = CGRectMake((float)dst_x, (float)dst_y,   // +21?
 			     (float)width, (float)height);
-	draw_image(cwin, srcRect, dstRect, pic);
+	draw_image(cwin, srcRect, dstRect, pixmap);
     }
     return 0;
 }
 
-static int cocoa_win_swap(epx_backend_t* backend, epx_window_t* ewin)
+static int cocoa_pix_sync(epx_backend_t* backend,
+			  epx_pixmap_t* pixmap, epx_window_t* window)
+{
+    (void) backend;
+    (void) pixmap;
+    CocoaWindow* cwin = (CocoaWindow*) window->opaque;
+    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+	    [cwin->view sync];
+	    dispatch_semaphore_signal(sema);
+	});
+    // wait for the sync to complete
+    // printf("epx_backend_cocoa: wait for sync semaphore\r\n");
+    dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+    dispatch_release(sema);
+    return 0;
+}
+
+static int cocoa_win_swap(epx_backend_t* backend, epx_window_t* window)
 {
     (void) backend;
 
-    if (ewin->opengl) {
+    if (window->opengl) {
 #ifdef HAVE_OPENGL
-	CocoaWindow* cwin = (CocoaWindow*) ewin->opaque;
+	CocoaWindow* cwin = (CocoaWindow*) window->opaque;
 	AGLContext save;
 	if (!cwin || !cwin->aglContext)
 	    return -1;
@@ -1376,18 +1505,23 @@ static int cocoa_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     cwin->ewin   = ewin;
     cwin->winErr = noErr;
     pthread_mutex_init(&cwin->winLock, NULL);
+    pthread_mutex_init(&cwin->drawLock, NULL);
+    pthread_mutex_init(&cwin->refreshLock, NULL);
+    cwin->prevCount = 0;
+    cwin->drawCount = 0;
+    cwin->refreshQueueLen = 0;
     cwin->winIsSetup = 0;
     ewin->opaque = (void*) cwin;
 
     epx_object_link(&backend->window_list, ewin);
     ewin->backend = (epx_backend_t*) be;
 
-    cwin->winAttrs = 
-	NSBorderlessWindowMask |
-	NSTitledWindowMask |
-	NSClosableWindowMask |
-	NSMiniaturizableWindowMask |
-	NSResizableWindowMask;
+    cwin->winAttrs =
+	NSWindowStyleMaskBorderless |
+	NSWindowStyleMaskTitled |
+	NSWindowStyleMaskClosable |
+	NSWindowStyleMaskMiniaturizable |
+	NSWindowStyleMaskResizable;
 	// NSTexturedBackgroundWindowMask	
 
     cwin->winBounds.origin.x = ewin->x;
@@ -1395,23 +1529,15 @@ static int cocoa_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     cwin->winBounds.size.height = ewin->height;
     cwin->winBounds.size.width  = ewin->width;
 
-    DBG(@"cocoa_win_attach: cwin=%p\r\n", cwin);
+    EPX_DBGFMT("cocoa_win_attach: cwin=%p", cwin);
     // Relase pool
 
-    NSEvent* event = [NSEvent otherEventWithType: NSApplicationDefined
-		      location: NSMakePoint(0,0)
-		      modifierFlags: 0
-		      timestamp: 0.0
-		      windowNumber: 0
-		      context: nil
-		      subtype: 0
-		      data1: kEpxEventNew
-		      data2: (NSInteger) cwin
-	];
-
-    [NSApp sendEvent: event];  //  atStart: YES
-
-    DBG(@"cocoa_win_attach: post done\r\n");
+    dispatch_async(dispatch_get_main_queue(), ^{
+	    create_window(cwin);
+	    [cwin->winNS makeKeyAndOrderFront:NSApp];
+	});
+    
+    EPX_DBGFMT("cocoa_win_attach: post done");
 
     while(!is_window_ready) {
 	usleep(1000);
@@ -1420,7 +1546,8 @@ static int cocoa_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	pthread_mutex_unlock(&cwin->winLock);
     }
 
-    DBG(@"cocoa_win_attach: is setup\r\n");
+    EPX_DBGFMT("cocoa_win_attach: is setup");
+
     if (cwin->winErr != noErr) {
 	free(cwin);
 	return -1;
@@ -1443,20 +1570,10 @@ static int cocoa_win_detach(epx_backend_t* backend, epx_window_t* ewin)
 	ewin->opaque = NULL;
 	ewin->backend = NULL;
 
-	// Relase pool
-	NSEvent* event = [NSEvent otherEventWithType: NSApplicationDefined
-			  location: NSMakePoint(0,0)
-			  modifierFlags: 0
-			  timestamp: 0.0
-			  windowNumber: 0
-			  context: nil
-			  subtype: 0
-			  data1: kEpxEventDel
-			  data2: (NSInteger) cwin
-	    ];
-	[NSApp sendEvent: event];  //  atStart: YES
-
-	DBG(@"cocoa_win_detach: post done\r\n");
+	dispatch_async(dispatch_get_main_queue(), ^{
+		close_window(cwin);
+	    });	
+	EPX_DBGFMT("cocoa_win_detach: post done");
 	// ReleaseEvent(delEvent);
     }
     return 0;

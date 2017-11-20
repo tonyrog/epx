@@ -77,14 +77,15 @@ epx_backend_t* x11_init(epx_dict_t* param);
 int x11_upgrade(epx_backend_t* be);
 
 static int x11_finish(epx_backend_t*);
-static int x11_pic_attach(epx_backend_t*, epx_pixmap_t*);
-static int x11_pic_detach(epx_backend_t*, epx_pixmap_t*);
+static int x11_pix_attach(epx_backend_t*, epx_pixmap_t*);
+static int x11_pix_detach(epx_backend_t*, epx_pixmap_t*);
 static int x11_begin(epx_window_t*);
 static int x11_end(epx_window_t*,int off_screen);
-static int x11_pic_draw(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
+static int x11_pix_draw(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
 			int src_x, int src_y, int dst_x, int dst_y,
 			unsigned int width,
 			unsigned int height);
+static int x11_pix_sync(epx_backend_t*, epx_pixmap_t*, epx_window_t*);
 static int x11_win_attach(epx_backend_t*, epx_window_t*);
 static int x11_win_detach(epx_backend_t*, epx_window_t*);
 static int x11_win_swap(epx_backend_t*, epx_window_t*);
@@ -102,9 +103,10 @@ static int  x11_error(Display * dpy, XErrorEvent * ev);
 static epx_callbacks_t x11_callbacks =
 {
     .finish     = x11_finish,
-    .pix_attach = x11_pic_attach,
-    .pix_detach = x11_pic_detach,
-    .pix_draw   = x11_pic_draw,
+    .pix_attach = x11_pix_attach,
+    .pix_detach = x11_pix_detach,
+    .pix_draw   = x11_pix_draw,
+    .pix_sync   = x11_pix_sync,
     .win_attach = x11_win_attach,
     .win_detach = x11_win_detach,
     .evt_attach = x11_evt_attach,
@@ -398,7 +400,7 @@ static int x11_finish(epx_backend_t* backend)
     return 0;
 }
 
-static int x11_pic_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int x11_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     X11Backend* x11 = (X11Backend*) backend;
     XImage* ximg;
@@ -505,7 +507,7 @@ static int x11_pic_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
     return 0;
 }
 
-static int x11_pic_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int x11_pix_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     XImage* ximg = (XImage*) pixmap->opaque;
 
@@ -551,7 +553,7 @@ static int x11_end(epx_window_t* ewin, int off_screen)
     return 0;
 }
 
-static int x11_pic_draw(epx_backend_t* backend, epx_pixmap_t* pic, epx_window_t* ewin,
+static int x11_pix_draw(epx_backend_t* backend, epx_pixmap_t* pic, epx_window_t* ewin,
 			int src_x, int src_y, int dst_x, int dst_y,
 			unsigned int width,
 			unsigned int height)
@@ -590,6 +592,17 @@ static int x11_pic_draw(epx_backend_t* backend, epx_pixmap_t* pic, epx_window_t*
 		  width, height);
     }
     return 0;
+}
+
+// make sure all draw command have been synced
+static int x11_pix_sync(epx_backend_t* backend, epx_pixmap_t* pixmap,
+			epx_window_t* ewin)
+{
+    X11Backend* be = (X11Backend*) backend;
+    (void) pixmap;
+    (void) ewin;
+
+    return XSync(be->display, False);
 }
 
 static int x11_win_swap(epx_backend_t* backend, epx_window_t* ewin)
