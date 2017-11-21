@@ -200,7 +200,6 @@ static epx_callbacks_t cocoa_callbacks =
 
 // #define DBG(...) NSLog(__VA_ARGS__)
 #define DBG(...) 
-/* util */
 
 static pthread_t cocoa_thr;
 static pthread_mutex_t cocoa_lock;
@@ -590,12 +589,13 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 	       get_thread_id(), appwin, cwin);
     if (!cwin)
 	return;
-    if (theEvent.isARepeat) { // ???
-	DBG(@"key_event: repeat\r");
-	return;
-    }
 
     ewin = cwin->ewin;
+    if (theEvent.isARepeat) {	
+	DBG(@"key_event: repeat mask=%x\r", ewin->mask);
+	if (ewin->mask & EPX_EVENT_NO_AUTO_REPEAT)
+	    return;
+    }
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
 
     keyCode = [theEvent keyCode];

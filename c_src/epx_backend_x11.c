@@ -1044,6 +1044,22 @@ next:
 	}
 	e->window = find_event_window(x11, ev.xkey.window);
 
+	// remove retriggered events
+	if ((ev.type == KeyRelease) && e->window &&
+	    (e->window->mask & EPX_EVENT_NO_AUTO_REPEAT)) {
+	    if (XEventsQueued(x11->display, QueuedAfterReading)) {
+		XEvent nev;
+		XPeekEvent(x11->display, &nev);
+		if ((nev.type == KeyPress) &&
+		    (nev.xkey.time == ev.xkey.time) &&
+		    (nev.xkey.keycode == ev.xkey.keycode)) {
+		    // delete retriggered KeyPress event
+		    XNextEvent (x11->display, &ev);
+		    goto ignore_event;
+		}
+	    }
+	}
+	
 	if (ev.type == KeyPress)
 	    e->type = EPX_EVENT_KEY_PRESS;
 	else if (ev.type == KeyRelease)

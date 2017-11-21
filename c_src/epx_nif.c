@@ -702,6 +702,7 @@ DECL_ATOM(scr);
 // Event-types
 DECL_ATOM(key_press);
 DECL_ATOM(key_release);
+DECL_ATOM(no_auto_repeat);
 DECL_ATOM(motion);
 DECL_ATOM(button_press);
 DECL_ATOM(button_release);
@@ -1356,6 +1357,7 @@ static int get_event_flag(ErlNifEnv* env, const ERL_NIF_TERM term,
     else if (term == ATOM(destroyed))      *e = EPX_EVENT_DESTROYED;
     else if (term == ATOM(all))            *e = EPX_EVENT_ALL;
     else if (term == ATOM(none))           *e = 0;
+    else if (term == ATOM(no_auto_repeat)) *e = EPX_EVENT_NO_AUTO_REPEAT;
     else return 0;
     return 1;
 }
@@ -1407,6 +1409,8 @@ static ERL_NIF_TERM make_event_flags(ErlNifEnv* env, uint32_t mask)
 	list = enif_make_list_cell(env, ATOM(key_press), list);
     if (mask & EPX_EVENT_KEY_RELEASE)
 	list = enif_make_list_cell(env, ATOM(key_release), list);
+    if (mask & EPX_EVENT_NO_AUTO_REPEAT)
+	list = enif_make_list_cell(env, ATOM(no_auto_repeat), list);
     if (mask & EPX_EVENT_POINTER_MOTION)
 	list = enif_make_list_cell(env, ATOM(motion), list);
     if (mask & EPX_EVENT_BUTTON_PRESS)
@@ -5349,6 +5353,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     // Event-types
     LOAD_ATOM(key_press);
     LOAD_ATOM(key_release);
+    LOAD_ATOM(no_auto_repeat);    
     LOAD_ATOM(motion);
     LOAD_ATOM(button_press);
     LOAD_ATOM(button_release);

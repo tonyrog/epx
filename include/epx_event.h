@@ -156,6 +156,8 @@
 #define EPX_EVENT_LEAVE            0x00000100
 #define EPX_EVENT_CONFIGURE        0x00000200
 #define EPX_EVENT_RESIZE           0x00000400
+#define EPX_EVENT_NO_AUTO_REPEAT   0x00000800  // only in mask
+
 // Button mask is used to filter events, only containing the buttons
 #define EPX_EVENT_BUTTON_MASK      0x007F0000
 #define EPX_EVENT_BUTTON_ANY       0x00000000
@@ -168,7 +170,7 @@
 #define EPX_EVENT_WHEEL_LEFT       0x00200000
 #define EPX_EVENT_WHEEL_RIGHT      0x00400000
 
-#define EPX_EVENT_CLOSE            0x40000000  /* window mangaer close event */
+#define EPX_EVENT_CLOSE            0x40000000  /* window manager close event */
 #define EPX_EVENT_DESTROYED        0x80000000  /* object destroyed notification */
 #define EPX_EVENT_ALL              0xFFFFFFFF
 
