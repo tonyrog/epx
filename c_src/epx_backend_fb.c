@@ -601,7 +601,6 @@ epx_backend_t* fb_init(epx_dict_t* param)
     FbBackend* be;
     char* string_param;
     int   int_param;
-    int   r;
 
     if ((be = (FbBackend*) malloc(sizeof(FbBackend))) == NULL)
 	return NULL;
@@ -881,7 +880,7 @@ static int fb_pix_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
     return 0;
 }
 
-static int fb_pix_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
+static int fb_pix_sync(epx_backend_t* backend, epx_pixmap_t* pixmap,
 		       epx_window_t* ewin)
 {
     (void) backend;
