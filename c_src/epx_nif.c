@@ -4539,6 +4539,7 @@ static void* backend_poll(void* arg)
 		    case 0: goto poll_message;
 		    case 1: goto poll_message;
 		    case 2: return (*sys_message.upgrade)(arg);
+		    default: goto poll_message;
 		    }
 		}
 	    }
@@ -4553,6 +4554,7 @@ static void* backend_poll(void* arg)
 	    break;
 	}
 	case 2: return (*message.upgrade)(arg);
+	default: goto poll_message;
 	}
     }
     return 0;
