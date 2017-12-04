@@ -601,6 +601,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     FbBackend* be;
     char* string_param;
     int   int_param;
+    int   r;
 
     if ((be = (FbBackend*) malloc(sizeof(FbBackend))) == NULL)
 	return NULL;
