@@ -87,7 +87,7 @@ void epx_simd_copy_sse2(uint8_t* src, uint8_t* dst, size_t n)
 	epx_simd_copy_x86(src, dst, n);
 }
 
-/* This code assumes dst i at least 32 bit aligned (FIXME?) */
+/* This code assumes dst is at least 32 bit aligned (FIXME?) */
 void epx_simd_fill_32_sse2(uint8_t* dst, uint32_t v, size_t n)
 {
     if (n < 4)
@@ -134,11 +134,11 @@ void epx_simd_fill_area_blend_rgb24_sse2(uint8_t* dst,int dst_wb,
 {
     /* Maybe use one rotating register ? instead of 3 ... */
     epx_vector_i8_t s8_0 = epx_simd_vector_set_8(p.r,p.g,p.b,p.r,p.g,p.b,p.r,p.g,
-					   p.b,p.r,p.g,p.b,p.r,p.g,p.b,p.r);
+						 p.b,p.r,p.g,p.b,p.r,p.g,p.b,p.r);
     epx_vector_i8_t s8_1 = epx_simd_vector_set_8(p.g,p.b,p.r,p.g,p.b,p.r,p.g,p.b,
-					   p.r,p.g,p.b,p.r,p.g,p.b,p.r,p.g);
+						 p.r,p.g,p.b,p.r,p.g,p.b,p.r,p.g);
     epx_vector_i8_t s8_2 = epx_simd_vector_set_8(p.b,p.r,p.g,p.b,p.r,p.g,p.b,p.r,
-					   p.g,p.b,p.r,p.g,p.b,p.r,p.g,p.b);
+						 p.g,p.b,p.r,p.g,p.b,p.r,p.g,p.b);
     epx_vector_u8_t a8 = epx_simd_vector_splat_u8(p.a);
     unsigned int offs = EPX_ALIGN_OFFS(dst, EPX_SIMD_VECTOR_ALIGN);
     unsigned int wb = width*3; // Number of bytes

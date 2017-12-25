@@ -15,38 +15,92 @@
  *
  ***************************************************************************/
 /*
- * NEON support
+ * AVX2 support
  *
  */
-#include <memory.h>
+
 #include "epx_simd_int.h"
-#include "epx_simd_neon.h"
+#include "epx_simd_avx2.h"
 
-#if defined(__NEON__)
+#if defined(__AVX2__)
 
-#define SIMD_FUNCTION(name) epx_simd_##name##_neon
+#define AVX2_MIN_BLOCK_LEN 64
+
+#define SIMD_FUNCTION(name) epx_simd_##name##_avx2
 #include "epx_simd.i"
 #undef SIMD_FUNCTION
 
-void epx_simd_copy_neon(const uint8_t* src, uint8_t* dst, size_t n)
+void epx_simd_copy_avx2(uint8_t* src, uint8_t* dst, size_t n)
 {
-    memcpy(dst, src, n);
+    if (n >= AVX2_MIN_BLOCK_LEN) {
+	unsigned int offs;
+	int m;
+
+	offs = EPX_ALIGN_OFFS(dst,EPX_SIMD_VECTOR_ALIGN);
+	if (offs) {
+	    epx_simd_copy_x86(src, dst, offs);
+	    src += offs;
+	    dst += offs;
+	    n -= offs;
+	}
+	offs = EPX_ALIGN_OFFS(src,EPX_SIMD_VECTOR_ALIGN);
+	m = n / (EPX_SIMD_VECTOR_SIZE*4);
+	n &= ((EPX_SIMD_VECTOR_SIZE*4)-1);
+	if (offs) {
+	    while(m--) {
+		epx_vector_u32_t a,b,c,d;
+
+		epx_simd_prefetch(src+256);  // probably not!!?
+		a = epx_simd_vector_load_ua32(src);
+		b = epx_simd_vector_load_ua32(src+EPX_SIMD_VECTOR_SIZE);
+		c = epx_simd_vector_load_ua32(src+EPX_SIMD_VECTOR_SIZE*2);
+		d = epx_simd_vector_load_ua32(src+EPX_SIMD_VECTOR_SIZE*3);
+
+		epx_simd_vector_store(dst, a);		
+		epx_simd_vector_store(dst+EPX_SIMD_VECTOR_SIZE, b);
+		epx_simd_vector_store(dst+EPX_SIMD_VECTOR_SIZE*2, c);
+		epx_simd_vector_store(dst+EPX_SIMD_VECTOR_SIZE*3, d);
+		src += EPX_SIMD_VECTOR_SIZE*4;
+		dst += EPX_SIMD_VECTOR_SIZE*4;
+	    }
+	}
+	else {
+	    while(m--) {
+		epx_vector_u32_t a,b,c,d;
+
+		epx_simd_prefetch(src+256); // probably not!!?
+		a = epx_simd_vector_load(src);
+		b = epx_simd_vector_load(src+EPX_SIMD_VECTOR_SIZE);
+		c = epx_simd_vector_load(src+EPX_SIMD_VECTOR_SIZE*2);
+		d = epx_simd_vector_load(src+EPX_SIMD_VECTOR_SIZE*3);
+
+		epx_simd_vector_store(dst, a);
+		epx_simd_vector_store(dst+EPX_SIMD_VECTOR_SIZE, b);
+		epx_simd_vector_store(dst+EPX_SIMD_VECTOR_SIZE*2, c);
+		epx_simd_vector_store(dst+EPX_SIMD_VECTOR_SIZE*3, d);
+		src += EPX_SIMD_VECTOR_SIZE*4;
+		dst += EPX_SIMD_VECTOR_SIZE*4;
+	    }
+	}
+    }
+    if (n)
+	epx_simd_copy_x86(src, dst, n);
 }
 
-/* This code assumes dst i at least 32 bit aligned (FIXME?) */
-void epx_simd_fill_32_neon(uint8_t* dst, uint32_t v, size_t n)
+/* This code assumes dst is at least 32 bit aligned (FIXME?) */
+void epx_simd_fill_32_avx2(uint8_t* dst, uint32_t v, size_t n)
 {
-    if (n < 4)
-	epx_fill_row_32((uint32_t*)dst, v, n);
+    if (n < 8)
+	epx_simd_fill_32_x86((uint32_t*)dst, v, n);
     else {
 	epx_vector_u8_t s8;
 	unsigned int offs = EPX_ALIGN_OFFS(dst,EPX_SIMD_VECTOR_ALIGN);
 	int walign = offs ? epx_min_int((offs/4), n) : 0;
 
-	s8 = epx_simd_vector_set_32(v,v,v,v);
+	s8 = epx_simd_vector_set_32(v,v,v,v,v,v,v,v);
 
 	if (walign) {
-	    epx_fill_row_32((uint32_t*)dst, v, walign);
+	    epx_simd_fill_32_x86((uint32_t*)dst, v, walign);
 	    dst += offs;
 	    n -= walign;
 	}
@@ -66,24 +120,32 @@ void epx_simd_fill_32_neon(uint8_t* dst, uint32_t v, size_t n)
 	    n -= EPX_SIMD_VECTOR_SIZE/4;
 	}
 	if (n)
-	    epx_fill_row_32((uint32_t*)dst, v, n);
+	    epx_simd_fill_32_x86((uint32_t*)dst, v, n);
     }
 }
 
+
+
 /* DO  RGB or BGR (BGR is done by swapping r and b in p) */
-void epx_simd_fill_area_blend_rgb24_neon(uint8_t* dst,int dst_wb,
+void epx_simd_fill_area_blend_rgb24_avx2(uint8_t* dst,int dst_wb,
 					 epx_pixel_t p,
 					 unsigned int width, 
 					 unsigned int height)
 {
     /* Maybe use one rotating register ? instead of 3 ... */
     epx_vector_i8_t s8_0 = epx_simd_vector_set_8(p.r,p.g,p.b,p.r,p.g,p.b,p.r,p.g,
-						 p.b,p.r,p.g,p.b,p.r,p.g,p.b,p.r);
-    epx_vector_i8_t s8_1 = epx_simd_vector_set_8(p.g,p.b,p.r,p.g,p.b,p.r,p.g,p.b,
+						 p.b,p.r,p.g,p.b,p.r,p.g,p.b,p.r,
+						 p.g,p.b,p.r,p.g,p.b,p.r,p.g,p.b,
 						 p.r,p.g,p.b,p.r,p.g,p.b,p.r,p.g);
-    epx_vector_i8_t s8_2 = epx_simd_vector_set_8(p.b,p.r,p.g,p.b,p.r,p.g,p.b,p.r,
+    epx_vector_i8_t s8_1 = epx_simd_vector_set_8(p.g,p.b,p.r,p.g,p.b,p.r,p.g,p.b,
+						 p.r,p.g,p.b,p.r,p.g,p.b,p.r,p.g,
+						 p.b,p.r,p.g,p.b,p.r,p.g,p.b,p.r,
 						 p.g,p.b,p.r,p.g,p.b,p.r,p.g,p.b);
-    epx_vector_i8_t a8 = epx_simd_vector_splat_u8(p.a);
+    epx_vector_i8_t s8_2 = epx_simd_vector_set_8(p.b,p.r,p.g,p.b,p.r,p.g,p.b,p.r,
+						 p.g,p.b,p.r,p.g,p.b,p.r,p.g,p.b,
+						 p.r,p.g,p.b,p.r,p.g,p.b,p.r,p.g,
+						 p.b,p.r,p.g,p.b,p.r,p.g,p.b,p.r);
+    epx_vector_u8_t a8 = epx_simd_vector_splat_u8(p.a);
     unsigned int offs = EPX_ALIGN_OFFS(dst, EPX_SIMD_VECTOR_ALIGN);
     unsigned int wb = width*3; // Number of bytes
 
@@ -145,4 +207,5 @@ void epx_simd_fill_area_blend_rgb24_neon(uint8_t* dst,int dst_wb,
 	dst += dst_wb;
     }
 }
+
 #endif

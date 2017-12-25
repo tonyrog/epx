@@ -496,6 +496,7 @@ DECL_ATOM(emu);
 DECL_ATOM(altivec);
 DECL_ATOM(mmx);
 DECL_ATOM(sse2);
+DECL_ATOM(avx2);
 DECL_ATOM(neon);
 DECL_ATOM(auto);
 DECL_ATOM(accel);
@@ -2166,7 +2167,7 @@ static ERL_NIF_TERM debug(ErlNifEnv* env, int argc,
 /******************************************************************************
  *
  *  simd
- *  acceltype()  :: emu|altivec|mmx|sse2|neon
+ *  acceltype()  :: emu|altivec|mmx|sse2|avx2|neon
  *  cpu_vendor_name :: string()
  *  cpu_features    :: string()
  *  cpu_cache_line_size :: integer()
@@ -2203,6 +2204,7 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
 	    else if (epx_simd->type == EPX_SIMD_ALTIVEC) type = ATOM(altivec);
 	    else if (epx_simd->type == EPX_SIMD_MMX)     type = ATOM(mmx);
 	    else if (epx_simd->type == EPX_SIMD_SSE2)    type = ATOM(sse2);
+	    else if (epx_simd->type == EPX_SIMD_AVX2)    type = ATOM(avx2);
 	    else if (epx_simd->type == EPX_SIMD_NEON)    type = ATOM(neon);
 	    accel -= epx_simd->type;
 	}
@@ -2211,6 +2213,7 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
 	if (accel & EPX_SIMD_ALTIVEC) avail[i++] = ATOM(altivec);
 	if (accel & EPX_SIMD_MMX)     avail[i++] = ATOM(mmx);
 	if (accel & EPX_SIMD_SSE2)    avail[i++] = ATOM(sse2);
+	if (accel & EPX_SIMD_AVX2)    avail[i++] = ATOM(avx2);
 	if (accel & EPX_SIMD_NEON)    avail[i++] = ATOM(neon);
 	return
 	    enif_make_tuple2(env, type,
@@ -2291,6 +2294,7 @@ static ERL_NIF_TERM simd_set(ErlNifEnv* env, int argc,
     else if (argv[0] == ATOM(altivec)) accel = EPX_SIMD_ALTIVEC;
     else if (argv[0] == ATOM(mmx)) accel = EPX_SIMD_MMX;
     else if (argv[0] == ATOM(sse2)) accel = EPX_SIMD_SSE2;
+    else if (argv[0] == ATOM(avx2)) accel = EPX_SIMD_AVX2;
     else if (argv[0] == ATOM(neon)) accel = EPX_SIMD_NEON;
     else if (argv[0] == ATOM(auto)) accel = EPX_SIMD_AUTO;
     else return enif_make_badarg(env);
@@ -5170,6 +5174,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(altivec);
     LOAD_ATOM(mmx);
     LOAD_ATOM(sse2);
+    LOAD_ATOM(avx2);
     LOAD_ATOM(neon);
     LOAD_ATOM(auto);
     LOAD_ATOM(accel);
