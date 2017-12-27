@@ -503,6 +503,7 @@ DECL_ATOM(accel);
 DECL_ATOM(functions);
 DECL_ATOM(cpu_features);
 DECL_ATOM(cpu_vendor_name);
+DECL_ATOM(cpu_brand_string);
 DECL_ATOM(cpu_serial_number);
 DECL_ATOM(cpu_cache_line_size);
 
@@ -2182,6 +2183,11 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
     if (argv[0] == ATOM(cpu_vendor_name)) {
 	char buf[1024];
 	int n = epx_cpu_vendor_name(buf, sizeof(buf));
+	return enif_make_string_len(env, buf, n, ERL_NIF_LATIN1);
+    }
+    else if (argv[0] == ATOM(cpu_brand_string)) {
+	char buf[1024];
+	int n = epx_cpu_brand_string(buf, sizeof(buf));
 	return enif_make_string_len(env, buf, n, ERL_NIF_LATIN1);
     }
     else if (argv[0] == ATOM(cpu_features)) {
@@ -5181,6 +5187,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(functions);
     LOAD_ATOM(cpu_features);
     LOAD_ATOM(cpu_vendor_name);
+    LOAD_ATOM(cpu_brand_string);
     LOAD_ATOM(cpu_serial_number);
     LOAD_ATOM(cpu_cache_line_size);
 

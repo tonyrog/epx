@@ -85,6 +85,7 @@ extern void epx_simd_init(int accel);
 extern int epx_simd_accel(void);
 extern int epx_cpu_cache_line_size(void);
 extern int epx_cpu_vendor_name(char* buf, size_t maxlen);
+extern int epx_cpu_brand_string(char* buf, size_t maxlen);
 extern int epx_cpu_serial_number(unsigned char* buf, size_t maxlen);
 extern int epx_cpu_features(char* buf, size_t maxlen);
 
