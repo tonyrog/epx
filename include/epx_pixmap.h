@@ -35,8 +35,8 @@ typedef struct _epx_filter_ {
 } epx_filter_t;
 
 // #define EPX_ALIGNMENT  8   // MMX
-// #define EPX_ALIGNMENT  16  // SSE2
-#define EPX_ALIGNMENT  32  // AVX2
+#define EPX_ALIGNMENT  16  // SSE2
+//#define EPX_ALIGNMENT  32  // AVX2
 
 #define EPX_PIXEL_ADDR(map,x,y) \
     ((map)->data + (((y)*(int)(map)->bytes_per_row) + ((x)*(int)(map)->bytes_per_pixel)))
