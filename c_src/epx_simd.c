@@ -338,6 +338,8 @@ void epx_simd_init(int accel)
     int feature_cx = 0;
     int feature_dx = 0;
 
+    (void) feature_cx;
+    (void) feature_dx;
 
 #if defined(__i386__) || defined(__x86_64__)
     char* name;
