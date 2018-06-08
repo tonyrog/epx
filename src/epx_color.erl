@@ -199,15 +199,13 @@ hsl_to_rgb01(H,S,L) when
     C = (1 - abs(2*L -1))*S,
     X = C*(1-abs(fmod(H/60,2)-1)),
     M = L - C/2,
-    {R1,G1,B1} =
-	if H < 60  -> {C,X,0};
-	   H < 120 -> {X,C,0};
-	   H < 180 -> {0,C,X};
-	   H < 240 -> {0,X,C};
-	   H < 300 -> {X,0,C};
-	   H < 360 -> {C,0,X}
-	end,
-    {R1+M,G1+M,B1+M}.
+    if H < 60  -> {C+M,X+M,0+M};
+       H < 120 -> {X+M,C+M,0+M};
+       H < 180 -> {0+M,C+M,X+M};
+       H < 240 -> {0+M,X+M,C+M};
+       H < 300 -> {X+M,0+M,C+M};
+       H < 360 -> {C+M,0+M,X+M}
+    end.
 
 hsl_to_rgbw({H,S,L}) ->
     {R,G,B,W} = hsl_to_rgbw01(H,S,L),
@@ -221,12 +219,12 @@ hsl_to_rgbw01(H,S,L) when
     X = C*(1-abs(fmod(H/60,2)-1)),
     M = L - C/2,
     W = (1-S)*L,
-    if H < 60  -> {C+M,X+M,0,W};
-       H < 120 -> {X+M,C+M,0,W};
-       H < 180 -> {0,C+M,X+M,W};
-       H < 240 -> {0,X+M,C+M,W};
-       H < 300 -> {X+M,0,C+M,W};
-       H < 360 -> {C+M,0,X+M,W}
+    if H < 60  -> {C+M,X+M,0+M,W};
+       H < 120 -> {X+M,C+M,0+M,W};
+       H < 180 -> {0+M,C+M,X+M,W};
+       H < 240 -> {0+M,X+M,C+M,W};
+       H < 300 -> {X+M,0+M,C+M,W};
+       H < 360 -> {C+M,0+M,X+M,W}
     end.
        
 rgb_to_hsl(Color) when is_atom(Color); is_list(Color) ->

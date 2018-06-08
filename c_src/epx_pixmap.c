@@ -1568,8 +1568,7 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
     dst->backend = 0;
     dst->parent  = 0;
     dst->user    = 0;
-    // Each row must by a multiple of 16!
-    bytes_per_row += EPX_ALIGN_OFFS(bytes_per_row,16);
+    bytes_per_row += EPX_ALIGN_OFFS(bytes_per_row, EPX_ALIGNMENT);
 
     unpack = epx_pixel_unpack_func(fmt);
     pack   = epx_pixel_pack_func(fmt);
@@ -1592,7 +1591,7 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
     /* total number of bytes, not including padding */
     dst->sz             = bytes_per_row*height;
     dst->data0          = data0;
-    dst->data           = data0 + EPX_ALIGN_OFFS(data0,16);
+    dst->data           = data0 + EPX_ALIGN_OFFS(data0, EPX_ALIGNMENT);
     return 0;
 }
 

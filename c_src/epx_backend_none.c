@@ -43,6 +43,7 @@ static int none_pix_draw(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
 			 int src_x, int src_y, int dst_x, int dst_y,
 			 unsigned int width,
 			 unsigned int height);
+static int none_pix_sync(epx_backend_t*, epx_pixmap_t*, epx_window_t*);
 static int none_win_attach(epx_backend_t*, epx_window_t*);
 static int none_win_detach(epx_backend_t*, epx_window_t*);
 static int none_win_swap(epx_backend_t*, epx_window_t*);
@@ -60,6 +61,7 @@ static epx_callbacks_t none_callbacks =
     .pix_attach   = none_pix_attach,
     .pix_detach   = none_pix_detach,
     .pix_draw     = none_pix_draw,
+    .pix_sync     = none_pix_sync,
     .win_attach   = none_win_attach,
     .win_detach   = none_win_detach,
     .evt_attach   = none_evt_attach,
@@ -179,6 +181,15 @@ static int none_pix_draw(epx_backend_t* backend, epx_pixmap_t* pixmap, epx_windo
     if (!nwin)
 	return -1;
     nwin->dcount++;
+    return 0;
+}
+
+static int none_pix_sync(epx_backend_t* backend, epx_pixmap_t* pixmap,
+			 epx_window_t* ewin)
+{
+    (void) backend;
+    (void) pixmap;
+    (void) ewin;
     return 0;
 }
 

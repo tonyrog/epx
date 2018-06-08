@@ -37,7 +37,7 @@ typedef struct _epx_backend_t {
     /* !Name of backed type */
     char* name;
     /*! Number of pending events */
-    int pending;
+    volatile int pending;
     /*! OpenGL supported? */
     int opengl;
     /*! Use OpenGL ? */
@@ -67,6 +67,7 @@ typedef struct _epx_callbacks_t {
     int (*pix_detach)(epx_backend_t*, epx_pixmap_t*);
     int (*pix_draw)(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
 		    int, int, int, int, unsigned int, unsigned int);
+    int (*pix_sync)(epx_backend_t*, epx_pixmap_t*, epx_window_t*);
     int (*win_attach)(epx_backend_t*, epx_window_t*);
     int (*win_detach)(epx_backend_t*, epx_window_t*);
     EPX_HANDLE_T (*evt_attach)(epx_backend_t*);
@@ -91,6 +92,8 @@ extern void epx_backend_destroy(epx_backend_t* be);
 #define epx_backend_draw_end(be,win,os)  ((be)->cb->end((win),(os)))
 #define epx_backend_pixmap_draw(be,pix,win,xs,ys,xd,yd,w,h)		\
     ((be)->cb->pix_draw((be),(pix),(win),(xs),(ys),(xd),(yd),(w),(h)))
+#define epx_backend_pixmap_sync(be,pix,win) \
+    ((be)->cb->pix_sync((be),(pix),(win)))
 
 #define epx_backend_window_swap(be,win)   ((be)->cb->win_swap((be),(win)))
 #define epx_backend_event_attach(be)    ((be)->cb->evt_attach((be)))

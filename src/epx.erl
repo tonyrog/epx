@@ -307,6 +307,7 @@ debug(_Level) ->
 
 -type epx_simd_info() ::
 	{ 'cpu_vendor_name', string() } |
+	{ 'cpu_brand_string', string() } |
 	{ 'cpu_features', string() } |
 	{ 'cpu_cache_line_size', unsigned() } |
 	{ 'accel',     {epx_accel_type(),[epx_accel_type()]}} |
@@ -320,6 +321,7 @@ debug(_Level) ->
 simd_info_keys() ->
     ['accel',
      'cpu_vendor_name',
+     'cpu_brand_string',
      'cpu_features',
      'cpu_cache_line_size',
      'functions'].
@@ -804,6 +806,7 @@ sync(Pixmap, Win) ->
     pixmap_sync(Pixmap, Win),
     receive
 	{epx_event,Win,synced} ->
+	    %% io:format("Got SYNCED\r\n"),
 	    ok
     end.
 

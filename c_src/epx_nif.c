@@ -496,12 +496,14 @@ DECL_ATOM(emu);
 DECL_ATOM(altivec);
 DECL_ATOM(mmx);
 DECL_ATOM(sse2);
+DECL_ATOM(avx2);
 DECL_ATOM(neon);
 DECL_ATOM(auto);
 DECL_ATOM(accel);
 DECL_ATOM(functions);
 DECL_ATOM(cpu_features);
 DECL_ATOM(cpu_vendor_name);
+DECL_ATOM(cpu_brand_string);
 DECL_ATOM(cpu_serial_number);
 DECL_ATOM(cpu_cache_line_size);
 
@@ -702,6 +704,7 @@ DECL_ATOM(scr);
 // Event-types
 DECL_ATOM(key_press);
 DECL_ATOM(key_release);
+DECL_ATOM(no_auto_repeat);
 DECL_ATOM(motion);
 DECL_ATOM(button_press);
 DECL_ATOM(button_release);
@@ -981,7 +984,7 @@ static int epx_posix_steal_pthread(pthread_t* pthr,
     (void) pthr;
     (void) attr;
     ErlNifTid tid;
-    EPX_DBGFMT("epx_posix_steal_pthread");
+    DEBUGF("epx_posix_steal_pthread");
     return erl_drv_steal_main_thread((char *)"epx_thread",
 				     &tid,start_routine,arg,NULL);
     return -1;
@@ -1051,7 +1054,7 @@ static int epx_thread_stop(epx_thread_t* thr, epx_thread_t* sender,
     else {
 	r=enif_thread_join(thr->tid, exit_value);
     }
-    EPX_DBGFMT("enif_thread_join: return=%d, exit_value=%p", r, *exit_value);
+    DEBUGF("enif_thread_join: return=%d, exit_value=%p", r, *exit_value);
     epx_queue_destroy(&thr->q);
     if (thr->wake[0] >= 0) close(thr->wake[0]);
     if (thr->wake[1] >= 0) close(thr->wake[1]);
@@ -1073,8 +1076,7 @@ static void epx_thread_exit(void* value)
 static void object_dtor(ErlNifEnv* env, void* obj)
 {
     (void) env;
-    EPX_DBGFMT_MEM("Object: destruct obj=%p, ref=%lu",
-		   obj, ((epx_object_t*)obj)->refc);
+    DEBUGF("Object: destruct obj=%p, ref=%lu", obj, ((epx_object_t*)obj)->refc);
     epx_object_unref(obj);
 }
 
@@ -1085,9 +1087,9 @@ static void backend_dtor(ErlNifEnv* env, void* obj)
     epx_nif_backend_t** pp;
     epx_message_t m;
 
-    EPX_DBGFMT_MEM("BACKEND_DTOR: obj=%p, refc=%lu",
-		   (backend->backend),
-		   ((epx_object_t*) (backend->backend))->refc);
+    DEBUGF("BACKEND_DTOR: obj=%p, refc=%lu",
+	   (backend->backend),
+	   ((epx_object_t*) (backend->backend))->refc);
 
     if (backend->owner) {
 	enif_free(backend->owner);
@@ -1113,7 +1115,7 @@ static void pixmap_dtor(ErlNifEnv* env, void* obj)
     (void) env;
     epx_pixmap_t* pixmap = (epx_pixmap_t*) obj;
 
-    EPX_DBGFMT_MEM("PIXMAP_DTOR: obj=%p, refc=%lu",
+    DEBUGF("PIXMAP_DTOR: obj=%p, refc=%lu",
 		   obj, ((epx_object_t*)obj)->refc);
     if (pixmap->user) {
 	epx_message_t m;
@@ -1135,7 +1137,7 @@ static void window_dtor(ErlNifEnv* env, void* obj)
     (void) env;
     epx_window_t* window = (epx_window_t*) obj;
 
-    EPX_DBGFMT_MEM("WINDOW_DTOR: obj=%p, refc=%lu",
+    DEBUGF("WINDOW_DTOR: obj=%p, refc=%lu",
 	       obj, ((epx_object_t*)obj)->refc);
 
     if (window->owner) {
@@ -1357,6 +1359,7 @@ static int get_event_flag(ErlNifEnv* env, const ERL_NIF_TERM term,
     else if (term == ATOM(destroyed))      *e = EPX_EVENT_DESTROYED;
     else if (term == ATOM(all))            *e = EPX_EVENT_ALL;
     else if (term == ATOM(none))           *e = 0;
+    else if (term == ATOM(no_auto_repeat)) *e = EPX_EVENT_NO_AUTO_REPEAT;
     else return 0;
     return 1;
 }
@@ -1408,6 +1411,8 @@ static ERL_NIF_TERM make_event_flags(ErlNifEnv* env, uint32_t mask)
 	list = enif_make_list_cell(env, ATOM(key_press), list);
     if (mask & EPX_EVENT_KEY_RELEASE)
 	list = enif_make_list_cell(env, ATOM(key_release), list);
+    if (mask & EPX_EVENT_NO_AUTO_REPEAT)
+	list = enif_make_list_cell(env, ATOM(no_auto_repeat), list);
     if (mask & EPX_EVENT_POINTER_MOTION)
 	list = enif_make_list_cell(env, ATOM(motion), list);
     if (mask & EPX_EVENT_BUTTON_PRESS)
@@ -2163,7 +2168,7 @@ static ERL_NIF_TERM debug(ErlNifEnv* env, int argc,
 /******************************************************************************
  *
  *  simd
- *  acceltype()  :: emu|altivec|mmx|sse2|neon
+ *  acceltype()  :: emu|altivec|mmx|sse2|avx2|neon
  *  cpu_vendor_name :: string()
  *  cpu_features    :: string()
  *  cpu_cache_line_size :: integer()
@@ -2178,6 +2183,11 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
     if (argv[0] == ATOM(cpu_vendor_name)) {
 	char buf[1024];
 	int n = epx_cpu_vendor_name(buf, sizeof(buf));
+	return enif_make_string_len(env, buf, n, ERL_NIF_LATIN1);
+    }
+    else if (argv[0] == ATOM(cpu_brand_string)) {
+	char buf[1024];
+	int n = epx_cpu_brand_string(buf, sizeof(buf));
 	return enif_make_string_len(env, buf, n, ERL_NIF_LATIN1);
     }
     else if (argv[0] == ATOM(cpu_features)) {
@@ -2200,6 +2210,7 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
 	    else if (epx_simd->type == EPX_SIMD_ALTIVEC) type = ATOM(altivec);
 	    else if (epx_simd->type == EPX_SIMD_MMX)     type = ATOM(mmx);
 	    else if (epx_simd->type == EPX_SIMD_SSE2)    type = ATOM(sse2);
+	    else if (epx_simd->type == EPX_SIMD_AVX2)    type = ATOM(avx2);
 	    else if (epx_simd->type == EPX_SIMD_NEON)    type = ATOM(neon);
 	    accel -= epx_simd->type;
 	}
@@ -2208,6 +2219,7 @@ static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
 	if (accel & EPX_SIMD_ALTIVEC) avail[i++] = ATOM(altivec);
 	if (accel & EPX_SIMD_MMX)     avail[i++] = ATOM(mmx);
 	if (accel & EPX_SIMD_SSE2)    avail[i++] = ATOM(sse2);
+	if (accel & EPX_SIMD_AVX2)    avail[i++] = ATOM(avx2);
 	if (accel & EPX_SIMD_NEON)    avail[i++] = ATOM(neon);
 	return
 	    enif_make_tuple2(env, type,
@@ -2288,6 +2300,7 @@ static ERL_NIF_TERM simd_set(ErlNifEnv* env, int argc,
     else if (argv[0] == ATOM(altivec)) accel = EPX_SIMD_ALTIVEC;
     else if (argv[0] == ATOM(mmx)) accel = EPX_SIMD_MMX;
     else if (argv[0] == ATOM(sse2)) accel = EPX_SIMD_SSE2;
+    else if (argv[0] == ATOM(avx2)) accel = EPX_SIMD_AVX2;
     else if (argv[0] == ATOM(neon)) accel = EPX_SIMD_NEON;
     else if (argv[0] == ATOM(auto)) accel = EPX_SIMD_AUTO;
     else return enif_make_badarg(env);
@@ -4390,7 +4403,7 @@ static void* reaper_main(void* arg)
 {
     epx_thread_t* self = arg;
 
-    EPX_DBGFMT("reaper: started (addr=%p, %p)", &self, self);
+    DEBUGF("reaper: started (addr=%p, %p)", &self, self);
 
     while(1) {
 	epx_message_t m;
@@ -4401,22 +4414,22 @@ static void* reaper_main(void* arg)
 
 	switch(m.type) {
 	case EPX_MESSAGE_KILL:
-	    EPX_DBGFMT("reaper_main: kill thread=%p", m.thread);
+	    DEBUGF("reaper_main: kill thread=%p", m.thread);
 	    epx_thread_stop(m.thread, self, &exit_value);
 	    break;
 
 	case EPX_MESSAGE_UPGRADE:
-	    EPX_DBGFMT("reaper_main: upgrade func=%p", m.upgrade);
+	    DEBUGF("reaper_main: upgrade func=%p", m.upgrade);
 	    return (*m.upgrade)(arg);
 
 	case EPX_MESSAGE_SYNC:
-	    EPX_DBGFMT("reaper_main: sync");
+	    DEBUGF("reaper_main: sync");
 	    m.type = EPX_MESSAGE_SYNC_ACK;
 	    epx_queue_put(m.reply_q, &m);
 	    break;
 
 	case EPX_MESSAGE_STOP:
-	    EPX_DBGFMT("reaper: stoppped by command");
+	    DEBUGF("reaper: stoppped by command");
 	    epx_thread_exit(self);
 	    break;
 	case EPX_MESSAGE_POLL:
@@ -4432,7 +4445,7 @@ static void* reaper_main(void* arg)
 	case EPX_MESSAGE_PIXMAP_SYNC:
 	case EPX_MESSAGE_SYNC_ACK:
 	default:
-	    EPX_DBGFMT("reaper: unhandled message %s",
+	    DEBUGF("reaper: unhandled message %s",
 		       format_message(&m));
 	    break;
 	}
@@ -4446,132 +4459,117 @@ static void* reaper_main(void* arg)
  *      thread for polling backends for events
  *****************************************************************************/
 
-typedef struct {
-    int           state;    // woke up while in poll
-    epx_thread_t* from;     // poll message sent from
-    epx_message_t message;  // last poll message
-} poll_priv_t;
+static int backend_poll_dispatch(epx_thread_t* self, epx_message_t* mp)
+{
+    switch(mp->type) {
+    case EPX_MESSAGE_POLL:
+	return 1;
+    case EPX_MESSAGE_UPGRADE:
+	return 2;
+    case EPX_MESSAGE_SYNC: {
+	epx_message_t m = *mp;
+	DEBUGF("backend_poll_dispatch: sync");
+	m.type = EPX_MESSAGE_SYNC_ACK;
+	epx_queue_put(mp->reply_q, &m);
+	DEBUGF("backend_poll_dispatch: sync ack sent");
+	break;
+    }
+    case EPX_MESSAGE_STOP:
+	DEBUGF("backend_poll_dispatch: stoppped by command");
+	epx_thread_exit(self);
+	break;
+    case EPX_MESSAGE_KILL:
+    case EPX_MESSAGE_EVENT_READY:
+    case EPX_MESSAGE_WINDOW_ATTACH:
+    case EPX_MESSAGE_WINDOW_DETACH:
+    case EPX_MESSAGE_WINDOW_ADJUST:
+    case EPX_MESSAGE_WINDOW_SWAP:
+    case EPX_MESSAGE_ADJUST:
+    case EPX_MESSAGE_PIXMAP_ATTACH:
+    case EPX_MESSAGE_PIXMAP_DETACH:
+    case EPX_MESSAGE_PIXMAP_DRAW:
+    case EPX_MESSAGE_PIXMAP_SYNC:
+    case EPX_MESSAGE_SYNC_ACK:
+    default:
+	DEBUGF("backend_poll_dispatch: unhandled message %s",
+	       format_message(mp));
+	break;
+    }
+    return 0;
+}
+
 
 static void* backend_poll(void* arg)
 {
     epx_thread_t* self = arg;
-    poll_priv_t* priv;
 
-    //    EPX_DBGFMT("backend_poll: started (addr=%p,%p,priv=%p)",
-    // &self, self, self->priv);
-    if ((priv = (poll_priv_t*) self->priv) == NULL) {
-	priv = enif_alloc(sizeof(poll_priv_t));
-	priv->state = 0;
-	self->priv = priv;
-    }
+    DEBUGF("backend_poll: started (addr=%p,%p,priv=%p)",
+	       &self, self, self->priv);
 
     while(1) {
-	epx_message_t m;
-	epx_thread_t* from = 0;
+	epx_message_t message;
+	epx_thread_t* from  = NULL;
 
-	EPX_DBGFMT("backend_poll: state=%d", priv->state);
-	switch(priv->state) {
-	case 0:   // neutral state
-	    epx_message_recv(self, &from, &m);
-	    break;
-	case 1:  // wokeup, process message
-	    priv->state = 2;
-	    epx_message_recv(self, &from, &m);
-	    break;
-	case 2:  // continue with poll
-	    m = priv->message;
-	    from = priv->from;
-	    priv->state = 0;
-	    break;
-	default:
-	    EPX_DBGFMT("backend_poll: bad state");
-	    break;
-	}
+	epx_message_recv(self, &from, &message);
 
-	switch(m.type) {
-	case EPX_MESSAGE_UPGRADE:
-	    EPX_DBGFMT("backend_poll: upgrade func=%p", m.upgrade);
-	    return (*m.upgrade)(arg);
-
-	case EPX_MESSAGE_SYNC:
-	    EPX_DBGFMT("backend_poll: sync");
-	    m.type = EPX_MESSAGE_SYNC_ACK;
-	    epx_queue_put(m.reply_q, &m);
-	    EPX_DBGFMT("backend_poll: sync ack sent");
-	    break;
-
-	case EPX_MESSAGE_POLL: {
+	switch(backend_poll_dispatch(self, &message)) {
+	case 0: break;
+	poll_message:
+	case 1: {
 	    struct pollfd fds[2];
-	    int do_poll = 1;
 	    int nfd;
+	    int n;
 	    int timeout = 1000;
 
-	    EPX_DBGFMT("backend_poll: poll fd=%ld", m.handle);
-
-	    fds[0].fd = (int)((long)m.handle);
+	    fds[0].fd = (int)((long)message.handle);
 	    fds[0].events = POLLIN;
+	    DEBUGF("backend_poll: poll fds[0]=%ld", fds[0].fd);
+	    
 	    nfd = 1;
 	    if (self->wake[0] >= 0) {
 		fds[1].fd = self->wake[0];
 		fds[1].events = POLLIN;
 		timeout = -1;   // timeout not needed
 		nfd++;
+		DEBUGF("backend_poll: poll fds[1]=%ld", fds[1].fd);
 	    }
 
-	    while(do_poll) {
-		int n;
-
-		if ((n = poll(fds, nfd, timeout)) > 0) {
-		    if (fds[0].revents & POLLIN) {
-			EPX_DBGFMT("backend_poll: read fd=%d", fds[0].fd);
-			m.type = EPX_MESSAGE_EVENT_READY;
-			epx_message_send(from, self, &m);
-			do_poll = 0;
+	    if ((n = poll(fds, nfd, timeout)) > 0) {
+		if (fds[0].revents & POLLIN) {
+		    DEBUGF("backend_poll: read fd=%d", fds[0].fd);
+		    message.type = EPX_MESSAGE_EVENT_READY;
+		    epx_message_send(from, self, &message);
+		}
+		else if ((nfd>1) && (fds[1].revents & POLLIN)) {
+		    // system message!
+		    epx_message_t sys_message;
+		    epx_thread_t* sys_from;
+		    epx_message_recv(self, &sys_from, &sys_message);
+		    switch(backend_poll_dispatch(self, &sys_message)) {
+		    case 0: goto poll_message;
+		    case 1: goto poll_message;
+		    case 2: return (*sys_message.upgrade)(arg);
+		    default: goto poll_message;
 		    }
-		    if ((nfd>1) && (fds[1].revents & POLLIN)) {
-			// save poll state
-			priv->state = 1;
-			priv->message = m;
-			priv->from = from;
-			do_poll = 0;
-		    }
 		}
-		else if (n == 0) {  // timeout
-		    do_poll = 0;
-		}
-		else if (n < 0) {
-		    EPX_DBGFMT("backend_poll: error %s (%d)",
-			       errno, strerror(errno));
-		    // check EAGAIN or real error, loop or die
-		}
+	    }
+	    else if (n == 0) {           // timeout
+		goto poll_message;
+	    }
+	    else if (n < 0) {
+		ERRORF("backend_poll: error %s (%d)", errno, strerror(errno));
+		// check EAGAIN or real error, loop or die
+		goto poll_message;
 	    }
 	    break;
 	}
-
-	case EPX_MESSAGE_STOP:
-	    EPX_DBGFMT("backend_poll: stoppped by command");
-	    epx_thread_exit(self);
-	    break;
-	case EPX_MESSAGE_KILL:
-	case EPX_MESSAGE_EVENT_READY:
-	case EPX_MESSAGE_WINDOW_ATTACH:
-	case EPX_MESSAGE_WINDOW_DETACH:
-	case EPX_MESSAGE_WINDOW_ADJUST:
-	case EPX_MESSAGE_WINDOW_SWAP:
-	case EPX_MESSAGE_ADJUST:
-	case EPX_MESSAGE_PIXMAP_ATTACH:
-	case EPX_MESSAGE_PIXMAP_DETACH:
-	case EPX_MESSAGE_PIXMAP_DRAW:
-	case EPX_MESSAGE_PIXMAP_SYNC:
-	case EPX_MESSAGE_SYNC_ACK:
-	default:
-	    EPX_DBGFMT("backend_poll: unhanded message %s",
-		       format_message(&m));
-	    break;
+	case 2: return (*message.upgrade)(arg);
+	default: goto poll_message;
 	}
     }
     return 0;
 }
+
 
 
 /******************************************************************************
@@ -4596,7 +4594,7 @@ static void* backend_main(void* arg)
     backend_priv_t* priv;
     epx_message_t m;
 
-    EPX_DBGFMT("backend_main: started (addr=%p,%p,priv=%p)",
+    DEBUGF("backend_main: started (addr=%p,%p,priv=%p)",
 	       &self, self, self->priv);
 
     if ((priv = (backend_priv_t*) self->priv) == NULL) {
@@ -4614,7 +4612,7 @@ static void* backend_main(void* arg)
     m.handle = priv->handle;
     epx_message_send(priv->poll_thr, self, &m);
 
-    EPX_DBGFMT("backend_main: send EPX_MESSAGE_POLL handle=%ld",
+    DEBUGF("backend_main: send EPX_MESSAGE_POLL handle=%ld",
 	       priv->handle);
 
     enif_keep_resource(nbackend);
@@ -4628,10 +4626,10 @@ static void* backend_main(void* arg)
 
 	if (m.type == EPX_MESSAGE_STOP) {
 	    void* poll_thr_exit = 0;
-	    EPX_DBGFMT("backend_main: stopped by command");
+	    DEBUGF("backend_main: stopped by command");
 	    enif_free_env(priv->env);
 	    epx_thread_stop(priv->poll_thr, self, &poll_thr_exit);
-	    EPX_DBGFMT("backend_main: unref backend refc=%d", backend->refc);
+	    DEBUGF("backend_main: unref backend refc=%d", backend->refc);
 	    epx_object_unref(backend);  // release real backend
 	    enif_free(priv);            // release private data
 	    self->priv = NULL;
@@ -4644,29 +4642,29 @@ static void* backend_main(void* arg)
 	case EPX_MESSAGE_UPGRADE: {
 	    int r;
 	    void* (*upgrade)(void*) = m.upgrade;
-	    EPX_DBGFMT("backend_main: upgrade func=%p", upgrade);
+	    DEBUGF("backend_main: upgrade func=%p", upgrade);
 	    m.upgrade = backend_poll; // relay to poll thread
 	    epx_message_send(priv->poll_thr, 0, &m);
 	    enif_release_resource(nbackend);
 	    r = epx_backend_upgrade(backend);
-	    EPX_DBGFMT("backend_main: backend %s upgrade status = %d",
+	    DEBUGF("backend_main: backend %s upgrade status = %d",
 		       backend->name, r);
 	    return (*upgrade)(arg);   // tail call?
 	}
 
 	case EPX_MESSAGE_SYNC:
-	    EPX_DBGFMT("backend_main: sync");
+	    DEBUGF("backend_main: sync");
 	    epx_message_send(priv->poll_thr, 0, &m); // relay to poll thread
 	    m.type = EPX_MESSAGE_SYNC_ACK;
 	    epx_queue_put(m.reply_q, &m);
-	    EPX_DBGFMT("backend_main: sync ack sent");
+	    DEBUGF("backend_main: sync ack sent");
 	    break;
 
 	case EPX_MESSAGE_EVENT_READY: {
 	    int n;
 	    epx_event_t evt;
 
-	    EPX_DBGFMT("backend_main: EPX_MESSAGE_EVENT_READ");
+	    DEBUGF("backend_main: EPX_MESSAGE_EVENT_READY");
 	    while ((n = epx_backend_event_read(backend, &evt)) > 0) {
 		ERL_NIF_TERM msg;
 		ErlNifPid* pid = evt.window->owner;
@@ -4675,11 +4673,11 @@ static void* backend_main(void* arg)
 		enif_send(0, pid, priv->env, msg);
 		enif_clear_env(priv->env);
 
-		EPX_DBGFMT("backend_main: got event %08X", evt.type);
+		DEBUGF("backend_main: got event %08X n=%d", evt.type, n);
 		if (n == 1)
 		    break;
 	    }
-	    // EPX_DBGFMT("backend_main: send EPX_MESSAGE_POLL");
+	    DEBUGF("backend_main: send EPX_MESSAGE_POLL");
 	    m.type = EPX_MESSAGE_POLL;  // poll for more events
 	    m.handle = priv->handle;
 	    epx_message_send(priv->poll_thr, self, &m);
@@ -4687,18 +4685,18 @@ static void* backend_main(void* arg)
 	}
 
 	case EPX_MESSAGE_WINDOW_ATTACH:
-	    EPX_DBGFMT("backend_main: EPX_MESSAGE_WINDOW_ATTACH");
+	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_ATTACH");
 	    epx_backend_window_attach(backend, m.window);
 	    enif_release_resource(m.window);   // thread safe?
 	    break;
 
 	case EPX_MESSAGE_WINDOW_DETACH:
-	    EPX_DBGFMT("backend_main: EPX_MESSAGE_WINDOW_DETACH");
+	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_DETACH");
 	    epx_window_detach(m.window);
-	    EPX_DBGFMT("backend_main: enif_release_resource: m.window->user");
+	    DEBUGF("backend_main: enif_release_resource: m.window->user");
 	    enif_release_resource(m.window->user);
 	    m.window->user = 0;
-	    EPX_DBGFMT("backend_main: enif_release_resource: m.window");
+	    DEBUGF("backend_main: enif_release_resource: m.window");
 	    if (m.dtor)
 		epx_object_unref(m.window);
 	    else
@@ -4706,28 +4704,28 @@ static void* backend_main(void* arg)
 	    break;
 
 	case EPX_MESSAGE_WINDOW_ADJUST:
-	    EPX_DBGFMT("backend_main: EPX_MESSAGE_WINDOW_ADJUST");
+	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_ADJUST");
 	    epx_window_adjust(m.wadjust.window, m.wadjust.param);
 	    break;
 
 	case EPX_MESSAGE_WINDOW_SWAP:
-	    EPX_DBGFMT("backend_main: EPX_MESSAGE_WINDOW_SWAP");
+	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_SWAP");
 	    epx_window_swap(m.window);
 	    break;
 
 	case EPX_MESSAGE_ADJUST:
-	    EPX_DBGFMT("backend_main: EPX_MESSAGE_ADJUST");
+	    DEBUGF("backend_main: EPX_MESSAGE_ADJUST");
 	    epx_backend_adjust(backend, m.param);
 	    break;
 
 	case EPX_MESSAGE_PIXMAP_ATTACH:
-	    EPX_DBGFMT("backend_main: EPX_MESSAGE_PIXMAP_ATTACH");
+	    DEBUGF("backend_main: EPX_MESSAGE_PIXMAP_ATTACH");
 	    epx_backend_pixmap_attach(backend, m.pixmap);
 	    enif_release_resource(m.pixmap);  // thread safe?
 	    break;
 
 	case EPX_MESSAGE_PIXMAP_DETACH:
-	    EPX_DBGFMT("backend_main: EPX_MESSAGE_PIXMAP_DETACH");
+	    DEBUGF("backend_main: EPX_MESSAGE_PIXMAP_DETACH");
 	    epx_pixmap_detach(m.pixmap);
 	    enif_release_resource(m.pixmap->user);
 	    m.pixmap->user = 0;
@@ -4738,14 +4736,15 @@ static void* backend_main(void* arg)
 	    break;
 
 	case EPX_MESSAGE_PIXMAP_DRAW:
-	    EPX_DBGFMT("backend_main: EPX_MESSAGE_PIXMAP_DRAW");
-	    epx_backend_draw_begin(backend, m.wdraw.window),
-	    epx_backend_pixmap_draw(backend, m.wdraw.pixmap, m.wdraw.window,
-				    m.wdraw.src_x, m.wdraw.src_y,
-				    m.wdraw.dst_x, m.wdraw.dst_y,
-				    m.wdraw.width, m.wdraw.height);
-	    epx_backend_draw_end(backend, m.wdraw.window, 0);
-	    epx_window_swap(m.wdraw.window);
+	    DEBUGF("backend_main: EPX_MESSAGE_PIXMAP_DRAW");
+	    if (!epx_backend_draw_begin(backend, m.wdraw.window)) {
+		epx_backend_pixmap_draw(backend, m.wdraw.pixmap, m.wdraw.window,
+					m.wdraw.src_x, m.wdraw.src_y,
+					m.wdraw.dst_x, m.wdraw.dst_y,
+					m.wdraw.width, m.wdraw.height);
+		epx_backend_draw_end(backend, m.wdraw.window, 0);
+		epx_window_swap(m.wdraw.window);
+	    }
 	    enif_release_resource(m.wdraw.pixmap);
 	    enif_release_resource(m.wdraw.window);
 	    break;
@@ -4753,7 +4752,10 @@ static void* backend_main(void* arg)
 	case EPX_MESSAGE_PIXMAP_SYNC: {
 	    ERL_NIF_TERM msg;
 	    ErlNifPid* pid;
-	    EPX_DBGFMT("backend_main: EPX_MESSAGE_PIXMAP_SYNC");
+	    DEBUGF("backend_main: EPX_MESSAGE_PIXMAP_SYNC");
+
+	    epx_backend_pixmap_sync(backend, m.wsync.pixmap, m.wsync.window);
+			     
 	    pid = m.wsync.window->owner;
 	    msg = enif_make_tuple3(priv->env,
 				   ATOM(epx_event),
@@ -4774,7 +4776,7 @@ static void* backend_main(void* arg)
 	case EPX_MESSAGE_STOP:
 	case EPX_MESSAGE_SYNC_ACK:
 	default:
-	    EPX_DBGFMT("backend_main: unhandled message %s",
+	    DEBUGF("backend_main: unhandled message %s",
 		       format_message(&m));
 	    break;
 	}
@@ -5178,12 +5180,14 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(altivec);
     LOAD_ATOM(mmx);
     LOAD_ATOM(sse2);
+    LOAD_ATOM(avx2);
     LOAD_ATOM(neon);
     LOAD_ATOM(auto);
     LOAD_ATOM(accel);
     LOAD_ATOM(functions);
     LOAD_ATOM(cpu_features);
     LOAD_ATOM(cpu_vendor_name);
+    LOAD_ATOM(cpu_brand_string);
     LOAD_ATOM(cpu_serial_number);
     LOAD_ATOM(cpu_cache_line_size);
 
@@ -5363,6 +5367,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     // Event-types
     LOAD_ATOM(key_press);
     LOAD_ATOM(key_release);
+    LOAD_ATOM(no_auto_repeat);    
     LOAD_ATOM(motion);
     LOAD_ATOM(button_press);
     LOAD_ATOM(button_release);
@@ -5466,7 +5471,7 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 
     epx_set_debug(DLOG_DEFAULT);
 
-    EPX_DBGFMT("epx_load");
+    DEBUGF("epx_load");
     epx_init(EPX_SIMD_AUTO);
     epx_lock_init(epx_nif_locker);
 
@@ -5525,7 +5530,7 @@ static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
     int sync_count;
 
     epx_set_debug(ctx->debug);
-    EPX_DBGFMT("epx_upgrade");
+    DEBUGF("epx_upgrade");
     epx_init(ctx->accel);
     epx_lock_init(epx_nif_locker);
 
@@ -5564,18 +5569,18 @@ static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
     for (bp = ctx->backend_list; bp != NULL; bp = bp->next) {
 	m.type   = EPX_MESSAGE_UPGRADE;
 	m.upgrade = backend_main;
-	EPX_DBGFMT("epx_upgrade: send upgrade func=%p to %p",
+	DEBUGF("epx_upgrade: send upgrade func=%p to %p",
 		   backend_main, bp->main);
 	epx_message_send(bp->main, 0, &m);
 	m.type   = EPX_MESSAGE_SYNC;
 	m.reply_q = &ctx->q;
-	EPX_DBGFMT("epx_upgrade: send sync to %p", bp->main);
+	DEBUGF("epx_upgrade: send sync to %p", bp->main);
 	epx_message_send(bp->main, 0, &m);
 	sync_count += (1+1);  // one extra for backend_poll!
     }
     enif_rwlock_rwunlock(ctx->backend_list_lock);
 
-    EPX_DBGFMT("upx_upgrade: wait for %d sync", sync_count);
+    DEBUGF("upx_upgrade: wait for %d sync", sync_count);
     while(sync_count) {
 	epx_message_t m;
 	int r;
@@ -5584,7 +5589,7 @@ static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
 	if (m.type != EPX_MESSAGE_SYNC_ACK)
 	    return -1;
 	sync_count--;
-	EPX_DBGFMT("upx_upgrade: got sync, %d remain", sync_count);
+	DEBUGF("upx_upgrade: got sync, %d remain", sync_count);
     }
 
     *priv_data = *old_priv_data;
@@ -5596,12 +5601,12 @@ static void epx_unload(ErlNifEnv* env, void* priv_data)
     (void) env;
     epx_ctx_t* ctx = (epx_ctx_t*) priv_data;
 
-    EPX_DBGFMT("epx_unload");
+    DEBUGF("epx_unload");
     // FIXME: stop all backends?
     if (--ctx->ref_count == 0) {
 	void* exit_value;
 	// backend should have been stopped already
-	EPX_DBGFMT("epx_unload: free");
+	DEBUGF("epx_unload: free");
 	epx_thread_stop(ctx->reaper, 0, &exit_value);
 	enif_free(ctx);
     }

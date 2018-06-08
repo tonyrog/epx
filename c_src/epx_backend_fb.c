@@ -111,14 +111,15 @@ epx_backend_t* fb_init(epx_dict_t* param);
 int fb_upgrade(epx_backend_t* be);
 
 static int fb_finish(epx_backend_t*);
-static int fb_pic_attach(epx_backend_t*, epx_pixmap_t*);
-static int fb_pic_detach(epx_backend_t*, epx_pixmap_t*);
+static int fb_pix_attach(epx_backend_t*, epx_pixmap_t*);
+static int fb_pix_detach(epx_backend_t*, epx_pixmap_t*);
 static int fb_begin(epx_window_t*);
 static int fb_end(epx_window_t*,int off_screen);
-static int fb_pic_draw(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
+static int fb_pix_draw(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
 		       int src_x, int src_y, int dst_x, int dst_y,
 		       unsigned int width,
 		       unsigned int height);
+static int fb_pix_sync(epx_backend_t*, epx_pixmap_t*, epx_window_t*);
 static int fb_win_attach(epx_backend_t*, epx_window_t*);
 static int fb_win_detach(epx_backend_t*, epx_window_t*);
 static int fb_win_swap(epx_backend_t*, epx_window_t*);
@@ -133,9 +134,10 @@ static int fb_info(epx_backend_t *backend, epx_dict_t* param);
 static epx_callbacks_t fb_callbacks =
 {
     .finish     = fb_finish,
-    .pix_attach = fb_pic_attach,
-    .pix_detach = fb_pic_detach,
-    .pix_draw   = fb_pic_draw,
+    .pix_attach = fb_pix_attach,
+    .pix_detach = fb_pix_detach,
+    .pix_draw   = fb_pix_draw,
+    .pix_sync   = fb_pix_sync,
     .win_attach = fb_win_attach,
     .win_detach = fb_win_detach,
     .evt_attach = fb_evt_attach,
@@ -806,11 +808,11 @@ static int fb_finish(epx_backend_t* backend)
     return 0;
 }
 
-static int fb_pic_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int fb_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     FbBackend* be = (FbBackend*) backend;
 
-/*    DBG("fb_pic_attach(%p)", pixmap); */
+/*    DBG("fb_pix_attach(%p)", pixmap); */
     if (pixmap->opaque != NULL)
 	return -1;
     epx_object_link(&backend->pixmap_list, pixmap);
@@ -823,7 +825,7 @@ static int fb_pic_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
     return 0;
 }
 
-static int fb_pic_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int fb_pix_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     epx_object_unlink(&backend->pixmap_list, pixmap);
     FbBackend* be = (FbBackend*) backend;
@@ -851,7 +853,7 @@ static int fb_end(epx_window_t* ewin,int off_screen)
   return 0;
 }
 
-static int fb_pic_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
+static int fb_pix_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
 		       epx_window_t* ewin,
 		       int src_x, int src_y, int dst_x, int dst_y,
 		       unsigned int width,
@@ -876,6 +878,15 @@ static int fb_pic_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
 #endif
     }
     nwin->dcount++;
+    return 0;
+}
+
+static int fb_pix_sync(epx_backend_t* backend, epx_pixmap_t* pixmap,
+		       epx_window_t* ewin)
+{
+    (void) backend;
+    (void) pixmap;
+    (void) ewin;
     return 0;
 }
 
@@ -1014,7 +1025,7 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 
 
     /*
-     * Setup be->creen pixmap. clip member will be continously modified by fb_pic_draw
+     * Setup be->creen pixmap. clip member will be continously modified by fb_pix_draw
      */
     be->screen[0].width = be->vinfo.xres;
     be->screen[0].height = be->vinfo.yres;

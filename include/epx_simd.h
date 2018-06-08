@@ -27,6 +27,7 @@
 #define EPX_SIMD_SSE2     0x02
 #define EPX_SIMD_ALTIVEC  0x04
 #define EPX_SIMD_NEON     0x08
+#define EPX_SIMD_AVX2     0x10
 #define EPX_SIMD_EMU      0x80
 #define EPX_SIMD_NONE     0xFF
 
@@ -84,6 +85,7 @@ extern void epx_simd_init(int accel);
 extern int epx_simd_accel(void);
 extern int epx_cpu_cache_line_size(void);
 extern int epx_cpu_vendor_name(char* buf, size_t maxlen);
+extern int epx_cpu_brand_string(char* buf, size_t maxlen);
 extern int epx_cpu_serial_number(unsigned char* buf, size_t maxlen);
 extern int epx_cpu_features(char* buf, size_t maxlen);
 

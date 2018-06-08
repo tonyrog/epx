@@ -309,6 +309,8 @@ int main(int argc, char** argv)
 	accel = EPX_SIMD_MMX;
     else if (strcmp(accel_name, "sse2")==0)
 	accel = EPX_SIMD_SSE2;
+    else if (strcmp(accel_name, "avx2")==0)
+	accel = EPX_SIMD_AVX2;
     else if (strcmp(accel_name, "altivec")==0)
 	accel = EPX_SIMD_ALTIVEC;
     else if (strcmp(accel_name, "neon")==0)
