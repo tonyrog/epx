@@ -72,6 +72,8 @@
 	  static = false,     %% object may not be deleted
 	  hidden = false,     %% show/hiden false,true,all,none
 	  disabled = false,   %% enable disable event input false,true,all,none
+	  relative = true :: boolean(), %% childrens are relative to parent
+	  children_first = true :: boolean(), %% draw/select children first
 	  x = 0   :: integer(),
 	  y = 0   :: integer(),
 	  z = 0   :: integer(),   %% define the order for overlap
@@ -83,8 +85,6 @@
 	  shadow_x :: number(),
 	  shadow_y :: number(),
 	  orientation = horizontal :: horizontal|vertical,
-	  children_first = true :: boolean(),
-	  relative = false :: boolean(),   %% childrens are relative to parent
 	  image   :: epx:epx_pixmap(),
 	  image2   :: epx:epx_pixmap(),
 	  topimage :: epx:epx_pixmap(),
@@ -305,7 +305,7 @@ handle_call({new,ID,Flags}, _From, State) ->
 	    end;
 	{Root,ID1} ->
 	    case widget_find(Root) of
-		false ->
+		error ->
 		    case widget_create(ID,?DEFAULT_WINDOW_ID,Flags,State) of
 			{ok,_W} ->
 			    {reply, ok, State};
