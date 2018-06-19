@@ -84,6 +84,8 @@
 	  border  :: number(),
 	  shadow_x :: number(),
 	  shadow_y :: number(),
+	  round_w :: number(),
+	  round_h :: number(),
 	  orientation = horizontal :: horizontal|vertical,
 	  image   :: epx:epx_pixmap(),
 	  image2   :: epx:epx_pixmap(),
@@ -994,6 +996,10 @@ widget_set([Option|Flags], W) ->
 	    widget_set(Flags, W#widget{shadow_x=X});
 	{shadow_y,Y} when is_integer(Y) ->
 	    widget_set(Flags, W#widget{shadow_y=Y});
+	{round_w,W} when is_integer(W) ->
+	    widget_set(Flags, W#widget{round_w=W});
+	{round_h,H} when is_integer(H) ->
+	    widget_set(Flags, W#widget{round_h=H});
 	{children_first,Bool} when is_boolean(Bool) ->
 	    widget_set(Flags, W#widget{children_first=Bool});
 	{relative,Bool} when is_boolean(Bool) ->
@@ -1168,6 +1174,8 @@ widget_get([Flag|Flags], W, Acc) ->
 	z -> widget_get(Flags, W, [{y,W#widget.z}|Acc]);
 	shadow_x -> widget_get(Flags, W, [{shadow_x,W#widget.shadow_x}|Acc]);
 	shadow_y -> widget_get(Flags, W, [{shadow_y,W#widget.shadow_y}|Acc]);
+	round_w -> widget_get(Flags, W, [{round_w,W#widget.round_w}|Acc]);
+	round_h -> widget_get(Flags, W, [{round_h,W#widget.round_h}|Acc]);
 	relative -> widget_get(Flags, W, [{relative,W#widget.relative}|Acc]);
 	width -> widget_get(Flags, W, [{width,W#widget.width}|Acc]);
 	height -> widget_get(Flags, W, [{height,W#widget.height}|Acc]);
@@ -1693,14 +1701,27 @@ draw_one_background(Win,W,X,Y,Width,Height,N,Color,Image,Anim,Frame) ->
 	    %% lager:debug("draw_one_background: color = ~p\n", [Color]),
 	    epx_gc:set_fill_style(W#widget.fill),  %% fill, fill2!
 	    set_color(W, Color),
-	    case W#widget.type of
-		button ->
-		    epx:draw_roundrect(Win#widget.image,X,Y,Width,Height,8,8);
-		_ ->
+	    if W#widget.type =:= button ->
+		    Rw = if W#widget.round_w =:= undefined -> 8; 
+			    true -> W#widget.round_w
+			 end,
+		    Rh = if W#widget.round_h =:= undefined -> 8; 
+			    true -> W#widget.round_h
+			 end,
+		    epx:draw_roundrect(Win#widget.image,X,Y,Width,Height,Rw,Rh);
+	       W#widget.round_w =/= undefined; W#widget.round_h =/= undefined ->
+		    Rw = if W#widget.round_w =:= undefined -> 0; 
+			    true -> W#widget.round_w
+			 end,
+		    Rh = if W#widget.round_h =:= undefined -> 0; 
+			    true -> W#widget.round_h
+			 end,	    
+		    epx:draw_roundrect(Win#widget.image,X,Y,Width,Height,Rw,Rh);
+	       true ->
 		    epx:draw_rectangle(Win#widget.image,X,Y,Width,Height)
 	    end
     end,
-    %% optionally draw image
+    %% optionally draw image possibly with rect as background
     if is_record(Image, epx_pixmap) ->
 	    lager:debug("drawing image ~p", [Image]),
 	    IWidth  = epx:pixmap_info(Image,width),
@@ -1721,7 +1742,7 @@ draw_one_background(Win,W,X,Y,Width,Height,N,Color,Image,Anim,Frame) ->
        true ->
 	    ok
     end,
-    %% optionally draw animation
+    %% optionally draw animation possibly with image as background
     if is_record(Anim, epx_animation) ->
 	    lager:debug("drawing animation ~p", [Anim]),
 	    AWidth  = epx:animation_info(Anim,width),
