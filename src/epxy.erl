@@ -1086,38 +1086,20 @@ widget_set([Option|Flags], W) ->
 	    end;
 	{font,Font} when is_record(Font,epx_font) ->
 	    widget_set(Flags, W#widget{font=Font});
-	{color,Color} when is_integer(Color), Color >= 0 ->
-	    widget_set(Flags, W#widget{color=Color});
-	{color,ColorName} when is_list(ColorName); is_atom(ColorName) ->
-	    case epx_color:from_name(ColorName) of
-		false ->
-		    lager:error("no such color ~s", [ColorName]),
-		    widget_set(Flags, W);
-		{R,G,B} ->
-		    Color = (255 bsl 24)+(R bsl 16)+(G bsl 8)+B,
-		    widget_set(Flags, W#widget{color=Color})
+	{color,Color} ->
+	    case parse_color(Color) of
+		false -> widget_set(Flags, W);
+		C -> widget_set(Flags, W#widget{color=C})
 	    end;
-	{color2,Color} when is_integer(Color), Color >= 0 ->
-	    widget_set(Flags, W#widget{color2=Color});
-	{color2,ColorName} when is_list(ColorName); is_atom(ColorName) ->
-	    case epx_color:from_name(ColorName) of
-		false ->
-		    lager:error("no such color ~s", [ColorName]),
-		    widget_set(Flags, W);
-		{R,G,B} ->
-		    Color = (255 bsl 24)+(R bsl 16)+(G bsl 8)+B,
-		    widget_set(Flags, W#widget{color2=Color})
+	{color2,Color} ->
+	    case parse_color(Color) of
+		false -> widget_set(Flags, W);
+		C -> widget_set(Flags, W#widget{color2=C})
 	    end;
-	{font_color,Color} when is_integer(Color), Color>=0 ->
-	    widget_set(Flags, W#widget{font_color=Color});
-	{font_color,ColorName} when is_list(ColorName); is_atom(ColorName) ->
-	    case epx_color:from_name(ColorName) of
-		false ->
-		    lager:error("no such text color ~s", [ColorName]),
-		    widget_set(Flags, W);
-		{R,G,B} ->
-		    Color = (R bsl 16)+(G bsl 8)+B,
-		    widget_set(Flags, W#widget{font_color=Color})
+	{font_color,Color} ->
+	    case parse_color(Color) of
+		false -> widget_set(Flags, W);
+		C -> widget_set(Flags, W#widget{font_color=C})
 	    end;
 	{fill, Style} when is_atom(Style) ->
 	    widget_set(Flags, W#widget{fill=Style});
@@ -1927,6 +1909,24 @@ draw_value_marker(Win,Xw,Yw,W, R) ->
 	    epx:draw_rectangle(Win#widget.image,
 			       X, Y - (M div 2), W#widget.width-4, M)
 	    
+    end.
+
+parse_color(Color) when is_integer(Color) ->
+    Color band 16#ffffffff;
+parse_color({R,G,B}) when is_integer(R), is_integer(G), is_integer(B) ->
+    (16#ff bsl 24) bor ((R band 16#ff) bsl 16)
+	bor ((G band 16#ff) bsl 8) bor (B band 16#ff);
+parse_color({A,R,G,B}) when is_integer(A),is_integer(R),
+			    is_integer(G), is_integer(B) ->
+    ((A band 16#ff) bsl 24) bor ((R band 16#ff) bsl 16)
+	bor ((G band 16#ff) bsl 8) bor (B band 16#ff);
+parse_color(Name) when is_list(Name); is_atom(Name) ->
+    case epx_color:from_name(Name) of
+	false ->
+	    lager:error("no such color ~s", [Name]),
+	    false;
+	{R,G,B} ->
+	    (16#ff bsl 24)+(R bsl 16)+(G bsl 8)+B
     end.
 
 %% set font color (alpha is masked)
