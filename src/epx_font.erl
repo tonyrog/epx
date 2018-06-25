@@ -26,7 +26,8 @@
 
 %% API
 -export([start_link/0, start/0, stop/0]).
--export([add_path/1, refresh/0, match/1, i/0]).
+-export([add_path/1, refresh/0, match/1]).
+-export([i/0, i/1]).
 
 -export([dimension/2]).
 -export([info/1, info/2]).
@@ -162,24 +163,35 @@ match_fi(FI, MA) ->
     end.
     
 i() ->
+    i([]).
+
+i(Spec) ->
     io:format("~15s ~5s ~8s ~15s ~4s ~s\n",
 	      ["Name", "Size", "Weight", "Slant", "Res", "File"]),
-    i(ets:first(?TABLE)).
+    MA = match_arg(Spec, #match_arg{}),
+    i_(ets:first(?TABLE),MA).
 
-i(Key) ->
+i_('$end_of_table',_MA) ->
+    ok;
+i_(Key,MA) ->
     case ets:lookup(?TABLE, Key) of
 	[] ->
 	    ok;
-	[FInfo] ->
-	    io:format("~15s ~4w.~w ~8s ~15s ~4w\n",
-		      [FInfo#epx_font_info.family,
-		       FInfo#epx_font_info.point_size div 10,
-		       FInfo#epx_font_info.point_size rem 10,
-		       FInfo#epx_font_info.weight,
-		       FInfo#epx_font_info.slant,
-		       FInfo#epx_font_info.resolution_y
-		      ]),
-	    i(ets:next(?TABLE, Key))
+	[FI] ->
+	    case match_fi(FI, MA) of
+		true ->
+		    io:format("~15s ~4w.~w ~8s ~15s ~4w\n",
+			      [FI#epx_font_info.family,
+			       FI#epx_font_info.point_size div 10,
+			       FI#epx_font_info.point_size rem 10,
+			       FI#epx_font_info.weight,
+			       FI#epx_font_info.slant,
+			       FI#epx_font_info.resolution_y
+			      ]);
+		false ->
+		    ok
+	    end,
+	    i_(ets:next(?TABLE, Key),MA)
     end.
 
 %%--------------------------------------------------------------------
