@@ -30,6 +30,10 @@
 -export([start/1, start_link/1, stop/0]).
 -export([new/2, delete/1, set/2, get/2, add_callback/3, remove_callback/1]).
 
+%% User API - maybe called from user type callbacks and internally
+-export([widget_set/2, widget_get/2]).
+
+%% Utils
 -export([color_add/2, color_interpolate/3, color_add_argb/2, 
 	 color_interpolate_argb/3]).
 
@@ -60,7 +64,7 @@
 %% -define(dbg(F), io:format((F))).
 
 -type widget_type() :: window | panel | button | switch | slider | value |
-		       rectangle | ellipse | line | text.
+		       rectangle | ellipse | line | text | user.
 
 %% convert to map?
 -record(widget,
@@ -73,6 +77,7 @@
 	  hidden = false,     %% show/hiden false,true,all,none
 	  disabled = false,   %% enable disable event input false,true,all,none
 	  relative = true :: boolean(), %% childrens are relative to parent
+	  user,               %% mfa when type=user
 	  children_first = true :: boolean(), %% draw/select children first
 	  x = 0   :: integer(),
 	  y = 0   :: integer(),
@@ -124,7 +129,7 @@
 
 -record(state, {
 	  redraw_timer = undefined,
-	  active = [] :: [#widget{}],   %% active widgets pressed
+	  active = [] :: [string()],    %% active widgets (ids) pressed
 	  subs = [] :: [#sub{}],
 	  fps = 30.0 :: number(),       %% animation frames per second
 	  mpf = 1000/30.0 :: number(),  %% millis per frame
@@ -136,6 +141,35 @@
 	  %% widgets are now stored in process dictionary
 	  %% widgets :: ?DICT_T   %% term => #widget{}
 	 }).
+
+-define(MEMBER(X,E1,E2), 
+	case X of E1->true;E2->true;_->false end).
+-define(MEMBER(X,E1,E2,E3), 
+	case X of E1->true;E2->true;E3->true;_->false end).
+-define(MEMBER(X,E1,E2,E3,E4),
+	case X of E1->true;E2->true;E3->true;E4->true;_->false end).
+-define(MEMBER(X,E1,E2,E3,E4,E5,E6),
+	case X of E1->true;E2->true;E3->true;E4->true;
+	    E5->true;E6->true;_->false end).
+-define(MEMBER(X,E1,E2,E3,E4,E5,E6,E7,E8,E9,E10,E11),
+	case X of 
+	    E1->true;E2->true;E3->true;E4->true;
+	    E5->true;E6->true;E7->true;E8->true;
+	    E9->true;E10->true;E11->true;
+	    _->false end).
+-define(MEMBER(X,E1,E2,E3,E4,E5,E6,E7,E8,E9,E10,
+	       E11,E12,E13,E14,E15,E16,E17,E18,E19,E20,
+	       E21,E22,E23,E24,E25,E26),
+	case X of 
+	    E1->true;E2->true;E3->true;E4->true;
+	    E5->true;E6->true;E7->true;E8->true;
+	    E9->true;E10->true;
+	    E11->true;E12->true;E13->true;E14->true;
+	    E15->true;E16->true;E17->true;E18->true;
+	    E19->true;E20->true;
+	    E21->true;E22->true;E23->true;E24->true;
+	    E25->true;E26->true;
+	    _->false end).
 
 -define(TABS_X_OFFSET, 10).  %% should scale with size!
 -define(TABS_Y_OFFSET, 10).  %% should scale with size!
@@ -270,15 +304,17 @@ init(Args) ->
 handle_call({set,ID,Flags}, _From, State) ->
     case widget_find(ID) of
 	error ->
+	    %% ?dbg("set ~s not found\n", [ID]),
 	    {reply,{error,enoent},State};
 	{ok,W} ->
-	    try widget_set(Flags, W) of
+	    try widget_set(W,Flags) of
 		W1 ->
 		    widget_store(W1),
 		    self() ! refresh,
 		    {reply, ok, State}
 	    catch
 		error:Reason ->
+		    lager:warn("set ~s ~p crashed ~p\n", [ID,Flags,Reason]),
 		    {reply, {error,Reason}, State}
 	    end
     end;
@@ -287,7 +323,7 @@ handle_call({get,ID,Flags},_From,State) ->
 	error ->
 	    {reply,{error,enoent}, State};
 	{ok,W} ->
-	    {reply,{ok,widget_get(Flags, W)}, State}
+	    {reply,{ok,widget_get(W,Flags)}, State}
     end;
 handle_call({new,ID,Flags}, _From, State) ->
     case id_split(ID) of
@@ -480,7 +516,7 @@ id_split(ID) ->
 
 widget_create(ID,WID,Flags,State) ->
     W0 = #widget{ id=ID, font=State#state.default_font },
-    try widget_set(Flags,W0) of
+    try widget_set(W0,Flags) of
 	W1 ->
 	    W2 =
 		if W1#widget.type =:= window ->
@@ -499,12 +535,12 @@ widget_create(ID,WID,Flags,State) ->
 	    {ok,W2}
     catch
 	error:Reason ->
-	    io:format("widget ~p not created ~p\n",
-		      [ID, Reason]),
+	    lager:warn("widget ~p not created ~p\n", [ID, Reason]),
 	    {error,Reason}
     end.
 
 widget_store(W) ->
+    %% ?dbg("widget_store: ~p\n", [W]),
     put(W#widget.id, W),
     W.
 
@@ -552,9 +588,9 @@ handle_event(Event={button_release,Button,Where},Window,State) ->
 	    Ws0 = widgets_at_location(Where,{0,0},WinID,State),
 	    %% also add active widgets not already on the list
 	    Ws1 = lists:foldl(
-		    fun(Wo={W,_Offs},Ws) ->
-			    case widget_member(W, Ws) of
-				false -> [Wo|Ws];
+		    fun({Wid,Offs},Ws) ->
+			    case widget_member(Wid, Ws) of
+				false -> [{widget_fetch(Wid),Offs}|Ws];
 				true -> Ws
 			    end
 		    end, Ws0, State#state.active),
@@ -618,9 +654,9 @@ handle_event(_Event,_W,State) ->
 
 
 %% member in widget,offset list
-widget_member(W, [{W1,_}|Ws]) ->
-    if W#widget.id =:= W1#widget.id -> true;
-       true -> widget_member(W, Ws)
+widget_member(Wid, [{W1,_}|Ws]) ->
+    if Wid =:= W1#widget.id -> true;
+       true -> widget_member(Wid, Ws)
     end;
 widget_member(_W, []) ->
     false.
@@ -642,7 +678,7 @@ widgets_event([{W,XY}|Ws],Event,Window,State) ->
 	W -> 
 	    widgets_event(Ws,Event,Window,State);
 	W1 ->
-	    Active = [{W1,XY}|State#state.active],
+	    Active = [{W1#widget.id,XY}|State#state.active],
 	    widget_store(W1),
 	    self() ! refresh,
 	    widgets_event(Ws,Event,Window,State#state { active=Active })
@@ -720,7 +756,17 @@ select_widget(W,_Pos,_XY,Acc,_State)
 select_widget(W,Pos={Xi,Yi,_Z},XY={X,Y},Acc,_State) ->
     case in_rect(Xi,Yi,X,Y,W#widget.width,W#widget.height) of
 	true ->
-	    [{W,XY}|Acc];
+	    %% Option to allow select even outside bounding box?
+	    if W#widget.type =:= user ->
+		    case user(W#widget.user,select,Pos,W,undefined,XY) of
+			W1 when is_record(W1, widget) ->
+			    [{W1,XY}|Acc];
+			_ ->
+			    Acc
+		    end;
+	       true ->
+		    [{W,XY}|Acc]
+	    end;
 	false ->
 	    case topimage_at_location(W,Pos,XY,W#widget.topimage) of
 		true ->
@@ -820,7 +866,7 @@ animation_at_location(W,X,Y,Anim) ->
       
 
 %% generate a callback event and start animate the button
-widget_event({button_press,_Button,Where},W,XY,Window,State) ->
+widget_event(Event={button_press,_Button,Where},W,XY,Window,State) ->
     case W#widget.type of
 	button ->
 	    callback_all(W#widget.id, State#state.subs, [{value,1}]),
@@ -855,6 +901,13 @@ widget_event({button_press,_Button,Where},W,XY,Window,State) ->
 		    callback_all(W#widget.id,State#state.subs,[{value,Value}]),
 		    W#widget { value = Value }
 	    end;
+	user ->
+	    case user(W#widget.user,event,Event,W,Window,XY) of
+		W1 when is_record(W1, widget) ->
+		    W1;
+		_ ->
+		    W
+	    end;
 	_ ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
@@ -862,7 +915,7 @@ widget_event({button_press,_Button,Where},W,XY,Window,State) ->
 			 [{press,1},{x,X-Xi},{y,Y-Yi}]),
 	    W#widget { state=selected }
     end;
-widget_event({button_release,_Button,Where},W,XY,Window,State) ->
+widget_event(Event={button_release,_Button,Where},W,XY,Window,State) ->
     case W#widget.type of
 	button ->
 	    callback_all(W#widget.id, State#state.subs, [{value,0}]),
@@ -874,6 +927,13 @@ widget_event({button_release,_Button,Where},W,XY,Window,State) ->
 	    W#widget{state=normal};
 	panel ->
 	    W;
+	user ->
+	    case user(W#widget.user,event,Event,W,Window,XY) of
+		W1 when is_record(W1, widget) ->
+		    W1;
+		_ ->
+		    W
+	    end;
 	_ ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
@@ -881,7 +941,7 @@ widget_event({button_release,_Button,Where},W,XY,Window,State) ->
 			 [{press,0},{x,X-Xi},{y,Y-Yi}]),
 	    W#widget { state=normal }
     end;
-widget_event({motion,_Button,Where},W,XY,_Window,State) ->
+widget_event(Event={motion,_Button,Where},W,XY,Window,State) ->
     case W#widget.type of
 	slider ->
 	    case widget_slider_value(W,Where,XY) of
@@ -890,14 +950,27 @@ widget_event({motion,_Button,Where},W,XY,_Window,State) ->
 		    callback_all(W#widget.id,State#state.subs,[{value,Value}]),
 		    W#widget { value = Value }
 	    end;
+	user ->
+	    case user(W#widget.user,event,Event,W,Window,XY) of
+		W1 when is_record(W1, widget) -> W1;
+		_ -> W
+	    end;
 	_ ->
 	    W
     end;
 widget_event(close,W,_XY,_Window,State) ->
     callback_all(W#widget.id,State#state.subs,[{closed,true}]),
     W#widget { state=closed };
-widget_event(_Event,W,_XY,_Window,_State) ->
-    W.
+widget_event(Event,W,XY,Window,_State) ->
+    case W#widget.type of
+	user ->
+	    case user(W#widget.user,event,Event,W,Window,XY) of
+		W1 when is_record(W1, widget) -> W1;
+		_ -> W
+	    end;
+	_ ->
+	    W
+    end.
 
 %% Calcuate the slider value given coordinate X,Y either horizontal or
 %% vertical. return a floating point value between 0 and 1
@@ -953,7 +1026,7 @@ callback(Cb,Signal,ID,Env) when is_function(Cb, 3) ->
     spawn(fun() -> Cb(Signal,ID,Env) end).
 
 window_new(Flags) ->
-    W = widget_set([{type,window}|Flags], #widget{}),
+    W = widget_set(#widget{},[{type,window}|Flags]),
     window_open(W).
 
 window_open(W) ->
@@ -974,227 +1047,221 @@ window_open(W) ->
     Px = epx:pixmap_create(W#widget.width, W#widget.height),
     W#widget { win=Win, image=Px, backing=Backing, events=Events }.
 
-widget_set([Option|Flags], W) ->
-    case Option of
-	{type,Type} when is_atom(Type) -> 
-	    widget_set(Flags, W#widget{type=Type});
-	{id,ID} when is_atom(ID); is_list(ID) ->
-	    widget_set(Flags, W#widget{id=id_string(ID)});
-	{static,Bool} when is_boolean(Bool) -> 
-	    widget_set(Flags, W#widget{static=Bool});
-	{hidden,Arg} when is_boolean(Arg); Arg =:= none; Arg =:= all -> 
-	    widget_set(Flags, W#widget{hidden=Arg});
-	{disabled,Arg} when is_boolean(Arg); Arg =:= none; Arg =:= all -> 
-	    widget_set(Flags, W#widget{disabled=Arg});
-	{x,X} when is_integer(X) ->
-	    widget_set(Flags, W#widget{x=X});
-	{y,Y} when is_integer(Y) ->
-	    widget_set(Flags, W#widget{y=Y});
-	{z,Z} when is_integer(Z) ->
-	    widget_set(Flags, W#widget{z=Z});
-	{shadow_x,X} when is_integer(X) ->
-	    widget_set(Flags, W#widget{shadow_x=X});
-	{shadow_y,Y} when is_integer(Y) ->
-	    widget_set(Flags, W#widget{shadow_y=Y});
-	{round_w,W} when is_integer(W) ->
-	    widget_set(Flags, W#widget{round_w=W});
-	{round_h,H} when is_integer(H) ->
-	    widget_set(Flags, W#widget{round_h=H});
-	{children_first,Bool} when is_boolean(Bool) ->
-	    widget_set(Flags, W#widget{children_first=Bool});
-	{relative,Bool} when is_boolean(Bool) ->
-	    widget_set(Flags, W#widget{relative=Bool});
-	{width,Width} when is_integer(Width), Width>=0 ->
-	    widget_set(Flags, W#widget{width=Width});
-	{height,Height} when is_integer(Height), Height>=0 ->
-	    widget_set(Flags, W#widget{height=Height});
-	{text,Text} when is_list(Text) ->
-	    widget_set(Flags, W#widget{text=Text});
-	{text,Text} when is_atom(Text) ->
-	    widget_set(Flags, W#widget{text=atom_to_list(Text)});
-	{tabs,Tabs} when is_list(Tabs) ->
-	    widget_set(Flags, W#widget{tabs=Tabs});
-	{border, Border} when is_integer(Border) ->
-	    widget_set(Flags, W#widget{border=Border});
-	{orientation, Orientation} when 
-	      Orientation =:= horizontal; Orientation =:= vertical ->
-	    widget_set(Flags, W#widget{orientation = Orientation });
-	{image,File} when is_list(File) ->
-	    case epx_image:load(hex:text_expand(File, [])) of
-		{ok,Image} ->
-		    lager:debug("load image file ~s.",[File]),
-		    case Image#epx_image.pixmaps of
-			[Pixmap] ->
-			    lager:debug("pixmap created ~s.",[File]),
-			    widget_set(Flags, W#widget{image=Pixmap});
-			_ ->
-			    lager:error("no pixmap found in ~s",[File]),
-			    widget_set(Flags, W)
-		    end;
-		Error ->
-		    lager:error("unable to load image file ~s:~p",
-				[File,Error]),
-		    widget_set(Flags, W)
-	    end;
-	{image,Image} when is_record(Image,epx_pixmap) ->
-	    widget_set(Flags, W#widget{image=Image});
-	{topimage,File} when is_list(File) ->
-	    case epx_image:load(hex:text_expand(File, [])) of
-		{ok,Image} ->
-		    lager:debug("load image file ~s.",[File]),
-		    case Image#epx_image.pixmaps of
-			[Pixmap] ->
-			    lager:debug("pixmap created ~s.",[File]),
-			    widget_set(Flags, W#widget{topimage=Pixmap});
-			_ ->
-			    lager:error("no pixmap found in ~s",[File]),
-			    widget_set(Flags, W)
-		    end;
-		Error ->
-		    lager:error("unable to load image file ~s:~p",
-				[File,Error]),
-		    widget_set(Flags, W)
-	    end;
-	{topimage,Image} when is_record(Image,epx_pixmap) ->
-	    widget_set(Flags, W#widget{topimage=Image});
-	{animation, File} when is_list(File) ->
-	    try epx:animation_open(hex:text_expand(File, [])) of 
-		Anim ->
-		    lager:debug("open animation file ~s.",[File]),
-		    widget_set(Flags, W#widget{animation = Anim})	   
-	    catch
-		error:_Reason ->
-		    lager:error("unable to open animation file ~s:~p",
-				[File,_Reason]),
-		    widget_set(Flags, W)
-	    end;	    
-	{frame, Frame} when is_integer(Frame) ->
-	    widget_set(Flags, W#widget{frame=Frame});
-	{frame2, Frame} when is_integer(Frame) ->
-	    widget_set(Flags, W#widget{frame2=Frame});
-	{animate, Style} when Style =:= continuous; Style =:= sequence ->
-	    widget_set(Flags, W#widget{animate=Style});
-	{animate2, Style} when Style =:= continuous; Style =:= sequence ->
-	    widget_set(Flags, W#widget{animate2=Style});
-	{font, Spec} when is_list(Spec) ->
-	    case epx_font:match(Spec) of
+
+widget_set(W,VKs) ->
+    widget_set_(W,VKs,0).
+
+widget_set_(W,[{Key,Value}|Ks],Mask) ->
+    case keypos(Key) of
+	0 ->
+	    lager:debug("key ~p not found, ignored ~p", [Key]),
+	    widget_set_(W,Ks,Mask);
+	I ->
+	    %% ?dbg("widget_set_: ~s ~p[~w] = ~p\n", [W#widget.id,Key,I,Value]),
+	    Mask1 = Mask bor (1 bsl I),
+	    case validate(I,Value) of
+		true ->
+		    widget_set_(setelement(I,W,Value),Ks,Mask1);
+		{true,Value1} ->
+		    widget_set_(setelement(I,W,Value1),Ks,Mask1);
 		false ->
-		    lager:error("unable to load font ~p", [Spec]),
-		    widget_set(Flags, W);
-		{ok,Font} ->
-		    widget_set(Flags, W#widget{font=Font})
-	    end;
-	{font,Font} when is_record(Font,epx_font) ->
-	    widget_set(Flags, W#widget{font=Font});
-	{color,Color} ->
-	    case parse_color(Color) of
-		false -> widget_set(Flags, W);
-		C -> widget_set(Flags, W#widget{color=C})
-	    end;
-	{color2,Color} ->
-	    case parse_color(Color) of
-		false -> widget_set(Flags, W);
-		C -> widget_set(Flags, W#widget{color2=C})
-	    end;
-	{font_color,Color} ->
-	    case parse_color(Color) of
-		false -> widget_set(Flags, W);
-		C -> widget_set(Flags, W#widget{font_color=C})
-	    end;
-	{fill, Style} when is_atom(Style) ->
-	    widget_set(Flags, W#widget{fill=Style});
-	{events,Es} when is_list(Es) ->
-	    widget_set(Flags, W#widget{events=Es});
-	{halign,A} when A =:= left;
-			A =:= right;
-			A =:= center->
-	    widget_set(Flags, W#widget{halign=A});
-	{valign,A} when A =:= top;
-			A =:= bottom;
-			A =:= center->
-	    widget_set(Flags, W#widget{valign=A});
-	{min,Min} when is_number(Min) ->
-	    V = clamp(W#widget.value, Min, W#widget.max),
-	    widget_set(Flags, W#widget{value=V,min=Min});
-	{max,Max} when is_number(Max) ->
-	    V = clamp(W#widget.value, W#widget.min, Max),
-	    widget_set(Flags, W#widget{value=V,max=Max});
-	{value,V} when is_number(V) ->
-	    V1 = clamp(V, W#widget.min, W#widget.max),
-	    widget_set(Flags, W#widget{value=V1});
-	{vscale,V} when is_number(V) ->
-	    widget_set(Flags, W#widget{vscale=V});
-	{format,F} when is_list(F) ->
-	    widget_set(Flags, W#widget{format=F});
-	{state, active} when W#widget.state =/= active ->
-	    widget_set(Flags, W#widget{state=active, value=1});
-	{state, normal} when W#widget.state =/= normal ->
-	    widget_set(Flags, W#widget{state=normal, value=0});
-	{state, _S} ->
-	    lager:debug("state ~s already set ~p", [_S,W#widget.id]),
-	    widget_set(Flags, W);
-	_ ->
-	    lager:debug("option ignored ~p", [Option]),
-	    widget_set(Flags, W)
+		    lager:debug("value ~p for key ~p not valid, ignored", 
+				[Value,Key]),
+		    widget_set_(W,Ks,Mask1)
+	    end
     end;
-widget_set([], W) ->
-    W.
+widget_set_(W,[],Mask) ->
+    %% some special cases 
+    if Mask band (1 bsl #widget.state) =/= 0 ->
+	    case W#widget.state of
+		active -> W#widget { value=1 };
+		normal -> W#widget { value=0 };
+		_ -> W
+	    end;
+       Mask band ((1 bsl #widget.value) bor
+		  (1 bsl #widget.max) bor
+		  (1 bsl #widget.min)) =/= 0 ->
+	    V = clamp(W#widget.value, W#widget.min, W#widget.max),
+	    W#widget { value=V };
+       true ->
+	    W
+    end.
+	    
+widget_get(W,Keys) ->
+    widget_get_(W,Keys,[]).
 
-widget_get(Flags, W) ->
-    widget_get(Flags, W, []).
-
-widget_get([Flag|Flags], W, Acc) ->
-    case Flag of
-	type -> widget_get(Flags, W, [{type,W#widget.type}|Acc]);
-	id -> widget_get(Flags, W, [{type,W#widget.id}|Acc]);
-	window -> widget_get(Flags, W, [{window,W#widget.window}|Acc]);
-	static -> widget_get(Flags, W, [{static,W#widget.static}|Acc]);
-	hidden -> widget_get(Flags, W, [{hidden,W#widget.hidden}|Acc]);
-	disabled -> widget_get(Flags, W, [{disabled,W#widget.disabled}|Acc]);
-	x -> widget_get(Flags, W, [{x,W#widget.x}|Acc]);
-	y -> widget_get(Flags, W, [{y,W#widget.y}|Acc]);
-	z -> widget_get(Flags, W, [{y,W#widget.z}|Acc]);
-	shadow_x -> widget_get(Flags, W, [{shadow_x,W#widget.shadow_x}|Acc]);
-	shadow_y -> widget_get(Flags, W, [{shadow_y,W#widget.shadow_y}|Acc]);
-	round_w -> widget_get(Flags, W, [{round_w,W#widget.round_w}|Acc]);
-	round_h -> widget_get(Flags, W, [{round_h,W#widget.round_h}|Acc]);
-	relative -> widget_get(Flags, W, [{relative,W#widget.relative}|Acc]);
-	width -> widget_get(Flags, W, [{width,W#widget.width}|Acc]);
-	height -> widget_get(Flags, W, [{height,W#widget.height}|Acc]);
-	text -> widget_get(Flags, W, [{text,W#widget.text}|Acc]);
-	tabs -> widget_get(Flags, W, [{tabs,W#widget.tabs}|Acc]);
-	border -> widget_get(Flags, W, [{border,W#widget.border}|Acc]);
-	orientation -> widget_get(Flags, W, [{orientation,W#widget.orientation}|Acc]);
-	image -> widget_get(Flags, W, [{image,W#widget.image}|Acc]);
-	topimage -> widget_get(Flags, W, [{topimage,W#widget.topimage}|Acc]);
-	animation -> widget_get(Flags, W, [{animation,W#widget.animation}|Acc]);
-	frame -> widget_get(Flags, W, [{frame,W#widget.frame}|Acc]);
-	frame2 -> widget_get(Flags, W, [{frame2,W#widget.frame2}|Acc]);
-	animate -> widget_get(Flags, W, [{animate,W#widget.animate}|Acc]);
-	animate2 -> widget_get(Flags, W, [{animate2,W#widget.animate2}|Acc]);
-	font -> widget_get(Flags, W, [{font,W#widget.font}|Acc]);
-	color -> widget_get(Flags, W, [{color,W#widget.color}|Acc]);
-	color2 -> widget_get(Flags, W, [{color2,W#widget.color2}|Acc]);
-	font_color -> widget_get(Flags, W, [{font_color,W#widget.font_color}|Acc]);
-	fill -> widget_get(Flags, W, [{fill,W#widget.fill}|Acc]);
-	events -> widget_get(Flags, W, [{event,W#widget.events}|Acc]);
-	halign -> widget_get(Flags, W, [{halign,W#widget.halign}|Acc]);
-	valign -> widget_get(Flags, W, [{valign,W#widget.valign}|Acc]);
-	min -> widget_get(Flags, W, [{min,W#widget.min}|Acc]);
-	max -> widget_get(Flags, W, [{max,W#widget.max}|Acc]);
-	value -> widget_get(Flags, W, [{value,W#widget.value}|Acc]);
-	vscale -> widget_get(Flags, W, [{vscale,W#widget.value}|Acc]);
-	format -> widget_get(Flags, W, [{format,W#widget.format}|Acc]);
-	state -> widget_get(Flags, W, [{state,W#widget.state}|Acc]);
-	_ -> widget_get(Flags, W, Acc)
+widget_get_(W,[K|Ks],Acc) ->
+    case keypos(K) of
+	0 ->
+	    lager:debug("key not found ~p", [K]),
+	    widget_get_(W,Ks,Acc);
+	I ->
+	    widget_get_(W,Ks,[{K,element(I,W)}|Acc])
     end;
-widget_get([], _W, Acc) ->
+widget_get_(_W,[],Acc) ->
     lists:reverse(Acc).
 
-id_string(X) when is_atom(X) ->
-    atom_to_list(X);
-id_string(X) when is_list(X) ->
-    X.
+keypos(Key) ->
+    case Key of
+	id     -> #widget.id;
+	type   -> #widget.type;
+	window -> #widget.window;
+	state  -> #widget.state;
+	static -> #widget.static;
+	hidden -> #widget.hidden;
+	disabled -> #widget.disabled;
+	relative -> #widget.relative;
+	user -> #widget.user;
+	children_first -> #widget.children_first;
+	x -> #widget.x;
+	y -> #widget.y;
+	z -> #widget.z;
+	width -> #widget.width;
+	height -> #widget.height;
+	text -> #widget.text;
+	tabs -> #widget.tabs;
+	border -> #widget.border;
+	shadow_x -> #widget.shadow_x;
+	shadow_y -> #widget.shadow_y;
+	round_w -> #widget.round_w;
+	round_h -> #widget.round_h;
+	orientation -> #widget.orientation;
+	image -> #widget.image;
+	image2 -> #widget.image2;
+	topimage -> #widget.topimage;
+	animation -> #widget.animation;
+	animation2 -> #widget.animation2;
+	frame -> #widget.frame;
+	frame2 -> #widget.frame2;
+	color -> #widget.color;
+	color2 -> #widget.color2;
+	font_color -> #widget.font_color;
+	fill     -> #widget.fill;
+	events   -> #widget.events;
+	halign   -> #widget.halign;
+	valign   -> #widget.valign;
+	min      -> #widget.min;
+	max      -> #widget.max;
+	format   -> #widget.format;
+	value    -> #widget.value;
+	vscale   -> #widget.vscale;
+	animate  -> #widget.animate;
+	animate2 -> #widget.animate2;
+	font     -> #widget.font;
+	win      -> #widget.win;
+	backing  -> #widget.backing;
+	_ -> 0
+    end.
+
+%% return true|false|{true,Value'}
+validate(#widget.type,Type) ->
+    ?MEMBER(Type,window,panel,button,switch,slider,value,
+	    rectangle,ellipse,line,text,user);
+validate(#widget.id,ID) when is_atom(ID) -> {true, atom_to_list(ID)};
+validate(#widget.id,ID) when is_list(ID) -> true;
+validate(#widget.user,{M,F,As}) -> 
+    is_atom(M) andalso is_atom(F) andalso is_list(As);
+validate(#widget.static,Arg) ->  ?MEMBER(Arg,true,false);
+validate(#widget.hidden,Arg) ->  ?MEMBER(Arg,true,false,none,all);
+validate(#widget.disabled,Arg) -> ?MEMBER(Arg,true,false,none,all);
+validate(#widget.x,Arg) -> is_integer(Arg);
+validate(#widget.y,Arg) -> is_integer(Arg);
+validate(#widget.z,Arg) -> is_integer(Arg);
+validate(#widget.shadow_x,Arg) -> is_integer(Arg);
+validate(#widget.shadow_y,Arg) -> is_integer(Arg);
+validate(#widget.round_w,Arg) -> is_integer(Arg);
+validate(#widget.round_h,Arg) -> is_integer(Arg);
+validate(#widget.children_first,Arg) -> ?MEMBER(Arg,true,false);
+validate(#widget.relative,Arg) ->  ?MEMBER(Arg,true,false);
+validate(#widget.width,Arg) -> is_integer(Arg) andalso (Arg >= 0);
+validate(#widget.height,Arg) -> is_integer(Arg) andalso (Arg >= 0);
+validate(#widget.text,Arg) when is_list(Arg) -> true;
+validate(#widget.text,Arg) when is_atom(Arg) -> {true,atom_to_list(Arg)};
+validate(#widget.tabs,Arg) -> is_list(Arg);
+validate(#widget.border,Arg) -> is_integer(Arg);
+validate(#widget.orientation,Arg) -> ?MEMBER(Arg,horizontal,vertical);
+validate(#widget.image,Arg) -> validate_image(Arg);
+validate(#widget.topimage,Arg) -> validate_image(Arg);
+validate(#widget.animation,Arg) -> validate_animation(Arg);
+validate(#widget.animation2,Arg) -> validate_animation(Arg);
+validate(#widget.frame,Arg) -> is_integer(Arg);
+validate(#widget.frame2,Arg) -> is_integer(Arg);
+validate(#widget.animate,Arg) -> ?MEMBER(Arg,continues,sequence,undefined);
+validate(#widget.animate2,Arg) -> ?MEMBER(Arg,continues,sequence,undefined);
+validate(#widget.font,Arg) -> validate_font(Arg);
+validate(#widget.color,Arg) -> validate_color(Arg);
+validate(#widget.color2,Arg) -> validate_color(Arg);
+validate(#widget.font_color,Arg) -> validate_color(Arg);
+validate(#widget.fill,Arg) -> ?MEMBER(Arg,solid,blend,sum,aalias,textured,none);
+validate(#widget.events,Arg) ->
+    ?MEMBER(Arg,key_press,key_release,motion,button_press,button_release,
+	    focus_in,focus_out,focus,enter,leave,configure,resize,crossing,
+	    button,left,middle,right,wheel,wheel_up,wheel_down,
+	    wheel_left,wheel_right,close,destroyed,all,none);
+validate(#widget.halign,Arg) ->
+    ?MEMBER(Arg,left,right,center);
+validate(#widget.valign,Arg) ->
+    ?MEMBER(Arg,top,bottom,center);
+validate(#widget.min,Arg) -> is_number(Arg);
+validate(#widget.max,Arg) -> is_number(Arg);
+validate(#widget.value,Arg) -> is_number(Arg);
+validate(#widget.vscale,Arg) -> is_number(Arg);
+validate(#widget.format,Arg) -> is_list(Arg);
+validate(#widget.state,Arg) -> ?MEMBER(Arg,active,normal);
+validate(_,_Arg) -> false.
+
+validate_color(Arg) ->
+    case parse_color(Arg) of
+	false -> false;
+	C -> {true,C}
+    end.
+
+validate_font(Arg) when is_list(Arg) ->
+    case epx_font:match(Arg) of
+	false ->
+	    lager:error("unable to load font ~p", [Arg]),
+	    false;
+	{ok,Font} ->
+	    {true,Font}
+    end;
+validate_font(Arg) when is_record(Arg,epx_font) -> true;
+validate_font(_) -> false.
+
+validate_animation(Arg) when is_list(Arg) ->
+    File = text_expand(Arg, []),
+    try epx:animation_open(File) of
+	Anim ->
+	    lager:debug("open animation file ~s.",[File]),
+	    {true,Anim}
+    catch
+	error:_Reason ->
+	    lager:error("unable to open animation file ~s:~p",
+			[File,_Reason]),
+	    false
+    end;
+validate_animation(_) ->
+    false.
+
+validate_image(Arg) when is_list(Arg) ->
+    File = text_expand(Arg, []),
+    case epx_image:load(File) of
+	{ok,Image} ->
+	    lager:debug("load image file ~s.",[File]),
+	    case Image#epx_image.pixmaps of
+		[Pixmap] ->
+		    lager:debug("pixmap created ~s.",[File]),
+		    {true,Pixmap};
+		_ ->
+		    lager:error("no pixmap found in ~s",[File]),
+		    false
+	    end;
+	Error ->
+	    lager:error("unable to load image file ~s:~p",
+			[File,Error]),
+	    false
+    end;
+validate_image(Arg) when is_record(Arg,epx_pixmap) -> true;
+validate_image(_) -> false.
 
 redraw_schedule(State) ->
     if is_reference(State#state.redraw_timer) ->
@@ -1220,6 +1287,7 @@ clock_timeout(State, Time) when is_number(Time), Time >= 0 ->
     trunc(Tick + Time) band ?MAX_TICKS.
     
 redraw_state(State) ->
+    %% ?dbg("redraw state\n"),
     fold_windows(fun clear_window/2, State, State),
     fold_windows(fun draw_window/2, State, State),
     fold_windows(fun update_window/2, State, State),
@@ -1293,7 +1361,7 @@ draw_one(ID, Win, XY, State) ->
 	    lager:error("widget ~p not in the tree", [ID]),
 	    State;
 	[{_,Wid}] ->
-	    %% io:format("draw_one: ~p\n", [Wid]),
+	    %% ?dbg("draw_one: ~p\n", [Wid]),
 	    W = widget_fetch(Wid),
 	    draw_one_(ID, Win, XY, W, W#widget.children_first, State)
     end.
@@ -1346,20 +1414,24 @@ draw_child(ID, Win, XY, State) ->
 draw_widget(W, _Win, _XY, _State) when 
       W#widget.hidden =:= true; W#widget.hidden =:= all ->
     ok;
-draw_widget(W, Win, {X,Y}, _State) ->
+draw_widget(W, Win, XY={X,Y}, _State) ->
     case W#widget.type of
 	window ->
 	    %% do not draw (yet), we may use this
 	    %% to draw multiple/embedded windows in the future
 	    ok;
-
+	user ->
+	    {M,F,As} = W#widget.user,
+	    epx_gc:draw(
+	      fun() ->
+		      apply(M,F,[draw,undefined,W,Win,XY|As])
+	      end);
 	panel ->
 	    epx_gc:draw(
 	      fun() ->
 		      %% draw_background(Win, W),
 		      draw_tabs(Win, X, Y, W)
 	      end);
-
 	button ->
 	    epx_gc:draw(
 	      fun() ->
@@ -1838,14 +1910,12 @@ draw_value_bar(Win,X,Y,W,TopImage) ->
     if is_number(Min),is_number(Max),is_number(Value) ->
 	    R = value_proportion(W),
 	    if is_record(TopImage, epx_pixmap) ->
-		    draw_topimage(Win,X,Y,W, TopImage, R);
+		    draw_topimage(Win,X,Y,W,TopImage,R);
 	       true ->
-		    draw_value_marker(Win,X,Y, W, R)
+		    draw_value_marker(Win,X,Y,W,R)
 	    end;
-		    
        true ->
 	    ok
-		
     end.
 
 value_proportion(W) ->
@@ -1857,15 +1927,15 @@ value_proportion(W) ->
 		       true -> Value
 		    end,
 		(V - Min)/Delta;
-	   Min > Max -> %% reversed axis
-		V = if Value > Min -> Min;
-		       Value < Max -> Max;
-		       true -> Value
-		    end,
-		(V - Max)/Delta;
-	   true ->
-		0.5
-	end.
+       Min > Max -> %% reversed axis
+	    V = if Value > Min -> Min;
+		   Value < Max -> Max;
+		   true -> Value
+		end,
+	    (V - Max)/Delta;
+       true ->
+	    0.5
+    end.
 
 draw_topimage(Win,Xw,Yw, W, TopImage, R) ->
     lager:debug("drawing topimage ~p, orientation ~p, r ~p", 
@@ -1910,6 +1980,11 @@ draw_value_marker(Win,Xw,Yw,W, R) ->
 			       X, Y - (M div 2), W#widget.width-4, M)
 	    
     end.
+
+user({M,F,As},Type,Event,Widget,Window,XY) ->
+    apply(M,F,[Type,Event,Widget,Window,XY|As]);
+user(undefined,_Type,_Event,_Widget,_Window,_XY) ->
+    undefined.
 
 parse_color(Color) when is_integer(Color) ->
     Color band 16#ffffffff;
@@ -2007,3 +2082,88 @@ clamp(undefined,Min,Max) ->
 clamp(V,Min,undefined) when is_number(Min), V < Min -> Min;
 clamp(V,undefined,Max) when is_number(Max), V > Max -> Max;
 clamp(V,_,_) -> V.
+
+%%
+%% Utility to exand environment "variables" in unicode text
+%% variables are written as ${var} where var is a encoded atom
+%% operating system enviroment is accessed through $(VAR)
+%% and application library dir $/app/
+%%
+text_expand(Text, Env) when is_list(Text) ->
+    %% assume unicode character list!
+    text_expand_(Text, [], Env);
+text_expand(Text, Env) when is_binary(Text) ->
+    %% assume utf8 encoded data!
+    text_expand_(unicode:characters_to_list(Text), [], Env).
+
+text_expand_([$$,${|Text], Acc, Env) ->
+    text_expand_collect_(Text, [], [${,$$], env, Acc, Env);
+text_expand_([$$,$(|Text], Acc, Env) ->
+    text_expand_collect_(Text, [], [$(,$$], shell, Acc, Env);
+text_expand_([$$,$/|Text], Acc, Env) ->
+    text_expand_collect_(Text, [], [$/,$$], lib, Acc, Env);
+text_expand_([$\\,C|Text], Acc, Env) ->
+    text_expand_(Text, [C|Acc], Env);
+text_expand_([C|Text], Acc, Env) ->
+    text_expand_(Text, [C|Acc], Env);
+text_expand_([], Acc, _Env) ->
+    lists:reverse(Acc).
+
+
+text_expand_collect_([$)|Text], Var, _Pre, shell, Acc, Env) ->
+    case os:getenv(rev_variable(Var)) of
+	false ->
+	    text_expand_(Text, Acc, Env);
+	Value ->
+	    Acc1 = lists:reverse(Value, Acc),
+	    text_expand_(Text, Acc1, Env)
+    end;
+text_expand_collect_([$/|Text], Var, _Pre, lib, Acc, Env) ->
+    try erlang:list_to_existing_atom(rev_variable(Var)) of
+	App ->
+	    case code:lib_dir(App) of
+		{error,_} ->
+		    text_expand_(Text, Acc, Env);
+		Value ->
+		    Acc1 = lists:reverse(Value, Acc),
+		    text_expand_(Text, Acc1, Env)
+	    end
+    catch
+	error:_ ->
+	    text_expand_(Text, Acc, Env)
+    end;
+text_expand_collect_([$}|Text], Var, _Pre, env, Acc, Env) ->
+    try erlang:list_to_existing_atom(rev_variable(Var)) of
+	Key ->
+	    case lists:keyfind(Key, 1, Env) of
+		false ->
+		    text_expand_(Text, Acc, Env);
+		{_,Val} ->
+		    Value = lists:flatten(io_lib:format("~w", [Val])),
+		    Acc1 = lists:reverse(Value, Acc),
+		    text_expand_(Text, Acc1, Env)
+	    end
+    catch
+	error:_ ->
+	    text_expand_(Text, Acc, Env)
+    end;
+text_expand_collect_([C|Text], Var, Pre, Shell, Acc, Env) ->
+    if C >= $a, C =< $z;
+       C >= $A, C =< $Z;
+       C >= $0, C =< $9;
+       C =:= $_; C =:= $@;
+       C =:= $\s; C =:= $\t -> %% space and tab allowed in begining and end
+	    text_expand_collect_(Text, [C|Var], Pre, Shell, Acc, Env);
+       true ->
+	    %% char not allowed in variable named
+	    text_expand_(Text,  [C | Var ++ Pre ++ Acc], Env)
+    end;
+text_expand_collect_([], Var, Pre, _Shell, Acc, Env) ->
+    text_expand_([],  Var ++ Pre ++ Acc, Env).
+
+rev_variable(Var) ->
+    trim_hd(lists:reverse(trim_hd(Var))).
+
+trim_hd([$\s|Cs]) -> trim_hd(Cs);
+trim_hd([$\t|Cs]) -> trim_hd(Cs);
+trim_hd(Cs) -> Cs.
