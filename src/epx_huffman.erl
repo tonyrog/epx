@@ -24,9 +24,9 @@
 -export([decode_dht/1, encode_dht/1]).
 -export([build_decoder/1,build_encoder/1]).
 
--compile(export_all).
-
 -import(lists, [reverse/1, map/2]).
+
+-export([test_dht/0, test_text/0, test_dht1/0]).
 
 %% A huffman decoder
 decode(Bits, Encoder) when element(1, Encoder) == dict -> %% hack!

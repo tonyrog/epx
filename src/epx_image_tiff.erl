@@ -619,7 +619,7 @@ unpack_bits(Bin) ->
 
 unpack_bits(<<>>, Acc) ->
     list_to_binary(lists:reverse(Acc));
-unpack_bits(<<128:8/signed,Tail/binary>>, Acc) ->
+unpack_bits(<<-128:8/signed,Tail/binary>>, Acc) ->
     unpack_bits(Tail, Acc);
 unpack_bits(<<Code:8/signed,Tail/binary>>, Acc) when Code >= 0 ->
     Count = Code + 1,

@@ -22,7 +22,10 @@
 
 -module(epx_rect).
 
--compile(export_all).
+-export([union/2, union/1]).
+-export([intersect/2, intersect/1]).
+-export([is_subrect/2]).
+-export([add_point/2]).
 
 %% union of two rectangles
 union(undefined, R) -> R;

@@ -26,8 +26,24 @@
 -export([magic/1, mime_type/0, extensions/0,
 	 read_info/1, write_info/2,
 	 read/2, write/2]).
--compile(export_all).
--import(lists, [reverse/1, map/2]).
+
+-export([quantize/2]).
+-export([category_encode/1]).
+-export([nbits/1]).
+-export([nbits8/2]).
+-export([nbits2/2]).
+-export([collect_olymp/3]).
+-export([collect_nikon/3]).
+-export([collect_fujifilm/3]).
+-export([collect_sony/3]).
+-export([collect_other/3]).
+-export([collect_maker_fixme/3]).
+-export([zigzag/1]).
+-export([formap/2, formap/4]).
+-export([forfold/3]).
+-export([emit_record/2]).
+-export([emit_8x8/1, emit_8x8/2]).
+-export([emit_es/3, emit_dht/1, format_bits/1]).
 
 -include("../include/epx_image.hrl").
 -include("epx_jpeg.hrl").
@@ -271,7 +287,7 @@ init_sos(<<N,Bin/binary>>, Ei) ->
 	       ah     = Ah,
 	       al     = Al,
 	       dri = epx_image:attribute(Ei, dri, 0),
-	       def = map(fun({Format,DCt,ACt}) ->
+	       def = lists:map(fun({Format,DCt,ACt}) ->
 				 DCD = epx_image:attribute(Ei,{dht,0,DCt},undefined),
 				 ACD = epx_image:attribute(Ei, {dht,1,ACt},undefined),
 				 {Q,H1,V1} = 
@@ -310,7 +326,7 @@ read_sos(JFd, SOS, Ei) ->
 
 %% Scan each height
 read_mcu_h(JFd,0,Dcs,N,_SOS,MCULs) ->
-    {JFd,reverse(MCULs),Dcs,N};
+    {JFd,lists:reverse(MCULs),Dcs,N};
 read_mcu_h(JFd,H,Dcs,N,SOS,MCULs) ->
     {JFd1,MCUw,Dcs1,N1} = read_mcu_w(JFd,SOS#sos.w,Dcs,N,SOS,[]),
     read_mcu_h(JFd1,H-1,Dcs1,N1,SOS,[MCUw|MCULs]).
@@ -319,7 +335,7 @@ read_mcu_h(JFd,H,Dcs,N,SOS,MCULs) ->
 %% Scan a MCU line
 %%
 read_mcu_w(JFd,0,Dcs0,N,_SOS,MCUs) ->
-    {JFd,reverse(MCUs),Dcs0,N};
+    {JFd,lists:reverse(MCUs),Dcs0,N};
 read_mcu_w(JFd,W,Dcs0,N,SOS,MCUs) ->
     {JFd0,Dcs1} = read_rst(JFd, N, Dcs0, SOS), 
     {JFd1,MCU,Dcs2} = read_mcu(JFd0,SOS#sos.def,Dcs1,[],[]),
@@ -330,12 +346,12 @@ read_mcu(JFd,[C|Cs],[Dc0|DCs],MCU,Dcc) ->
     {JFd1,B,Dc1} = read_block(JFd,C#comp.n,C,Dc0,[]),
     read_mcu(JFd1,Cs,DCs,[B|MCU], [Dc1|Dcc]);
 read_mcu(JFd,[],[],MCU,Dcc) ->
-    {JFd,reverse(MCU),reverse(Dcc)}.
+    {JFd,lists:reverse(MCU),lists:reverse(Dcc)}.
 
 %% convert N consequtive blocks with same with ID
 %% return block list, updated DC value and rest of bits
 read_block(JFd,0,_C, Dc, Acc) ->
-    {JFd,reverse(Acc),Dc};
+    {JFd,lists:reverse(Acc),Dc};
 read_block(JFd,I,C, Dc, Acc) ->
     {JFd1,B0} = decode_block(JFd, Dc, C),
     B1 = dequantize(B0, C#comp.qt),
@@ -401,7 +417,7 @@ cvt_rgb_h([MCUw|MCULs], Ri0, SOS, Pixels) ->
     Pixels2  = cvt_rgb_w(MCUw, SOS, Pixels1),
     cvt_rgb_h(MCULs, Ri0+N, SOS, Pixels2);
 cvt_rgb_h([], _Ri, _SOS, Pixels) ->
-    reverse(Pixels).
+    lists:reverse(Pixels).
 
 cvt_rgb_w([MCU|MCUs], SOS, Pixels) ->
     Pixels1 = cvt_mcu(MCU, SOS#sos.def, Pixels),
@@ -472,7 +488,7 @@ up_sample_h([[A1,A2,A3,A4,B1,B2,B3,B4]|Xs], As, Bs) ->
 		[[A1,A1,A2,A2,A3,A3,A4,A4]|As], 
 		[[B1,B1,B2,B2,B3,B3,B4,B4]|Bs]);
 up_sample_h([], As, Bs) ->
-    {reverse(As), reverse(Bs)}.
+    {lists:reverse(As), lists:reverse(Bs)}.
 
 %% up-sample 8x8 horizontalx2 and verticalx2 16x16
 up_sample_vh(Xs) ->
@@ -673,7 +689,7 @@ decode_dqt(<<>>, IMG) ->
     IMG.
 
 decode_dqt(_Len, Ti, 0, Bits, Acc, IMG) ->
-    DQT = reverse(Acc),
+    DQT = lists:reverse(Acc),
     %% ?dbg("DQT: Table ~w\n", [Ti]), emit_8x8(DQT),
     IMG1 = epx_image:set_attribute(IMG, {dqt,Ti}, DQT),
     decode_dqt(Bits, IMG1);
@@ -750,7 +766,7 @@ decode_block(JFd, Dc0, C) ->
     decode_block_ac(JFd2, 63, [Dc0 + Diff], C).
 
 decode_block_ac(JFd, 0, Acs, _C) ->
-    {JFd, reverse(Acs)};
+    {JFd, lists:reverse(Acs)};
 decode_block_ac(JFd, I, Acs, C) when I > 0 ->
     {JFd1,V} = jfd_decode_bits(JFd,C#comp.acd),
     S = V band 16#f,          %% size
@@ -789,7 +805,7 @@ cat_zeros(0, Acs) -> Acs;
 cat_zeros(I, Acs) -> cat_zeros(I-1, [0|Acs]).
 
 decode_eob(JFd,0,Acs) ->
-    {JFd, reverse(Acs)};
+    {JFd, lists:reverse(Acs)};
 decode_eob(JFd,I,Acs) ->
     decode_eob(JFd,I-1,[0|Acs]).
 
@@ -1157,7 +1173,8 @@ emit_dht(DHT) ->
 emit_ht(x, _Ds) ->  %% not used
     ok;
 emit_ht(Code, Ds) when is_integer(Code) ->
-    io:format("<<2#~s:~w,Bs/bits>> -> ~w;\n", [reverse(Ds), length(Ds), Code]);
+    io:format("<<2#~s:~w,Bs/bits>> -> ~w;\n",
+	      [lists:reverse(Ds), length(Ds), Code]);
 emit_ht({L,R}, Ds) ->
     emit_ht(L, [$0|Ds]),
     emit_ht(R, [$1|Ds]).
