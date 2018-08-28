@@ -115,7 +115,8 @@
 	  animate2 = undefined,         %% animation state of second animation.
 	  font    :: epx:epx_font(),    %% type=text|button|value
 	  win     :: epx:epx_window(),  %% type = window
-	  backing :: epx:epx_pixmap()
+	  backing :: epx:epx_pixmap(),
+	  user_data = undefined :: term() %% what ever
 	}).
 
 -record(sub,
@@ -314,7 +315,7 @@ handle_call({set,ID,Flags}, _From, State) ->
 		    {reply, ok, State}
 	    catch
 		error:Reason ->
-		    lager:warn("set ~s ~p crashed ~p\n", [ID,Flags,Reason]),
+		    lager:warning("set ~s ~p crashed ~p\n", [ID,Flags,Reason]),
 		    {reply, {error,Reason}, State}
 	    end
     end;
@@ -334,7 +335,7 @@ handle_call({new,ID,Flags}, _From, State) ->
 			{ok,_W} ->
 			    {reply, ok, State};
 			Error={error,Reason} ->
-			    lager:warn("widget ~p not created ~p\n",
+			    lager:warning("widget ~p not created ~p\n",
 				       [ID, Reason]),
 			    {reply, Error, State}
 		    end;
@@ -348,7 +349,7 @@ handle_call({new,ID,Flags}, _From, State) ->
 			{ok,_W} ->
 			    {reply, ok, State};
 			Error={error,Reason} ->
-			    lager:warn("widget ~p not created ~p\n",
+			    lager:warning("widget ~p not created ~p\n",
 				       [ID, Reason]),
 			    {reply, Error, State}
 		    end;
@@ -357,7 +358,7 @@ handle_call({new,ID,Flags}, _From, State) ->
 			{ok,_W} ->
 			    {reply, ok, State};
 			Error={error,Reason} ->
-			    lager:warn("widget ~p not created ~p\n",
+			    lager:warning("widget ~p not created ~p\n",
 				       [ID, Reason]),
 			    {reply, Error, State}
 		    end;
@@ -366,7 +367,7 @@ handle_call({new,ID,Flags}, _From, State) ->
 			{ok,_W1} ->
 			    {reply, ok, State};
 			Error={error,Reason} ->
-			    lager:warn("widget ~p not created ~p\n",
+			    lager:warning("widget ~p not created ~p\n",
 				       [ID, Reason]),
 			    {reply, Error, State}
 		    end
@@ -518,12 +519,15 @@ widget_create(ID,WID,Flags,State) ->
     W0 = #widget{ id=ID, font=State#state.default_font },
     try widget_set(W0,Flags) of
 	W1 ->
-	    W2 =
-		if W1#widget.type =:= window ->
-			window_open(W1);
-		   true ->
-			W1#widget { window=WID }
-		end,
+	    W2 = case W1#widget.type of
+		     window ->
+			 window_open(W1);
+		     user ->
+			 W11 = W1#widget { window=WID },
+			 user(W11#widget.user,init,undefined,W11,WID,undefined);
+		     _ ->
+			 W1#widget { window=WID }
+		 end,
 	    Y = if W2#widget.type =:= window ->
 			W2#widget.id;
 		   true ->
@@ -535,7 +539,7 @@ widget_create(ID,WID,Flags,State) ->
 	    {ok,W2}
     catch
 	error:Reason ->
-	    lager:warn("widget ~p not created ~p\n", [ID, Reason]),
+	    lager:warning("widget ~p not created ~p\n", [ID, Reason]),
 	    {error,Reason}
     end.
 
@@ -1150,6 +1154,7 @@ keypos(Key) ->
 	font     -> #widget.font;
 	win      -> #widget.win;
 	backing  -> #widget.backing;
+	user_data -> #widget.user_data;
 	_ -> 0
     end.
 
@@ -1208,6 +1213,7 @@ validate(#widget.value,Arg) -> is_number(Arg);
 validate(#widget.vscale,Arg) -> is_number(Arg);
 validate(#widget.format,Arg) -> is_list(Arg);
 validate(#widget.state,Arg) -> ?MEMBER(Arg,active,normal);
+validate(#widget.user_data,_Arg) -> true;
 validate(_,_Arg) -> false.
 
 validate_color(Arg) ->
@@ -1328,11 +1334,11 @@ clear_window(Win,_State) ->
     epx:pixmap_fill(Win#widget.image, Win#widget.color).
 
 update_window(Win,_State) ->
+    %% some framebuf flicker unless we draw into a copy!
     epx:pixmap_copy_to(Win#widget.image, Win#widget.backing),
-    epx:pixmap_draw(Win#widget.backing, 
-		    Win#widget.win, 0, 0, 0, 0, 
-		    Win#widget.width, 
-		    Win#widget.height).
+    epx:pixmap_draw(Win#widget.backing,
+		    Win#widget.win,0,0,0,0,
+		    Win#widget.width,Win#widget.height).
 
 unmap_window(Win,_State) ->
     epx:window_detach(Win#widget.win),
@@ -1421,10 +1427,9 @@ draw_widget(W, Win, XY={X,Y}, _State) ->
 	    %% to draw multiple/embedded windows in the future
 	    ok;
 	user ->
-	    {M,F,As} = W#widget.user,
 	    epx_gc:draw(
 	      fun() ->
-		      apply(M,F,[draw,undefined,W,Win,XY|As])
+		      user(W#widget.user,draw,undefined,W,Win,XY)
 	      end);
 	panel ->
 	    epx_gc:draw(
