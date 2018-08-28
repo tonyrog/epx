@@ -172,10 +172,12 @@
 	      epx_window_info_key/0]).
 
 -type unsigned() :: non_neg_integer().
--type float01() :: float().  %% 0.0 .. 1.0  way can we not write this?
+-type float01() :: float().  %% 0.0 .. 1.0  why can we not write this?
 %% 0.8 fixpoint type or float in 0.0..1.0
 -type fix8() :: byte() | float01().
 -type void() :: 'ok'.
+-type coord() :: integer() | float().
+-type dim() :: unsigned() | float().
 
 -opaque epx_backend()   ::  #epx_backend{} | undefined.
 -opaque epx_window()    ::  #epx_window{}  | undefined.
@@ -184,8 +186,8 @@
 -opaque epx_gc()        ::  #epx_gc{}  | undefined.
 -opaque epx_dict()      ::  #epx_dict{}  | undefined.
 -opaque epx_animation() ::  #epx_animation{}  | undefined.
--type epx_rect() :: { X::integer(), Y::integer(),
-		      Width::unsigned(), Height::unsigned() }.
+-type epx_rect() :: { X::coord(), Y::coord(),
+		      Width::dim(), Height::dim() }.
 
 -type epx_color3() :: {R::byte(),G::byte(),B::byte()}.
 -type epx_color4() :: {A::byte(),R::byte(),G::byte(),B::byte()}.
@@ -354,7 +356,7 @@ simd_set(_Accel) ->
 %% @doc
 %%   Create a pixmap of size WidthxHeight using the pixel format 'argb'
 %% @end
--spec pixmap_create(Width::non_neg_integer(), Height::non_neg_integer()) ->
+-spec pixmap_create(Width::dim(), Height::dim()) ->
 			   epx_pixmap().
 pixmap_create(Width,Height) ->
     pixmap_create(Width,Height,argb).
@@ -362,7 +364,7 @@ pixmap_create(Width,Height) ->
 %% @doc
 %%   Create a pixmap of size WidthxHeight with the giiven pixel format
 %% @end
--spec pixmap_create(Width::non_neg_integer(), Height::non_neg_integer(),
+-spec pixmap_create(Width::dim(), Height::dim(),
 		    Format::epx_pixel_format()) ->
 			   epx_pixmap().
 
@@ -386,8 +388,8 @@ pixmap_copy(_Src) ->
 %%   neighbouring pixels to be safe.
 %% @end
 -spec pixmap_sub_pixmap(Src::epx_pixmap(),
-			X::integer(), Y::integer(),
-			Width::unsigned(), Height::unsigned()) ->
+			X::coord(), Y::coord(),
+			Width::dim(), Height::dim()) ->
 			       epx_pixmap().
 
 pixmap_sub_pixmap(_Src, _X, _Y, _Width, _Height) ->
@@ -496,7 +498,7 @@ pixmap_flip(_Pixmap) ->
 %%  in the `Dst' pixmap.
 %% @end
 -spec pixmap_scale(Src::epx_pixmap(),Dst::epx_pixmap(),
-		   Width::unsigned(), Height::unsigned()) -> void().
+		   Width::dim(), Height::dim()) -> void().
 pixmap_scale(_Src, _Dst, _Width, _Height) ->
     erlang:error(nif_not_loaded).
 
@@ -505,8 +507,8 @@ pixmap_scale(_Src, _Dst, _Width, _Height) ->
 %%  in the `Dst' pixmap at offset `XDst', `YDst'.
 %% @end
 -spec pixmap_scale_area(Src::epx_pixmap(),Dst::epx_pixmap(),
-			XDst::integer(),YDst::integer(),
-			Width::unsigned(), Height::unsigned()) -> void().
+			XDst::coord(),YDst::coord(),
+			Width::dim(), Height::dim()) -> void().
 pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height) ->
     pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height, []).
 
@@ -515,8 +517,8 @@ pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height) ->
 %%  in the `Dst' pixmap at offset `XDst', `YDst'.
 %% @end
 -spec pixmap_scale_area(Src::epx_pixmap(),Dst::epx_pixmap(),
-			XDst::integer(),YDst::integer(),
-			Width::unsigned(), Height::unsigned(),
+			XDst::coord(),YDst::coord(),
+			Width::dim(), Height::dim(),
 			Flags::epx_flags()) -> void().
 pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height, _Flags) ->
     WSrc = pixmap_info(_Src, width),
@@ -530,10 +532,10 @@ pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height, _Flags) ->
 %%  in the `Dst' pixmap at offset `XDst', `YDst'.
 %% @end
 -spec pixmap_scale_area(Src::epx_pixmap(),Dst::epx_pixmap(),
-			XSrc::integer(),YSrc::integer(),
-			XDst::integer(),YDst::integer(),
-			WSrc::unsigned(),HSrc::unsigned(),
-			WDst::unsigned(), HDst::unsigned(),
+			XSrc::coord(),YSrc::coord(),
+			XDst::coord(),YDst::coord(),
+			WSrc::dim(),HSrc::dim(),
+			WDst::dim(), HDst::dim(),
 			Flags::epx_flags()) -> void().
 pixmap_scale_area(_Src, _Dst,
 		  _XSrc, _YSrc, _XDst, _YDst,
@@ -546,7 +548,7 @@ pixmap_scale_area(_Src, _Dst,
 %%   a pixel in {A,R,G,B} form or {255,0,0,0} (black) if position is
 %%   outside the pixmap.
 %% @end
--spec pixmap_get_pixel(Src::epx_pixmap(), X::integer(), Y::integer()) ->
+-spec pixmap_get_pixel(Src::epx_pixmap(), X::coord(), Y::coord()) ->
 			      epx_color4().
 pixmap_get_pixel(_Pixmap,_X,_Y) ->
     erlang:error(nif_not_loaded).
@@ -554,8 +556,8 @@ pixmap_get_pixel(_Pixmap,_X,_Y) ->
 %%  Read the pixels in the rectangle given by (`X',`Y',`Width',`Height')
 %%  return the pixels data in a "native" form as a binary.
 %% @end
--spec pixmap_get_pixels(Src::epx_pixmap(), X::integer(), Y::integer(),
-			Width::unsigned(), Height::unsigned()) ->
+-spec pixmap_get_pixels(Src::epx_pixmap(), X::coord(), Y::coord(),
+			Width::dim(), Height::dim()) ->
 			       binary().
 pixmap_get_pixels(_Pixmap,_X,_Y,_W,_H) ->
     erlang:error(nif_not_loaded).
@@ -563,7 +565,7 @@ pixmap_get_pixels(_Pixmap,_X,_Y,_W,_H) ->
 %% @doc
 %%  Write the pixel value to position (`X',`Y') in the pixmap `Dst'
 %% @end
--spec pixmap_put_pixel(Dst::epx_pixmap(), X::integer(), Y::integer(),
+-spec pixmap_put_pixel(Dst::epx_pixmap(), X::coord(), Y::coord(),
 		       Value::epx_color()) -> void().
 pixmap_put_pixel(Dst,X,Y,Value) ->
     pixmap_put_pixel(Dst,X,Y,0,Value).
@@ -572,7 +574,7 @@ pixmap_put_pixel(Dst,X,Y,Value) ->
 %%  Write the pixel value to position (`X',`Y') in the pixmap `Dst'
 %%  using the flags in `Flags'.
 %% @end
--spec pixmap_put_pixel(Dst::epx_pixmap(), X::integer(), Y::integer(),
+-spec pixmap_put_pixel(Dst::epx_pixmap(), X::coord(), Y::coord(),
 		       Flags::epx_flags(),Value::epx_color()) -> void().
 pixmap_put_pixel(_Dst,_X,_Y,_Flags,_Value) ->
     erlang:error(nif_not_loaded).
@@ -582,8 +584,8 @@ pixmap_put_pixel(_Dst,_X,_Y,_Flags,_Value) ->
 %%  the rectangular area given by (`X',`Y',`Width',`Height') in the
 %%  pixmap `Dst'.
 %% @end
--spec pixmap_put_pixels(Dst::epx_pixmap(),X::integer(),Y::integer(),
-			Width::unsigned(),Height::unsigned(),
+-spec pixmap_put_pixels(Dst::epx_pixmap(),X::coord(),Y::coord(),
+			Width::dim(),Height::dim(),
 			Format::epx_pixel_format(), Data::iolist()) ->
 			       void().
 
@@ -595,8 +597,8 @@ pixmap_put_pixels(Dst,X,Y,Width,Height,Format,Data) ->
 %%  the rectangular area given by (`X',`Y',`Width',`Height') using
 %%  the flags in `Flags' in the pixmap 'Dst'.
 %% @end
--spec pixmap_put_pixels(Dst::epx_pixmap(),X::integer(),Y::integer(),
-			Width::unsigned(),Height::unsigned(),
+-spec pixmap_put_pixels(Dst::epx_pixmap(),X::coord(),Y::coord(),
+			Width::dim(),Height::dim(),
 			Format::epx_pixel_format(), Data::iolist(),
 			Flags::epx_flags()) ->
 			       void().
@@ -610,9 +612,9 @@ pixmap_put_pixels(_Dst,_X,_Y,_Width,_Height,_Format,_Data,_Flags) ->
 %% @end
 
 -spec pixmap_copy_area(Src::epx_pixmap(),Dst::epx_pixmap(),
-		       XSrc::integer(),YSrc::integer(),
-		       XDst::integer(),YDst::integer(),
-		       Width::unsigned(),Height::unsigned()) ->
+		       XSrc::coord(),YSrc::coord(),
+		       XDst::coord(),YDst::coord(),
+		       Width::dim(),Height::dim()) ->
 			      void().
 
 pixmap_copy_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height) ->
@@ -626,9 +628,9 @@ pixmap_copy_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height) ->
 %% @end
 
 -spec pixmap_copy_area(Src::epx_pixmap(),Dst::epx_pixmap(),
-		       XSrc::integer(),YSrc::integer(),
-		       XDst::integer(),YDst::integer(),
-		       Width::unsigned(),Height::unsigned(),
+		       XSrc::coord(),YSrc::coord(),
+		       XDst::coord(),YDst::coord(),
+		       Width::dim(),Height::dim(),
 		       Flags::epx_flags()) -> void().
 
 pixmap_copy_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
@@ -644,9 +646,9 @@ pixmap_copy_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
 
 -spec pixmap_alpha_area(Src::epx_pixmap(),Dst::epx_pixmap(),
 			Alpha::fix8(),
-			XSrc::integer(),YSrc::integer(),
-			XDst::integer(),YDst::integer(),
-			Width::unsigned(),Height::unsigned()) -> void().
+			XSrc::coord(),YSrc::coord(),
+			XDst::coord(),YDst::coord(),
+			Width::dim(),Height::dim()) -> void().
 
 pixmap_alpha_area(_Src,_Dst,_Alpha,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     erlang:error(nif_not_loaded).
@@ -658,9 +660,9 @@ pixmap_alpha_area(_Src,_Dst,_Alpha,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
 %% @end
 -spec pixmap_fade_area(Src::epx_pixmap(),Dst::epx_pixmap(),
 		       Fade::fix8(),
-		       XSrc::integer(),YSrc::integer(),
-		       XDst::integer(),YDst::integer(),
-		       Width::unsigned(),Height::unsigned()) -> void().
+		       XSrc::coord(),YSrc::coord(),
+		       XDst::coord(),YDst::coord(),
+		       Width::dim(),Height::dim()) -> void().
 pixmap_fade_area(_Src,_Dst,_Fade,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     erlang:error(nif_not_loaded).
 
@@ -671,17 +673,17 @@ pixmap_fade_area(_Src,_Dst,_Fade,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
 %%  the luminance value as alpha.
 %% @end
 -spec pixmap_shadow_area(Src::epx_pixmap(),Dst::epx_pixmap(),
-			 XSrc::integer(),YSrc::integer(),
-			 XDst::integer(),YDst::integer(),
-			 Width::unsigned(),Height::unsigned()) -> void().
+			 XSrc::coord(),YSrc::coord(),
+			 XDst::coord(),YDst::coord(),
+			 Width::dim(),Height::dim()) -> void().
 
 pixmap_shadow_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height) ->
     pixmap_shadow_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height,[]).
 
 -spec pixmap_shadow_area(Src::epx_pixmap(),Dst::epx_pixmap(),
-			 XSrc::integer(),YSrc::integer(),
-			 XDst::integer(),YDst::integer(),
-			 Width::unsigned(),Height::unsigned(),
+			 XSrc::coord(),YSrc::coord(),
+			 XDst::coord(),YDst::coord(),
+			 Width::dim(),Height::dim(),
 			 Flags::epx_flags()) -> void().
 pixmap_shadow_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
     erlang:error(nif_not_loaded).
@@ -710,10 +712,10 @@ pixmap_filter_area(_Src,_Dst,_Filter,
 
 -spec pixmap_rotate_area(Src::epx_pixmap(),Dst::epx_pixmap(),
 			 Angle::float(),
-			 XSrc::integer(),YSrc::integer(),
-			 XCSrc::integer(),YCSrc::integer(),
-			 XCDst::integer(),YCDst::integer(),
-			 Width::unsigned(),Height::unsigned(),
+			 XSrc::coord(),YSrc::coord(),
+			 XCSrc::coord(),YCSrc::coord(),
+			 XCDst::coord(),YCDst::coord(),
+			 Width::dim(),Height::dim(),
 			 Flags::epx_flags()) -> void().
 
 pixmap_rotate_area(_Src,_Dst,_Angle,
@@ -751,9 +753,9 @@ pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
 %% @end
 -spec pixmap_operation_area(Src::epx_pixmap(),Dst::epx_pixmap(),
 			    Op::epx_pixmap_operation(),
-			    XSrc::integer(),YSrc::integer(),
-			    XDst::integer(),YDst::integer(),
-			    Width::unsigned(),Height::unsigned()) -> void().
+			    XSrc::coord(),YSrc::coord(),
+			    XDst::coord(),YDst::coord(),
+			    Width::dim(),Height::dim()) -> void().
 
 pixmap_operation_area(_Src,_Dst,_Op,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     erlang:error(nif_not_loaded).
@@ -788,9 +790,9 @@ pixmap_detach(_Pixmap) ->
 %%   operation to succeed.
 %% @end
 -spec pixmap_draw(Pixmap::epx_pixmap(), Win::epx_window(),
-		  XSrc::integer(),YSrc::integer(),
-		  XDst::integer(),YDst::integer(),
-		  Width::unsigned(),Height::unsigned()) -> void().
+		  XSrc::coord(),YSrc::coord(),
+		  XDst::coord(),YDst::coord(),
+		  Width::dim(),Height::dim()) -> void().
 
 pixmap_draw(_Pixmap, _Win, _XSrx, _YSrc, _XDst, _YDst, _Width, _Height) ->
     erlang:error(nif_not_loaded).
@@ -1102,15 +1104,15 @@ backend_adjust(_Backend, _Dict) ->
     erlang:error(nif_not_loaded).
 
 %% Window
--spec window_create(X::integer(), Y::integer(),
-		    Width::non_neg_integer(),Height::non_neg_integer()) ->
+-spec window_create(X::coord(), Y::coord(),
+		    Width::dim(),Height::dim()) ->
 			   epx_window().
 
 window_create(_X,_Y,_Width,_Height) ->
     erlang:error(nif_not_loaded).
 
--spec window_create(X::integer(), Y::integer(),
-		    Width::non_neg_integer(),Height::non_neg_integer(),
+-spec window_create(X::coord(), Y::coord(),
+		    Width::dim(),Height::dim(),
 		    Flags::epx_window_event_flags()) ->
 			   epx_window().
 

@@ -777,6 +777,32 @@ DECL_ATOM(green);
 DECL_ATOM(blue);
 DECL_ATOM(calpha);
 
+// some primitive argument access functions
+
+static int get_coord(ErlNifEnv* env, const ERL_NIF_TERM term, int* coord)
+{
+    if (!enif_get_int(env, term, coord)) {
+	double fcoord;
+	if (!enif_get_double(env, term, &fcoord))
+	    return 0;
+	*coord = (int) fcoord;
+    }
+    return 1;
+}
+
+static int get_dim(ErlNifEnv* env, const ERL_NIF_TERM term, unsigned int* dim)
+{
+    if (!enif_get_uint(env, term, dim)) {
+	double fdim;
+	if (!enif_get_double(env, term, &fdim))
+	    return 0;
+	if (fdim < 0)
+	    return 0;
+	*dim = (unsigned int) fdim;
+    }
+    return 1;
+}
+
 /******************************************************************************
  *
  *   Message queue
@@ -1870,13 +1896,13 @@ static int get_rect(ErlNifEnv* env, const ERL_NIF_TERM term,
 	return 0;
     if (arity != 4)
 	return 0;
-    if (!enif_get_int(env, elem[0], &r.xy.x))
+    if (!get_coord(env, elem[0], &r.xy.x))
 	return 0;
-    if (!enif_get_int(env, elem[1], &r.xy.y))
+    if (!get_coord(env, elem[1], &r.xy.y))
 	return 0;
-    if (!enif_get_uint(env, elem[2], &r.wh.width))
+    if (!get_dim(env, elem[2], &r.wh.width))
 	return 0;
-    if (!enif_get_uint(env, elem[3], &r.wh.height))
+    if (!get_dim(env, elem[3], &r.wh.height))
 	return 0;
     *rect = r;
     return 1;
@@ -2326,9 +2352,9 @@ static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc,
     epx_pixmap_t* dst;
     ERL_NIF_TERM t;
 
-    if (!enif_get_uint(env, argv[0], &width))
+    if (!get_dim(env, argv[0], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[1], &height))
+    if (!get_dim(env, argv[1], &height))
 	return enif_make_badarg(env);
     if (!get_pixel_format(env, argv[2], &fmt))
 	return enif_make_badarg(env);
@@ -2414,13 +2440,13 @@ static ERL_NIF_TERM pixmap_sub_pixmap(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[1], &x))
+    if (!get_coord(env, argv[1], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &y))
+    if (!get_coord(env, argv[2], &y))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[3], &width))
+    if (!get_dim(env, argv[3], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[4], &height))
+    if (!get_dim(env, argv[4], &height))
 	return enif_make_badarg(env);
 
     dst = epx_resource_alloc(&pixmap_res,sizeof(epx_pixmap_t));
@@ -2473,9 +2499,9 @@ static ERL_NIF_TERM pixmap_get_pixel(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[1], &x))
+    if (!get_coord(env, argv[1], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &y))
+    if (!get_coord(env, argv[2], &y))
 	return enif_make_badarg(env);
     p = epx_pixmap_get_pixel(src, x, y);
     return make_color(env, p);
@@ -2498,13 +2524,13 @@ static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[1], &x))
+    if (!get_coord(env, argv[1], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &y))
+    if (!get_coord(env, argv[2], &y))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[3], &w))
+    if (!get_dim(env, argv[3], &w))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[4], &h))
+    if (!get_dim(env, argv[4], &h))
 	return enif_make_badarg(env);
 
     // special case !parent, x=0, y=0, w=0, h=0 => all pixels (with alignment)
@@ -2558,9 +2584,9 @@ static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[1], &x))
+    if (!get_coord(env, argv[1], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &y))
+    if (!get_coord(env, argv[2], &y))
 	return enif_make_badarg(env);
     if (!get_flags(env, argv[3], &flags))
 	return enif_make_badarg(env);
@@ -2585,13 +2611,13 @@ static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc,
 
     if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[1], &x))
+    if (!get_coord(env, argv[1], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &y))
+    if (!get_coord(env, argv[2], &y))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[3], &width))
+    if (!get_dim(env, argv[3], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[4], &height))
+    if (!get_dim(env, argv[4], &height))
 	return enif_make_badarg(env);
     if (!get_pixel_format(env, argv[5], &fmt))
 	return enif_make_badarg(env);
@@ -2682,9 +2708,9 @@ static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[2], &width))
+    if (!get_dim(env, argv[2], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[3], &height))
+    if (!get_dim(env, argv[3], &height))
 	return enif_make_badarg(env);
     epx_pixmap_scale(src, dst, width, height);
     return ATOM(ok);
@@ -2710,21 +2736,21 @@ static ERL_NIF_TERM pixmap_scale_area(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x_src))
+    if (!get_coord(env, argv[2], &x_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y_src))
+    if (!get_coord(env, argv[3], &y_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &x_dst))
+    if (!get_coord(env, argv[4], &x_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &y_dst))
+    if (!get_coord(env, argv[5], &y_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[6], &w_src))
+    if (!get_dim(env, argv[6], &w_src))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[7], &h_src))
+    if (!get_dim(env, argv[7], &h_src))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[8], &w_dst))
+    if (!get_dim(env, argv[8], &w_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[9], &h_dst))
+    if (!get_dim(env, argv[9], &h_dst))
 	return enif_make_badarg(env);
     if (!get_flags(env, argv[10], &flags))
 	return enif_make_badarg(env);
@@ -2751,17 +2777,17 @@ static ERL_NIF_TERM pixmap_copy_area(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x_src))
+    if (!get_coord(env, argv[2], &x_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y_src))
+    if (!get_coord(env, argv[3], &y_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &x_dst))
+    if (!get_coord(env, argv[4], &x_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &y_dst))
+    if (!get_coord(env, argv[5], &y_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[6], &width))
+    if (!get_dim(env, argv[6], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[7], &height))
+    if (!get_dim(env, argv[7], &height))
 	return enif_make_badarg(env);
     if (!get_flags(env, argv[8], &flags))
 	return enif_make_badarg(env);
@@ -2790,17 +2816,17 @@ static ERL_NIF_TERM pixmap_alpha_area(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_fix_8(env, argv[2], &alpha))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &x_src))
+    if (!get_coord(env, argv[3], &x_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &y_src))
+    if (!get_coord(env, argv[4], &y_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &x_dst))
+    if (!get_coord(env, argv[5], &x_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[6], &y_dst))
+    if (!get_coord(env, argv[6], &y_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[7], &width))
+    if (!get_dim(env, argv[7], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[8], &height))
+    if (!get_dim(env, argv[8], &height))
 	return enif_make_badarg(env);
     epx_pixmap_alpha_area(src, dst, alpha, x_src, y_src, x_dst, y_dst,
 			  width, height);
@@ -2827,17 +2853,17 @@ static ERL_NIF_TERM pixmap_fade_area(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_fix_8(env, argv[2], &fade))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &x_src))
+    if (!get_coord(env, argv[3], &x_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &y_src))
+    if (!get_coord(env, argv[4], &y_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &x_dst))
+    if (!get_coord(env, argv[5], &x_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[6], &y_dst))
+    if (!get_coord(env, argv[6], &y_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[7], &width))
+    if (!get_dim(env, argv[7], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[8], &height))
+    if (!get_dim(env, argv[8], &height))
 	return enif_make_badarg(env);
     epx_pixmap_fade_area(src, dst, fade, x_src, y_src, x_dst, y_dst,
 			 width, height);
@@ -2862,17 +2888,17 @@ static ERL_NIF_TERM pixmap_shadow_area(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x_src))
+    if (!get_coord(env, argv[2], &x_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y_src))
+    if (!get_coord(env, argv[3], &y_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &x_dst))
+    if (!get_coord(env, argv[4], &x_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &y_dst))
+    if (!get_coord(env, argv[5], &y_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[6], &width))
+    if (!get_dim(env, argv[6], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[7], &height))
+    if (!get_dim(env, argv[7], &height))
 	return enif_make_badarg(env);
     if (!get_flags(env, argv[8], &flags))
 	return enif_make_badarg(env);
@@ -2901,17 +2927,17 @@ static ERL_NIF_TERM pixmap_operation_area(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_operation(env, argv[2], &op))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &x_src))
+    if (!get_coord(env, argv[3], &x_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &y_src))
+    if (!get_coord(env, argv[4], &y_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &x_dst))
+    if (!get_coord(env, argv[5], &x_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[6], &y_dst))
+    if (!get_coord(env, argv[6], &y_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[7], &width))
+    if (!get_dim(env, argv[7], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[8], &height))
+    if (!get_dim(env, argv[8], &height))
 	return enif_make_badarg(env);
     epx_pixmap_operation_area(src, dst, op, x_src, y_src, x_dst, y_dst,
 			      width, height);
@@ -2942,17 +2968,17 @@ static ERL_NIF_TERM pixmap_add_color_area(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_color(env, argv[3], &color))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &x_src))
+    if (!get_coord(env, argv[4], &x_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &y_src))
+    if (!get_coord(env, argv[5], &y_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[6], &x_dst))
+    if (!get_coord(env, argv[6], &x_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[7], &y_dst))
+    if (!get_coord(env, argv[7], &y_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[8], &width))
+    if (!get_dim(env, argv[8], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[9], &height))
+    if (!get_dim(env, argv[9], &height))
 	return enif_make_badarg(env);
     if (!get_flags(env, argv[10], &flags))
 	return enif_make_badarg(env);
@@ -2984,17 +3010,17 @@ static ERL_NIF_TERM pixmap_filter_area(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_filter(env, argv[2], &filter, &factors))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &x_src))
+    if (!get_coord(env, argv[3], &x_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &y_src))
+    if (!get_coord(env, argv[4], &y_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &x_dst))
+    if (!get_coord(env, argv[5], &x_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[6], &y_dst))
+    if (!get_coord(env, argv[6], &y_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[7], &width))
+    if (!get_dim(env, argv[7], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[8], &height))
+    if (!get_dim(env, argv[8], &height))
 	return enif_make_badarg(env);
     if (!get_flags(env, argv[9], &flags))
 	return enif_make_badarg(env);
@@ -3027,21 +3053,21 @@ static ERL_NIF_TERM pixmap_rotate_area(ErlNifEnv* env, int argc,
 
     if (!enif_get_double(env, argv[2], &angle))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &x_src))
+    if (!get_coord(env, argv[3], &x_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &y_src))
+    if (!get_coord(env, argv[4], &y_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &xc_src))
+    if (!get_coord(env, argv[5], &xc_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[6], &yc_src))
+    if (!get_coord(env, argv[6], &yc_src))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[7], &xc_dst))
+    if (!get_coord(env, argv[7], &xc_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[8], &yc_dst))
+    if (!get_coord(env, argv[8], &yc_dst))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[9], &width))
+    if (!get_dim(env, argv[9], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[10], &height))
+    if (!get_dim(env, argv[10], &height))
 	return enif_make_badarg(env);
     if (!get_flags(env, argv[11], &flags))
 	return enif_make_badarg(env);
@@ -3147,17 +3173,17 @@ static ERL_NIF_TERM pixmap_draw(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &window_res, (void**) &window))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &m.wdraw.src_x))
+    if (!get_coord(env, argv[2], &m.wdraw.src_x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &m.wdraw.src_y))
+    if (!get_coord(env, argv[3], &m.wdraw.src_y))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &m.wdraw.dst_x))
+    if (!get_coord(env, argv[4], &m.wdraw.dst_x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &m.wdraw.dst_y))
+    if (!get_coord(env, argv[5], &m.wdraw.dst_y))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[6], &m.wdraw.width))
+    if (!get_dim(env, argv[6], &m.wdraw.width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[7], &m.wdraw.height))
+    if (!get_dim(env, argv[7], &m.wdraw.height))
 	return enif_make_badarg(env);
     if (!(backend = pixmap->user))
 	return enif_make_badarg(env);
@@ -3219,9 +3245,9 @@ static ERL_NIF_TERM pixmap_draw_point(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x))
+    if (!get_coord(env, argv[2], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y))
+    if (!get_coord(env, argv[3], &y))
 	return enif_make_badarg(env);
     epx_pixmap_draw_point(pixmap, gc, x, y);
     return ATOM(ok);
@@ -3242,13 +3268,13 @@ static ERL_NIF_TERM pixmap_draw_line(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x1))
+    if (!get_coord(env, argv[2], &x1))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y1))
+    if (!get_coord(env, argv[3], &y1))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &x2))
+    if (!get_coord(env, argv[4], &x2))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &y2))
+    if (!get_coord(env, argv[5], &y2))
 	return enif_make_badarg(env);
     epx_pixmap_draw_line(pixmap, gc, x1, y1, x2, y2);
     return ATOM(ok);
@@ -3268,17 +3294,17 @@ static ERL_NIF_TERM pixmap_draw_triangle(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x0))
+    if (!get_coord(env, argv[2], &x0))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y0))
+    if (!get_coord(env, argv[3], &y0))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &x1))
+    if (!get_coord(env, argv[4], &x1))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &y1))
+    if (!get_coord(env, argv[5], &y1))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[6], &x2))
+    if (!get_coord(env, argv[6], &x2))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[7], &y2))
+    if (!get_coord(env, argv[7], &y2))
 	return enif_make_badarg(env);
     epx_pixmap_draw_triangle(pixmap, gc, x0, y0, x1, y1, x2, y2);
     return ATOM(ok);
@@ -3299,13 +3325,13 @@ static ERL_NIF_TERM pixmap_draw_rectangle(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x))
+    if (!get_coord(env, argv[2], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y))
+    if (!get_coord(env, argv[3], &y))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[4], &width))
+    if (!get_dim(env, argv[4], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[5], &height))
+    if (!get_dim(env, argv[5], &height))
 	return enif_make_badarg(env);
     epx_pixmap_draw_rectangle(pixmap, gc, x, y, width, height);
     return ATOM(ok);
@@ -3326,13 +3352,13 @@ static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x))
+    if (!get_coord(env, argv[2], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y))
+    if (!get_coord(env, argv[3], &y))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[4], &width))
+    if (!get_dim(env, argv[4], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[5], &height))
+    if (!get_dim(env, argv[5], &height))
 	return enif_make_badarg(env);
     epx_pixmap_draw_ellipse(pixmap, gc, x, y, width, height);
     return ATOM(ok);
@@ -3355,13 +3381,13 @@ static ERL_NIF_TERM pixmap_draw_roundrect(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x))
+    if (!get_coord(env, argv[2], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y))
+    if (!get_coord(env, argv[3], &y))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[4], &width))
+    if (!get_dim(env, argv[4], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[5], &height))
+    if (!get_dim(env, argv[5], &height))
 	return enif_make_badarg(env);
     if (!enif_get_uint(env, argv[6], &rw))
 	return enif_make_badarg(env);
@@ -3418,9 +3444,9 @@ static ERL_NIF_TERM animation_copy(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[3], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &x))
+    if (!get_coord(env, argv[4], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &y))
+    if (!get_coord(env, argv[5], &y))
 	return enif_make_badarg(env);
 
     if (!(base = epx_anim_get_pixels(anim, 0)))
@@ -3456,9 +3482,9 @@ static ERL_NIF_TERM animation_draw(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[3], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[4], &x))
+    if (!get_coord(env, argv[4], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[5], &y))
+    if (!get_coord(env, argv[5], &y))
 	return enif_make_badarg(env);
 
     if (!(base = epx_anim_get_pixels(anim, 0)))
@@ -3976,7 +4002,7 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
     }
     else if (argv[1] == ATOM(line_width)) {
 	unsigned int width;
-	if (!enif_get_uint(env, argv[2], &width))
+	if (!get_dim(env, argv[2], &width))
 	    return enif_make_badarg(env);
 	epx_gc_set_line_width(src, width);
 	return ATOM(ok);
@@ -4018,7 +4044,7 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
     }
     else if (argv[1] == ATOM(border_width)) {
 	unsigned int width;
-	if (!enif_get_uint(env, argv[2], &width))
+	if (!get_dim(env, argv[2], &width))
 	    return enif_make_badarg(env);
 	epx_gc_set_border_width(src, width);
 	return ATOM(ok);
@@ -4074,7 +4100,7 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
     }
     else if (argv[1] == ATOM(glyph_fixed_width)) {
 	unsigned int width;
-	if (!enif_get_uint(env, argv[2], &width))
+	if (!get_dim(env, argv[2], &width))
 	    return enif_make_badarg(env);
 	epx_gc_set_glyph_fixed_width(src, width);
 	return ATOM(ok);
@@ -4318,9 +4344,9 @@ static ERL_NIF_TERM font_draw_glyph(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x))
+    if (!get_coord(env, argv[2], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y))
+    if (!get_coord(env, argv[3], &y))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[4], &c))
 	return enif_make_badarg(env);
@@ -4345,9 +4371,9 @@ static ERL_NIF_TERM font_draw_string(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x))
+    if (!get_coord(env, argv[2], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y))
+    if (!get_coord(env, argv[3], &y))
 	return enif_make_badarg(env);
     list = argv[4];
     n = 0;
@@ -4382,9 +4408,9 @@ static ERL_NIF_TERM font_draw_utf8(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[2], &x))
+    if (!get_coord(env, argv[2], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[3], &y))
+    if (!get_coord(env, argv[3], &y))
 	return enif_make_badarg(env);
     if (!enif_inspect_iolist_as_binary(env, argv[4], &bin))
 	return enif_make_badarg(env);
@@ -4963,13 +4989,13 @@ static ERL_NIF_TERM window_create(ErlNifEnv* env, int argc,
     ErlNifPid* caller;
     uint32_t events = 0;
 
-    if (!enif_get_int(env, argv[0], &x))
+    if (!get_coord(env, argv[0], &x))
 	return enif_make_badarg(env);
-    if (!enif_get_int(env, argv[1], &y))
+    if (!get_coord(env, argv[1], &y))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[2], &width))
+    if (!get_dim(env, argv[2], &width))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[3], &height))
+    if (!get_dim(env, argv[3], &height))
 	return enif_make_badarg(env);
     if (argc == 5) {
 	if (!get_event_flags(env, argv[4], &events))
