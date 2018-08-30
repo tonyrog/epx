@@ -22,6 +22,7 @@
 #include <unistd.h>  // WINDOWS fixme
 #include <poll.h>    // WINDOWS fixme
 #include <errno.h>
+#include <math.h>
 
 #include "erl_nif.h"
 #include "../include/epx.h"
@@ -785,7 +786,7 @@ static int get_coord(ErlNifEnv* env, const ERL_NIF_TERM term, int* coord)
 	double fcoord;
 	if (!enif_get_double(env, term, &fcoord))
 	    return 0;
-	*coord = (int) fcoord;
+	*coord = (int) floor(fcoord);
     }
     return 1;
 }
