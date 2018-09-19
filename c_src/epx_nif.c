@@ -68,6 +68,8 @@ static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_get_pixel(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM pixmap_interp_pixel(ErlNifEnv* env, int argc,
+					const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_copy_area(ErlNifEnv* env, int argc,
@@ -368,6 +370,7 @@ ErlNifFunc epx_funcs[] =
     NIF_FUNC("pixmap_put_pixel", 5, pixmap_put_pixel),
     NIF_FUNC("pixmap_put_pixels", 8, pixmap_put_pixels),
     NIF_FUNC("pixmap_get_pixel", 3, pixmap_get_pixel),
+    NIF_FUNC("pixmap_interp_pixel", 3, pixmap_interp_pixel),
     NIF_FUNC("pixmap_get_pixels", 5, pixmap_get_pixels),
     NIF_FUNC("pixmap_copy_area", 9, pixmap_copy_area),
     NIF_FUNC("pixmap_alpha_area", 9, pixmap_alpha_area),
@@ -788,6 +791,22 @@ static int get_coord(ErlNifEnv* env, const ERL_NIF_TERM term, int* coord)
 	    return 0;
 	*coord = (int) floor(fcoord);
     }
+    return 1;
+}
+
+
+static int get_fcoord(ErlNifEnv* env, const ERL_NIF_TERM term, float* coord)
+{
+    double x;
+    int xi;
+
+    if (enif_get_int(env, term, &xi)) {
+	*coord = (float) xi;
+	return 1;
+    }
+    if (!enif_get_double(env, term, &x))
+	return 0;
+    *coord = x;
     return 1;
 }
 
@@ -2505,6 +2524,25 @@ static ERL_NIF_TERM pixmap_get_pixel(ErlNifEnv* env, int argc,
     if (!get_coord(env, argv[2], &y))
 	return enif_make_badarg(env);
     p = epx_pixmap_get_pixel(src, x, y);
+    return make_color(env, p);
+}
+
+static ERL_NIF_TERM pixmap_interp_pixel(ErlNifEnv* env, int argc,
+					const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_pixmap_t* src;
+    epx_pixel_t p;
+    float x;
+    float y;
+
+    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+	return enif_make_badarg(env);
+    if (!get_fcoord(env, argv[1], &x))
+	return enif_make_badarg(env);
+    if (!get_fcoord(env, argv[2], &y))
+	return enif_make_badarg(env);
+    p = epx_interp(src, x, y);
     return make_color(env, p);
 }
 

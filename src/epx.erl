@@ -46,6 +46,7 @@
 -export([pixmap_scale_area/6,pixmap_scale_area/7]).
 -export([pixmap_scale_area/11]).
 -export([pixmap_get_pixel/3]).
+-export([pixmap_interp_pixel/3]).
 -export([pixmap_get_pixels/5]).
 -export([pixmap_put_pixel/4,pixmap_put_pixel/5]).
 -export([pixmap_put_pixels/8,pixmap_put_pixels/7]).
@@ -552,6 +553,17 @@ pixmap_scale_area(_Src, _Dst,
 			      epx_color4().
 pixmap_get_pixel(_Pixmap,_X,_Y) ->
     erlang:error(nif_not_loaded).
+
+%% @doc
+%%   Read the interpolated pixel value at position (`X',`Y') in pixmap 
+%%   `Src', return a pixel in {A,R,G,B} form or {255,0,0,0} (black) 
+%%   if position is outside the pixmap.
+%% @end
+-spec pixmap_interp_pixel(Src::epx_pixmap(), X::coord(), Y::coord()) ->
+			      epx_color4().
+pixmap_interp_pixel(_Pixmap,_X,_Y) ->
+    erlang:error(nif_not_loaded).
+
 %% @doc
 %%  Read the pixels in the rectangle given by (`X',`Y',`Width',`Height')
 %%  return the pixels data in a "native" form as a binary.

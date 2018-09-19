@@ -1354,64 +1354,64 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
   *  blend the color at pixels in the surrounding of
   *  float coordinate (x,y)
  */
- static inline epx_pixel_t epixel_interp(epx_pixmap_t* pic, float x, float y)
- {
-     // To get gcc 4.1.2 to shut up about implicit declaration
-     // without having to resort to -std=99, which triggers a shitload
-     // of compile errors.
-     extern float truncf(float);
-     extern float roundf(float);
+inline epx_pixel_t epx_interp(epx_pixmap_t* pic, float x, float y)
+{
+    // To get gcc 4.1.2 to shut up about implicit declaration
+    // without having to resort to -std=99, which triggers a shitload
+    // of compile errors.
+    extern float truncf(float);
+    extern float roundf(float);
 
-     int y0 = truncf(y-0.5);
-     int y1 = truncf(y+0.5);
-     int x0 = truncf(x-0.5);
-     int x1 = truncf(x+0.5);
-     float not_used;
-     float fy = modff(y-0.5, &not_used);
-     float fx = modff(x-0.5, &not_used);
-     float f0 = (1-fx)*(1-fy);
-     float f1 = fx*(1-fy);
-     float f2 = (1-fx)*fy;
-     float f3 = fx*fy;
-     epx_pixel_t p0,p1,p2,p3;
-     uint8_t* ptr;
-     epx_pixel_t p;
-
-     if (epx_point_xy_in_rect(x0,y0, &pic->clip)) {
-	 ptr = EPX_PIXEL_ADDR(pic, x0, y0);
-	 p0 = pic->func.unpack(ptr);
-     }
-     else
-	 p0 = epx_pixel_transparent;
-
-     if (epx_point_xy_in_rect(x1,y0, &pic->clip)) {
-	 ptr = EPX_PIXEL_ADDR(pic, x1, y0);
-	 p1 = pic->func.unpack(ptr);
-     }
-     else
-	 p1 = epx_pixel_transparent;
-
-     if (epx_point_xy_in_rect(x0,y1, &pic->clip)) {
-	 ptr = EPX_PIXEL_ADDR(pic, x0, y1);
-	 p2 = pic->func.unpack(ptr);
-     }
-     else
-	 p2 = epx_pixel_transparent;
-
-     if (epx_point_xy_in_rect(x1,y1, &pic->clip)) {
-	 ptr = EPX_PIXEL_ADDR(pic, x1, y1);
-	 p3 = pic->func.unpack(ptr);
-     }
-     else
-	 p3 = epx_pixel_transparent;
-
-     // This could probably be done in ALTIVEC || SSE2
-     p.r = roundf(f0*p0.r + f1*p1.r + f2*p2.r + f3*p3.r);
-     p.g = roundf(f0*p0.g + f1*p1.g + f2*p2.g + f3*p3.g);
-     p.b = roundf(f0*p0.b + f1*p1.b + f2*p2.b + f3*p3.b);
-     p.a = roundf(f0*p0.a + f1*p1.a + f2*p2.a + f3*p3.a);
-
-     return p;
+    int y0 = truncf(y-0.5);
+    int y1 = truncf(y+0.5);
+    int x0 = truncf(x-0.5);
+    int x1 = truncf(x+0.5);
+    float not_used;
+    float fy = modff(y-0.5, &not_used);
+    float fx = modff(x-0.5, &not_used);
+    float f0 = (1-fx)*(1-fy);
+    float f1 = fx*(1-fy);
+    float f2 = (1-fx)*fy;
+    float f3 = fx*fy;
+    epx_pixel_t p0,p1,p2,p3;
+    uint8_t* ptr;
+    epx_pixel_t p;
+    
+    if (epx_point_xy_in_rect(x0,y0, &pic->clip)) {
+	ptr = EPX_PIXEL_ADDR(pic, x0, y0);
+	p0 = pic->func.unpack(ptr);
+    }
+    else
+	p0 = epx_pixel_transparent;
+    
+    if (epx_point_xy_in_rect(x1,y0, &pic->clip)) {
+	ptr = EPX_PIXEL_ADDR(pic, x1, y0);
+	p1 = pic->func.unpack(ptr);
+    }
+    else
+	p1 = epx_pixel_transparent;
+    
+    if (epx_point_xy_in_rect(x0,y1, &pic->clip)) {
+	ptr = EPX_PIXEL_ADDR(pic, x0, y1);
+	p2 = pic->func.unpack(ptr);
+    }
+    else
+	p2 = epx_pixel_transparent;
+    
+    if (epx_point_xy_in_rect(x1,y1, &pic->clip)) {
+	ptr = EPX_PIXEL_ADDR(pic, x1, y1);
+	p3 = pic->func.unpack(ptr);
+    }
+    else
+	p3 = epx_pixel_transparent;
+    
+    // This could probably be done in ALTIVEC || SSE2
+    p.r = roundf(f0*p0.r + f1*p1.r + f2*p2.r + f3*p3.r);
+    p.g = roundf(f0*p0.g + f1*p1.g + f2*p2.g + f3*p3.g);
+    p.b = roundf(f0*p0.b + f1*p1.b + f2*p2.b + f3*p3.b);
+    p.a = roundf(f0*p0.a + f1*p1.a + f2*p2.a + f3*p3.a);
+    
+    return p;
 }
 
 // Given source and destination rectangles, calculate the
@@ -2383,7 +2383,7 @@ void epx_pixmap_rotate_area(epx_pixmap_t* src, epx_pixmap_t* dst, float angle,
 		    uint8_t* dst_addr = EPX_PIXEL_ADDR(dst,xd,yd);
 		    epx_pixel_t p;
 		    if (flags & EPX_FLAG_AALIAS)
-			p = epixel_interp(src, xsf, ysf);
+			p = epx_interp(src, xsf, ysf);
 		    else {
 			uint8_t* src_addr = EPX_PIXEL_ADDR(src,xs,ys);
 			p = src->func.unpack(src_addr);
@@ -2429,7 +2429,7 @@ void epx_pixmap_scale_area(epx_pixmap_t* src, epx_pixmap_t* dst,
 
 	if (flags & EPX_FLAG_BLEND) {
 	    while(w--) {
-		epx_pixel_t s = epixel_interp(src, xsf, ysf);
+		epx_pixel_t s = epx_interp(src, xsf, ysf);
 		epx_pixel_t d = dst->func.unpack(dst_addr);
 		d = epx_pixel_blend(s.a, s, d);
 		dst->func.pack(d, dst_addr);
@@ -2439,7 +2439,7 @@ void epx_pixmap_scale_area(epx_pixmap_t* src, epx_pixmap_t* dst,
 	}
 	else {
 	    while(w--) {
-		epx_pixel_t p = epixel_interp(src, xsf, ysf);
+		epx_pixel_t p = epx_interp(src, xsf, ysf);
 		dst->func.pack(p, dst_addr);
 		dst_addr += bytes_per_pixel;
 		xsf += xs;

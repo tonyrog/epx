@@ -288,6 +288,8 @@ extern void epx_binop_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 			   unsigned int width, 
 			   unsigned int height);
 
+extern epx_pixel_t epx_interp(epx_pixmap_t* pic, float x, float y);
+
 // inline 'row' version of area functions 
 static inline void epx_copy_row(uint8_t* src, epx_format_t src_pt,
 				uint8_t* dst, epx_format_t dst_pt,
