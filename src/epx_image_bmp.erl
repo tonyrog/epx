@@ -30,8 +30,6 @@
 -include("../include/epx_image.hrl").
 -include("dbg.hrl").
 
--import(lists, [reverse/1]).
-
 -record(bmp_file_header,
 	{
 	  magic,   %% 2 bytes, "BM"/"BA", "CI", "CP", "IC", PT"
@@ -145,28 +143,37 @@ read_dib_header(Fd) ->
 	    Error
     end.
 
-
-%% determine the epx_image format
-bits_per_row(gray1,W) -> W;
-bits_per_row(gray2,W) -> W*2;
-bits_per_row(gray4,W) -> W*4;
-bits_per_row(gray8,W) -> W*8;
+bits_per_row(l1,W) -> W;
+bits_per_row(l2,W) -> W*2;
+bits_per_row(l4,W) -> W*4;
+bits_per_row(l8,W) -> W*8;
 bits_per_row(r8g8b8,W) -> W*24;
 bits_per_row(b8g8r8,W) -> W*24;
 bits_per_row(palette1,W) -> W;
+bits_per_row(palette2,W) -> W*2;
 bits_per_row(palette4,W) -> W*4;
 bits_per_row(palette8,W) -> W*8.
 
 format(DIB) ->
     format(DIB#bmp_dib_header.colors, DIB#bmp_dib_header.bpp).
 
-format(0, 1)  -> gray1;
-format(0, 4)  -> gray4;
-format(0, 8)  -> gray8;
+%% determine the epx_image format
+format(0, 1)  -> l1;
+format(0, 4)  -> l4;
+format(0, 8)  -> l8;
 format(0, 24) -> b8g8r8;
 format(_, 1)  -> palette1;
+format(_, 2)  -> palette2;
 format(_, 4)  -> palette4;
 format(_, 8)  -> palette8.
+
+%%
+is_palette(palette1) -> true;
+is_palette(palette2) -> true;
+is_palette(palette4) -> true;
+is_palette(palette8) -> true;
+is_palette(_) -> false.
+
 
 write_info(_Fd, _IMG) ->
     ok.
@@ -202,7 +209,7 @@ read(Fd, IMG) ->
     end.
 
 read_palette(_Fd, 0) ->
-    undefined;
+    {};
 read_palette(Fd,  Sz) ->
     case file:read(Fd, Sz*4) of
 	{ok, Bin} -> 
@@ -210,8 +217,8 @@ read_palette(Fd,  Sz) ->
     end.
 
 rd_palette(_Bin, Map, 0) -> 
-    reverse(Map);
-rd_palette(<<R:8,G:8,B:8,_:8, Bin/binary>>, Map, I) ->
+    list_to_tuple(lists:reverse(Map));
+rd_palette(<<B:8,G:8,R:8,_:8, Bin/binary>>, Map, I) ->
     rd_palette(Bin, [{R,G,B} | Map], I-1).
 
 
@@ -223,20 +230,54 @@ write(_Fd, _IMG) ->
 read_pixels(Fd, IMG) ->
     Width = IMG#epx_image.width,
     Height = IMG#epx_image.height,
+    Format = case is_palette(IMG#epx_image.format) of
+		 true -> rgb;
+		 false -> IMG#epx_image.format
+	     end,
     BitsPerRow = bits_per_row(IMG#epx_image.format, Width),
     BytesPerRow = 4*((BitsPerRow + 31) div 32),
-    Pixmap = epx:pixmap_create(Width, Height, IMG#epx_image.format),
-    read_pixels(Fd, Pixmap, Height, BytesPerRow, Width, IMG#epx_image.format).
+    Pixmap = epx:pixmap_create(Width, Height, Format),
+    case is_palette(IMG#epx_image.format) of
+	true ->
+	    read_palette_pixels(Fd, Pixmap, Height, BytesPerRow, Width,
+				IMG#epx_image.format, IMG#epx_image.palette);
+	false ->
+	    read_pixels(Fd, Pixmap, Height, BytesPerRow, Width, IMG#epx_image.format)
+    end.
 
 
-read_pixels(_Fd, Pixmap, I, _BytesPerRow, _Width, _Format) when I =< 0 ->
+read_pixels(_Fd, Pixmap, 0, _BytesPerRow, _Width, _Format) ->
     {ok,Pixmap};
 read_pixels(Fd, Pixmap, I, BytesPerRow, Width, Format) ->
-    Ri = I - 1,
     case file:read(Fd, BytesPerRow) of
 	{ok,Row} ->
-	    epx:pixmap_put_pixels(Pixmap,0,Ri,Width,1,Format,Row),
-	    read_pixels(Fd, Pixmap, Ri, BytesPerRow, Width, Format);
+	    epx:pixmap_put_pixels(Pixmap,0,I-1,Width,1,Format,Row),
+	    read_pixels(Fd, Pixmap,I-1,BytesPerRow, Width, Format);
 	Error ->
 	    Error
     end.
+
+read_palette_pixels(_Fd, Pixmap, 0, _BytesPerRow, _Width, _Format, _Palette) ->
+    {ok,Pixmap};
+read_palette_pixels(Fd, Pixmap, I, BytesPerRow, Width, Format, Palette) ->
+    case file:read(Fd, BytesPerRow) of
+	{ok,Row} ->
+	    IndexRow = 
+		case Format of
+		    palette1 -> [X || <<X:1>> <= Row];
+		    palette2 -> [X || <<X:2>> <= Row];
+		    palette4 -> [X || <<X:4>> <= Row];
+		    palette8 -> [X || <<X:8>> <= Row]
+		end,
+	    put_palette_pixels(Pixmap,I-1,IndexRow,0,Width,Palette),
+	    read_palette_pixels(Fd, Pixmap, I-1, BytesPerRow, Width, Format, Palette)
+    end.
+
+put_palette_pixels(_Pixmap,_Y,_Row,X,X,_Palette) ->
+    ok;
+put_palette_pixels(Pixmap,Y,[R|Row],X,Width,Palette) ->
+    Color = element(R+1, Palette),
+    epx:pixmap_put_pixel(Pixmap,X,Y,Color),
+    put_palette_pixels(Pixmap,Y,Row,X+1,Width,Palette).
+
+    
