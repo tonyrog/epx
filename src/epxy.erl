@@ -617,12 +617,18 @@ handle_event(Event={button_release,Button,Where},Window,State) ->
 handle_event(Event={motion,Button,Where},Window,State) ->
     case lists:member(left,Button) of
 	true ->
-	    %% locate an active widget at position (X,Y)
-	    WinID = Window#widget.id,
-	    case widgets_at_location(Where,{0,0},WinID,State) of
+	    case State#state.active of
 		[] ->
-		    {noreply, State};
-		Ws ->
+		    WinID = Window#widget.id,
+		    case widgets_at_location(Where,{0,0},WinID,State) of
+			[] ->
+			    {noreply, State};
+			Ws ->
+			    State1 = widgets_motion(Ws, Event, Window, State),
+			    {noreply, State1}
+		    end;
+		Ws0 ->
+		    Ws = [{widget_fetch(ID),XY} || {ID,XY} <- Ws0],
 		    State1 = widgets_motion(Ws, Event, Window, State),
 		    {noreply, State1}
 	    end;
@@ -689,7 +695,7 @@ widgets_event([{W,XY}|Ws],Event,Window,State) ->
     end;
 widgets_event([],_Event,_Window,State) ->
     State.
-    
+
 %%
 %% Find all widgets in window WinID that is hit by the
 %% point (X,Y).
@@ -1191,8 +1197,8 @@ validate(#widget.animation,Arg) -> validate_animation(Arg);
 validate(#widget.animation2,Arg) -> validate_animation(Arg);
 validate(#widget.frame,Arg) -> is_integer(Arg);
 validate(#widget.frame2,Arg) -> is_integer(Arg);
-validate(#widget.animate,Arg) -> ?MEMBER(Arg,continues,sequence,undefined);
-validate(#widget.animate2,Arg) -> ?MEMBER(Arg,continues,sequence,undefined);
+validate(#widget.animate,Arg) -> ?MEMBER(Arg,continuous,sequence,undefined);
+validate(#widget.animate2,Arg) -> ?MEMBER(Arg,continuous,sequence,undefined);
 validate(#widget.font,Arg) -> validate_font(Arg);
 validate(#widget.color,Arg) -> validate_color(Arg);
 validate(#widget.color2,Arg) -> validate_color(Arg);
