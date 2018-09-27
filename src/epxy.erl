@@ -131,6 +131,7 @@
 -record(state, {
 	  redraw_timer = undefined,
 	  active = [] :: [string()],    %% active widgets (ids) pressed
+	  focus  = [] :: [string()],    %% focused widgets (ids)
 	  subs = [] :: [#sub{}],
 	  fps = 30.0 :: number(),       %% animation frames per second
 	  mpf = 1000/30.0 :: number(),  %% millis per frame
@@ -564,10 +565,26 @@ widget_find(ID) ->
 	    {ok,W}
     end.
 
-handle_event({key_press,_Sym,_Mod,_Code},_W,State) ->
-    {noreply, State};
-handle_event({key_release,_Sym,_Mod,_Code},_W,State) ->
-    {noreply, State};
+handle_event(Event={key_press,_Sym,_Mod,_Code},_W,State) ->
+    case State#state.focus of
+	[] ->
+	    {noreply, State};
+	Ws0 ->
+	    Ws = [{widget_fetch(ID),XY} || {ID,XY} <- Ws0],
+	    Window = widget_fetch((hd(Ws))#widget.window),
+	    State1 = widgets_event(Ws, Event, Window, State),
+	    {noreply, State1}
+    end;
+handle_event(Event={key_release,_Sym,_Mod,_Code},_W,State) ->
+    case State#state.focus of
+	[] ->
+	    {noreply, State};
+	Ws0 ->
+	    Ws = [{widget_fetch(ID),XY} || {ID,XY} <- Ws0],
+	    Window = widget_fetch((hd(Ws))#widget.window),
+	    State1 = widgets_event(Ws, Event, Window, State),
+	    {noreply, State1}
+    end;
 handle_event(Event={button_press,Button,Where},Window,State) ->
     case lists:member(left,Button) of
 	true ->
