@@ -129,10 +129,12 @@
 	  signal :: term()
 	}).
 
+-type xy() :: {integer(), integer()}.
+
 -record(state, {
 	  redraw_timer = undefined,
-	  active = [] :: [string()],    %% active widgets (ids) pressed
-	  focus  = [] :: [string()],    %% focused widgets (ids)
+	  active = [] :: [{string(),xy()}],    %% active widgets (ids) pressed
+	  focus  = [] :: [{string(),xy()}],    %% focused widgets (ids)
 	  subs = [] :: [#sub{}],
 	  fps = 30.0 :: number(),       %% animation frames per second
 	  mpf = 1000/30.0 :: number(),  %% millis per frame
@@ -572,7 +574,7 @@ handle_event(Event={key_press,_Sym,_Mod,_Code},_W,State) ->
 	    {noreply, State};
 	Ws0 ->
 	    Ws = [{widget_fetch(ID),XY} || {ID,XY} <- Ws0],
-	    Window = widget_fetch((hd(Ws))#widget.window),
+	    Window = widget_fetch((element(1,hd(Ws)))#widget.window),
 	    State1 = widgets_event(Ws, Event, Window, State),
 	    {noreply, State1}
     end;
@@ -582,7 +584,7 @@ handle_event(Event={key_release,_Sym,_Mod,_Code},_W,State) ->
 	    {noreply, State};
 	Ws0 ->
 	    Ws = [{widget_fetch(ID),XY} || {ID,XY} <- Ws0],
-	    Window = widget_fetch((hd(Ws))#widget.window),
+	    Window = widget_fetch((element(1,hd(Ws)))#widget.window),
 	    State1 = widgets_event(Ws, Event, Window, State),
 	    {noreply, State1}
     end;
@@ -711,11 +713,14 @@ widgets_event([{W,XY}|Ws],Event,Window,State) ->
 			%% Focus changed
 			case State#state.focus of
 			    [] ->
-				[W1#widget.id];
-			    [F] -> %% old focuse
+				io:format("Focus ~s\n", [W1#widget.id]),
+				[{W1#widget.id,XY}];
+			    [{F,_Fxy}] -> %% old focuse
 				W0 = widget_fetch(F),
+				io:format("DeFocus ~s\n", [W0#widget.id]),
 				widget_store(W0#widget { state = normal }),
-				[W1#widget.id]
+				io:format("Focus ~s\n", [W1#widget.id]),
+				[{W1#widget.id,XY}]
 			end;
 		   true ->
 			State#state.focus
@@ -1013,6 +1018,26 @@ widget_event(Event={motion,_Button,Where},W,XY,Window,State) ->
 	    case user(W#widget.user,event,Event,W,Window,XY) of
 		W1 when is_record(W1, widget) -> W1;
 		_ -> W
+	    end;
+	_ ->
+	    W
+    end;
+widget_event({key_press,Sym,_Mod,_Code},W,_XY,_Window,_State) ->
+    case W#widget.type of
+	text ->
+	    case Sym of
+		$\b -> %% delete backwards
+		    Text1 = case W#widget.text of
+				"" -> "";
+				Text -> lists:reverse(tl(lists:reverse(Text)))
+			    end,
+		    W#widget { text = Text1 };
+		_ when is_integer(Sym), Sym >= $\s, Sym =< $~ ->
+		    Text1 = W#widget.text ++ [Sym],
+		    W#widget { text = Text1 };
+		_ ->
+		    io:format("ignore symbol ~p\n", [Sym]),
+		    W
 	    end;
 	_ ->
 	    W
