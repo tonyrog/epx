@@ -76,6 +76,7 @@
 	  static = false,     %% object may not be deleted
 	  hidden = false,     %% show/hiden false,true,all,none
 	  disabled = false,   %% enable disable event input false,true,all,none
+	  edit = false,       %% allow edit of text fields
 	  relative = true :: boolean(), %% childrens are relative to parent
 	  user,               %% mfa when type=user
 	  children_first = true :: boolean(), %% draw/select children first
@@ -705,10 +706,25 @@ widgets_event([{W,XY}|Ws],Event,Window,State) ->
 	W -> 
 	    widgets_event(Ws,Event,Window,State);
 	W1 ->
+	    Focus = 
+		if W#widget.state =/= focus, W1#widget.state =:= focus ->
+			%% Focus changed
+			case State#state.focus of
+			    [] ->
+				[W1#widget.id];
+			    [F] -> %% old focuse
+				W0 = widget_fetch(F),
+				widget_store(W0#widget { state = normal }),
+				[W1#widget.id]
+			end;
+		   true ->
+			State#state.focus
+		end,
 	    Active = [{W1#widget.id,XY}|State#state.active],
 	    widget_store(W1),
 	    self() ! refresh,
-	    widgets_event(Ws,Event,Window,State#state { active=Active })
+	    widgets_event(Ws,Event,Window,State#state { active=Active,
+							focus=Focus })
     end;
 widgets_event([],_Event,_Window,State) ->
     State.
@@ -935,6 +951,20 @@ widget_event(Event={button_press,_Button,Where},W,XY,Window,State) ->
 		_ ->
 		    W
 	    end;
+	text ->
+	    W1 = 
+		case W#widget.state of
+		    focus -> W;
+		    _ ->
+			if W#widget.edit -> W#widget { state = focus };
+			   true -> W
+			end
+		end,
+	    {Xi,Yi} = XY,
+	    {X,Y,_} = Where,
+	    callback_all(W1#widget.id,State#state.subs,
+			 [{press,1},{x,X-Xi},{y,Y-Yi}]),
+	    W1;
 	_ ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
@@ -961,6 +991,8 @@ widget_event(Event={button_release,_Button,Where},W,XY,Window,State) ->
 		_ ->
 		    W
 	    end;
+	text ->
+	    W;
 	_ ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
@@ -1135,6 +1167,7 @@ keypos(Key) ->
 	window -> #widget.window;
 	state  -> #widget.state;
 	static -> #widget.static;
+	edit   -> #widget.edit;
 	hidden -> #widget.hidden;
 	disabled -> #widget.disabled;
 	relative -> #widget.relative;
@@ -1192,6 +1225,7 @@ validate(#widget.user,{M,F,As}) ->
 validate(#widget.static,Arg) ->  ?MEMBER(Arg,true,false);
 validate(#widget.hidden,Arg) ->  ?MEMBER(Arg,true,false,none,all);
 validate(#widget.disabled,Arg) -> ?MEMBER(Arg,true,false,none,all);
+validate(#widget.edit,Arg)     ->  ?MEMBER(Arg,true,false);
 validate(#widget.x,Arg) -> is_integer(Arg);
 validate(#widget.y,Arg) -> is_integer(Arg);
 validate(#widget.z,Arg) -> is_integer(Arg);
