@@ -355,7 +355,6 @@ epx_backend_t* x11_init(epx_dict_t* param)
     be->modstate = 0;
     be->grab_key = 0;
 
-
     if(XkbGetIndicatorState (be->display,XkbUseCoreKbd,&state) == Success) {
 	EPX_DBGFMT("initial modstate=%x", state);
 	if (state & NUM_LOCK_MASK)
@@ -1244,8 +1243,8 @@ next:
 
 	    }
 	}
-	if (x11->grab_key == e->key.sym)
-	    x11_grab(backend, NULL, (ev.xkey.state & ControlMask));
+	if (x11->grab_key && (x11->grab_key == e->key.sym))
+	    x11_grab(backend, e->window, (ev.xkey.state & ControlMask));
 	e->key.code = ev.xkey.keycode;
 	e->key.mod  = x11->modstate;
 	goto got_event;
@@ -1276,6 +1275,9 @@ static void x11_grab(epx_backend_t* backend, epx_window_t* wptr, int toggle)
 {
     X11Backend* b = (X11Backend*) backend;
     X11Window* w = (X11Window*) wptr;
+
+    if (w == NULL)
+	return;
 
     if (toggle) {
 	/* toggle grab control */
