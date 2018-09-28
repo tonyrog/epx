@@ -28,7 +28,8 @@
 
 %% API
 -export([start/1, start_link/1, stop/0]).
--export([new/2, delete/1, set/2, get/2, add_callback/3, remove_callback/1]).
+-export([new/2, delete/1, set/2, get/2, inject/2]).
+-export([add_callback/3, remove_callback/1]).
 
 %% User API - maybe called from user type callbacks and internally
 -export([widget_set/2, widget_get/2]).
@@ -88,6 +89,7 @@
 	  text = "",
 	  tabs = [],
 	  border  :: number(),
+	  border_color =  16#00000000,
 	  shadow_x :: number(),
 	  shadow_y :: number(),
 	  round_w :: number(),
@@ -201,6 +203,9 @@ add_callback(ID, Signal, Cb) ->
 
 remove_callback(Ref) ->
     gen_server:call(?MODULE, {remove_callback, Ref}).
+
+inject(WinID,Event) ->
+    gen_server:cast(?MODULE, {inject, WinID, Event}).
 
 stop() ->
     gen_server:call(?MODULE, stop).
@@ -425,6 +430,9 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({inject, WinID, Event}, State) ->
+    Window = widget_fetch(WinID),
+    handle_event(Event, Window, State);
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -568,23 +576,23 @@ widget_find(ID) ->
 	    {ok,W}
     end.
 
-handle_event(Event={key_press,_Sym,_Mod,_Code},_W,State) ->
+handle_event(Event={key_press,_Sym,_Mod,_Code},Window,State) ->
+    io:format("event: ~p\n", [Event]),
     case State#state.focus of
 	[] ->
 	    {noreply, State};
 	Ws0 ->
 	    Ws = [{widget_fetch(ID),XY} || {ID,XY} <- Ws0],
-	    Window = widget_fetch((element(1,hd(Ws)))#widget.window),
 	    State1 = widgets_event(Ws, Event, Window, State),
 	    {noreply, State1}
     end;
-handle_event(Event={key_release,_Sym,_Mod,_Code},_W,State) ->
+handle_event(Event={key_release,_Sym,_Mod,_Code},Window,State) ->
+    io:format("event: ~p\n", [Event]),
     case State#state.focus of
 	[] ->
 	    {noreply, State};
 	Ws0 ->
 	    Ws = [{widget_fetch(ID),XY} || {ID,XY} <- Ws0],
-	    Window = widget_fetch((element(1,hd(Ws)))#widget.window),
 	    State1 = widgets_event(Ws, Event, Window, State),
 	    {noreply, State1}
     end;
@@ -598,7 +606,6 @@ handle_event(Event={button_press,Button,Where},Window,State) ->
 		[] ->
 		    {noreply, State};
 		Ws ->
-		    lager:debug("selected ws=~p", [[Wi#widget.id||{Wi,_}<-Ws]]),
 		    State1 = widgets_event(Ws,Event,Window,State),
 		    {noreply, State1}
 	    end;
@@ -713,15 +720,19 @@ widgets_event([{W,XY}|Ws],Event,Window,State) ->
 			%% Focus changed
 			case State#state.focus of
 			    [] ->
-				io:format("Focus ~s\n", [W1#widget.id]),
+				io:format("focus_in ~s\n", [W1#widget.id]),
 				[{W1#widget.id,XY}];
 			    [{F,_Fxy}] -> %% old focuse
 				W0 = widget_fetch(F),
-				io:format("DeFocus ~s\n", [W0#widget.id]),
+				io:format("focus_out ~s\n", [W0#widget.id]),
 				widget_store(W0#widget { state = normal }),
-				io:format("Focus ~s\n", [W1#widget.id]),
+				io:format("focus_in ~s\n", [W1#widget.id]),
 				[{W1#widget.id,XY}]
 			end;
+		   W#widget.state =:= focus, W1#widget.state =/= focus ->
+			%% Focus changed
+			io:format("focus_out ~s\n", [W1#widget.id]),
+			State#state.focus -- [{W1#widget.id,XY}];
 		   true ->
 			State#state.focus
 		end,
@@ -1022,10 +1033,24 @@ widget_event(Event={motion,_Button,Where},W,XY,Window,State) ->
 	_ ->
 	    W
     end;
-widget_event({key_press,Sym,_Mod,_Code},W,_XY,_Window,_State) ->
+widget_event(Event={key_press,Sym,_Mod,_Code},W,_XY,_Window,State) ->
     case W#widget.type of
 	text ->
 	    case Sym of
+		$\r ->
+		    Value = W#widget.text,
+		    callback_all(W#widget.id,State#state.subs,[{value,Value}]),
+		    %% will release focus!
+		    io:format("focus_out ~s\n", [W#widget.id]),
+		    W#widget { state = normal };
+		$\e ->
+		    %% will release focus!
+		    io:format("focus_out ~s\n", [W#widget.id]),
+		    W#widget { state = normal };
+		$\t ->
+		    %% will release focus!
+		    io:format("focus_out ~s\n", [W#widget.id]),
+		    W#widget { state = normal };
 		$\b -> %% delete backwards
 		    Text1 = case W#widget.text of
 				"" -> "";
@@ -1036,7 +1061,7 @@ widget_event({key_press,Sym,_Mod,_Code},W,_XY,_Window,_State) ->
 		    Text1 = W#widget.text ++ [Sym],
 		    W#widget { text = Text1 };
 		_ ->
-		    io:format("ignore symbol ~p\n", [Sym]),
+		    io:format("ignore symbol ~p\n", [Event]),
 		    W
 	    end;
 	_ ->
@@ -1131,7 +1156,6 @@ window_open(W) ->
     Px = epx:pixmap_create(W#widget.width, W#widget.height),
     W#widget { win=Win, image=Px, backing=Backing, events=Events }.
 
-
 widget_set(W,VKs) ->
     widget_set_(W,VKs,0).
 
@@ -1206,6 +1230,7 @@ keypos(Key) ->
 	text -> #widget.text;
 	tabs -> #widget.tabs;
 	border -> #widget.border;
+	border_color -> #widget.border_color;
 	shadow_x -> #widget.shadow_x;
 	shadow_y -> #widget.shadow_y;
 	round_w -> #widget.round_w;
@@ -1266,6 +1291,7 @@ validate(#widget.text,Arg) when is_list(Arg) -> true;
 validate(#widget.text,Arg) when is_atom(Arg) -> {true,atom_to_list(Arg)};
 validate(#widget.tabs,Arg) -> is_list(Arg);
 validate(#widget.border,Arg) -> is_integer(Arg);
+validate(#widget.border_color,Arg) -> validate_color(Arg);
 validate(#widget.orientation,Arg) -> ?MEMBER(Arg,horizontal,vertical);
 validate(#widget.image,Arg) -> validate_image(Arg);
 validate(#widget.topimage,Arg) -> validate_image(Arg);
@@ -1516,7 +1542,6 @@ draw_widget(W, Win, XY={X,Y}, _State) ->
 	panel ->
 	    epx_gc:draw(
 	      fun() ->
-		      %% draw_background(Win, W),
 		      draw_tabs(Win, X, Y, W)
 	      end);
 	button ->
@@ -1593,6 +1618,8 @@ draw_widget(W, Win, XY={X,Y}, _State) ->
 	text ->
 	    epx_gc:draw(
 	      fun() ->
+		      draw_focus(Win, X, Y, W),
+		      draw_border(Win, X, Y, W, W#widget.border),
 		      draw_text_box(Win, X, Y, W, W#widget.text)
 	      end);
 	Type ->
@@ -1984,13 +2011,26 @@ draw_border(_Win,_X,_Y,_W, undefined) ->
     ok;
 draw_border(_Win,_X,_Y,_W, 0) ->
     ok;
-draw_border(Win,X,Y,W,_Border) ->
+draw_border(Win,X,Y,W,Border) ->
     %% fixme: calculate size from border thickness
-    epx_gc:set_foreground_color(16#00000000),
+    epx_gc:set_border_color(W#widget.border_color),
+    epx_gc:set_border_width(Border),
     epx_gc:set_fill_style(none),
     epx:draw_rectangle(Win#widget.image,
 		       X, Y,
 		       W#widget.width, W#widget.height).
+
+draw_focus(Win,X,Y,W) when W#widget.edit, W#widget.state =:= focus ->
+    Bw = W#widget.border+2,
+    epx_gc:set_border_color(16#009f9f9f),
+    epx_gc:set_border_width(2),
+    epx_gc:set_fill_style(none),
+    epx:draw_rectangle(Win#widget.image,
+		       X-Bw, Y-Bw,
+		       W#widget.width+2*Bw, W#widget.height+2*Bw);
+draw_focus(_Win,_X,_Y,_W) ->
+    ok.
+
 
 draw_value_bar(Win,X,Y,W,TopImage) ->
     #widget { min=Min, max=Max, value=Value} = W,
