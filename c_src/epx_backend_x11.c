@@ -1074,22 +1074,22 @@ next:
 	if (ev.xkey.state) {
 	    EPX_DBGFMT("key.state=%x", ev.xkey.state);
 	}
-	if (ev.xkey.state & ShiftMask) {
-	    EPX_DBGFMT("shiftmask");
-	    x11->modstate |= EPX_KBD_MOD_SHIFT;
-	}
+//	if (ev.xkey.state & ShiftMask) {
+//	    EPX_DBGFMT("shiftmask");
+//	    x11->modstate |= EPX_KBD_MOD_SHIFT;
+//	}
 	if (ev.xkey.state & LockMask) {
 	    EPX_DBGFMT("lockmask (caps)");
 	    x11->modstate |= EPX_KBD_MOD_CAPS;
 	}
-	if (ev.xkey.state & ControlMask) {
-	    EPX_DBGFMT("controlmask");
-	    x11->modstate |= EPX_KBD_MOD_CTRL;
-	}
-	if (ev.xkey.state & Mod1Mask) {
-	    EPX_DBGFMT("mod1mask (alt)");
-	    x11->modstate |= EPX_KBD_MOD_ALT;
-	}
+//	if (ev.xkey.state & ControlMask) {
+//	    EPX_DBGFMT("controlmask");
+//	    x11->modstate |= EPX_KBD_MOD_CTRL;
+//	}
+//	if (ev.xkey.state & Mod1Mask) {
+//	    EPX_DBGFMT("mod1mask (alt)");
+//	    x11->modstate |= EPX_KBD_MOD_ALT;
+//	}
 	if (ev.xkey.state & Mod2Mask) {
 	    EPX_DBGFMT("mod2mask (num)");
 	    x11->modstate |= EPX_KBD_MOD_NUM;
@@ -1175,22 +1175,32 @@ next:
 	    goto no_key;
 	case XK_Shift_L:
 	    EPX_DBGFMT("shift left");
-	    e->key.sym = EPX_KBD_KEY_LSHIFT; 
+	    e->key.sym = EPX_KBD_KEY_LSHIFT;
+	    x11->modstate |= EPX_KBD_MOD_LSHIFT;
 	    break;
 	case XK_Shift_R: 
 	    EPX_DBGFMT("shift right");
-	    e->key.sym = EPX_KBD_KEY_RSHIFT; 
+	    e->key.sym = EPX_KBD_KEY_RSHIFT;
+	    x11->modstate |= EPX_KBD_MOD_RSHIFT;
 	    break;
 	case XK_Control_L: 
 	    EPX_DBGFMT("control left");
-	    e->key.sym = EPX_KBD_KEY_LCTRL; 
+	    e->key.sym = EPX_KBD_KEY_LCTRL;
+	    x11->modstate |= EPX_KBD_MOD_LCTRL;
 	    break;
 	case XK_Control_R: 
 	    EPX_DBGFMT("control right");
 	    e->key.sym = EPX_KBD_KEY_RCTRL;
+	    x11->modstate |= EPX_KBD_MOD_RCTRL;
 	    break;
-	case XK_Alt_L: e->key.sym = EPX_KBD_KEY_LALT; break;
-	case XK_Alt_R: e->key.sym = EPX_KBD_KEY_RALT; break;
+	case XK_Alt_L:
+	    e->key.sym = EPX_KBD_KEY_LALT;
+	    x11->modstate |= EPX_KBD_MOD_LALT;
+	    break;
+	case XK_Alt_R:
+	    e->key.sym = EPX_KBD_KEY_RALT;
+	    x11->modstate |= EPX_KBD_MOD_RALT;
+	    break;
 	case XK_Meta_L:
 	case XK_Super_L:
 	case XK_Hyper_L: e->key.sym = EPX_KBD_KEY_LMETA; break;
