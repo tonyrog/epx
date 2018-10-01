@@ -40,6 +40,7 @@
 -export([pixmap_info_keys/0]).
 -export([pixmap_set_clip/2]).
 -export([pixmap_fill/2, pixmap_fill/3]).
+-export([pixmap_fill_area/6, pixmap_fill_area/7]).
 -export([pixmap_copy_to/2]).
 -export([pixmap_flip/1]).
 -export([pixmap_scale/4]).
@@ -476,6 +477,29 @@ pixmap_fill(Dst, Color) ->
 			 void().
 
 pixmap_fill(_Dst, _Color, _Flags) ->
+    erlang:error(nif_not_loaded).
+
+%% @doc
+%%   Fill the rectangle Dst with Color
+%% @end
+-spec pixmap_fill_area(Dst::epx_pixmap(),
+		       X::coord(),Y::coord(),
+		       Width::dim(),Height::dim(),
+		       Color::epx_color()) -> void().
+
+pixmap_fill_area(Dst, X, Y, Width, Height, Color) ->
+    pixmap_fill_area(Dst, X, Y, Width, Height, Color, []).
+
+%% @doc
+%%   Fill and blend the rectangle Dst with Color
+%% @end
+-spec pixmap_fill_area(Dst::epx_pixmap(), 
+		       X::coord(),Y::coord(),
+		       Width::dim(),Height::dim(),
+		       Color::epx_color(), Flags::epx_flags()) ->
+			      void().
+
+pixmap_fill_area(_Dst, _X, _Y, _Width, _Height, _Color, _Flags) ->
     erlang:error(nif_not_loaded).
 
 %% @doc

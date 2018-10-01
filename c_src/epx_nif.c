@@ -54,6 +54,8 @@ static ERL_NIF_TERM pixmap_set_clip(ErlNifEnv* env, int argc,
 				    const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_fill(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM pixmap_fill_area(ErlNifEnv* env, int argc,
+				     const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_copy_to(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_flip(ErlNifEnv* env, int argc,
@@ -363,6 +365,7 @@ ErlNifFunc epx_funcs[] =
     NIF_FUNC("pixmap_sub_pixmap", 5, pixmap_sub_pixmap),
     NIF_FUNC("pixmap_set_clip", 2, pixmap_set_clip),
     NIF_FUNC("pixmap_fill", 3, pixmap_fill),
+    NIF_FUNC("pixmap_fill_area", 7, pixmap_fill_area),
     NIF_FUNC("pixmap_copy_to", 2, pixmap_copy_to),
     NIF_FUNC("pixmap_flip", 1, pixmap_flip),
     NIF_FUNC("pixmap_scale", 4, pixmap_scale),
@@ -555,6 +558,7 @@ DECL_ATOM(ntop);
 DECL_ATOM(nright);
 DECL_ATOM(nbottom);
 DECL_ATOM(nleft);
+DECL_ATOM(nborder);
 
 // DECL_ATOM(none);
 DECL_ATOM(butt);
@@ -1287,6 +1291,25 @@ static int get_flag(ErlNifEnv* env, const ERL_NIF_TERM term,
     return 1;
 }
 
+static int get_border_flag(ErlNifEnv* env, const ERL_NIF_TERM term,
+			   epx_flags_t* flags)
+{
+    (void) env;
+    if (term == ATOM(solid)) *flags = EPX_BORDER_STYLE_SOLID;
+    else if (term == ATOM(blend))   *flags = EPX_BORDER_STYLE_BLEND;
+    else if (term == ATOM(sum))   *flags = EPX_BORDER_STYLE_SUM;
+    else if (term == ATOM(aalias)) *flags = EPX_BORDER_STYLE_AALIAS;
+    else if (term == ATOM(textured)) *flags = EPX_BORDER_STYLE_TEXTURED;
+    else if (term == ATOM(dashed)) *flags = EPX_BORDER_STYLE_DASHED;
+    else if (term == ATOM(ntop)) *flags = EPX_BORDER_STYLE_NTOP;
+    else if (term == ATOM(nright)) *flags = EPX_BORDER_STYLE_NRIGHT;
+    else if (term == ATOM(nbottom)) *flags = EPX_BORDER_STYLE_NBOTTOM;
+    else if (term == ATOM(nleft)) *flags = EPX_BORDER_STYLE_NLEFT;
+    else if (term == ATOM(nborder)) *flags = EPX_BORDER_STYLE_NBORDER;
+    else return 0;
+    return 1;
+}
+
 // Parse pixmap flags
 // Input styles:  [flag-name] (atom)
 //                flag-name   (atom)
@@ -1317,6 +1340,43 @@ static int get_flags(ErlNifEnv* env, const ERL_NIF_TERM term,
 
 	while(enif_get_list_cell(env, list, &head, &tail)) {
 	    if (!get_flag(env, head, &f))
+		return 0;
+	    fs |= f;
+	    list = tail;
+	}
+	if (!enif_is_empty_list(env, list))
+	    return 0;
+	*flags = fs;
+	return 1;
+    }
+    return 0;
+}
+
+static int get_border_flags(ErlNifEnv* env, const ERL_NIF_TERM term,
+		     epx_flags_t* flags)
+{
+    epx_flags_t f;
+    if (enif_get_uint(env, term, &f)) {
+	*flags = f;
+	return 1;
+    }
+    if (enif_is_atom(env, term)) {
+	if (!get_border_flag(env, term, &f))
+	    return 0;
+	*flags = f;
+	return 1;
+    }
+    else if (enif_is_empty_list(env, term)) {
+	*flags = EPX_FLAG_NONE;
+	return 1;
+    }
+    else if (enif_is_list(env, term)) {
+	epx_flags_t fs = EPX_FLAG_NONE;
+	ERL_NIF_TERM list = term;
+	ERL_NIF_TERM head, tail;
+
+	while(enif_get_list_cell(env, list, &head, &tail)) {
+	    if (!get_border_flag(env, head, &f))
 		return 0;
 	    fs |= f;
 	    list = tail;
@@ -2042,7 +2102,7 @@ static ERL_NIF_TERM make_key_event(ErlNifEnv* env, ERL_NIF_TERM type,
 	if (e->key.mod & EPX_KBD_MOD_SHIFT) {
 	    if (e->key.mod & EPX_KBD_MOD_LSHIFT)
 		list = enif_make_list_cell(env, ATOM(shift_left), list);
-	    if (e->key.mod & EPX_KBD_MOD_RCTRL)
+	    if (e->key.mod & EPX_KBD_MOD_RSHIFT)
 		list = enif_make_list_cell(env, ATOM(shift_right), list);
 	    list = enif_make_list_cell(env, ATOM(shift), list);
 	}
@@ -2704,6 +2764,36 @@ static ERL_NIF_TERM pixmap_fill(ErlNifEnv* env, int argc,
 	epx_pixmap_fill_blend(pixmap, color);
     else
 	epx_pixmap_fill(pixmap, color);
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM pixmap_fill_area(ErlNifEnv* env, int argc,
+				     const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_pixmap_t* pixmap;
+    int x;
+    int y;
+    unsigned int width;
+    unsigned int height;    
+    epx_pixel_t color;
+    epx_flags_t flags;
+
+    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+	return enif_make_badarg(env);
+    if (!get_coord(env, argv[1], &x))
+	return enif_make_badarg(env);
+    if (!get_coord(env, argv[2], &y))
+	return enif_make_badarg(env);
+    if (!get_dim(env, argv[3], &width))
+	return enif_make_badarg(env);
+    if (!get_dim(env, argv[4], &height))
+	return enif_make_badarg(env);
+    if (!get_color(env, argv[5], &color))
+	return enif_make_badarg(env);
+    if (!get_flags(env, argv[6], &flags))
+	return enif_make_badarg(env);
+    epx_pixmap_fill_area(pixmap, x, y, width, height, color, flags);
     return ATOM(ok);
 }
 
@@ -4055,7 +4145,7 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
     }
     else if (argv[1] == ATOM(border_style)) {
 	epx_flags_t style;
-	if (!get_flags(env, argv[2], &style))
+	if (!get_border_flags(env, argv[2], &style))
 	    return enif_make_badarg(env);
 	epx_gc_set_border_style(src, style);
 	return ATOM(ok);
@@ -5239,6 +5329,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(nright);
     LOAD_ATOM(nbottom);
     LOAD_ATOM(nleft);
+    LOAD_ATOM(nborder);
 
     // simd_info
     LOAD_ATOM(emu);
