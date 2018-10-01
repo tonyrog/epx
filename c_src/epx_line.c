@@ -797,8 +797,26 @@ void epx_draw_line_thick(epx_pixmap_t* pic,
 void epx_draw_line(epx_pixmap_t* pixmap,int x0, int y0, int x1, int y1,
 		   unsigned int line_width,epx_flags_t flags, epx_pixel_t p)
 {
-    if (line_width <= 1)
-	epx_draw_line_plain(pixmap, x0, y0, x1, y1, flags, p);
-    else
-	epx_draw_line_thick(pixmap, x0, y0, x1, y1, line_width, flags, p);
+    if (line_width <= 1) {
+	if (y0 == y1)
+	    epx_draw_line_horizontal(pixmap, x0, x1, y1, flags, p);
+	else if (x0 == x1)
+	    epx_draw_line_vertical(pixmap, x0, y0, y1, flags, p);
+	else
+	    epx_draw_line_plain(pixmap, x0, y0, x1, y1, flags, p);
+    }
+    else {
+	if (y0 == y1) {
+	    if (x0 > x1) epx_swap_int(x1,x0);
+	    epx_pixmap_fill_area(pixmap, x0, y0, x1-x0+1, line_width,
+				 p, flags);
+	}
+	else if (x0 == x1) {
+	    if (y0 > y1) epx_swap_int(y1,y0);
+	    epx_pixmap_fill_area(pixmap, x0, y0, line_width, y1-y0+1,
+				 p, flags);
+	}
+	else
+	    epx_draw_line_thick(pixmap, x0, y0, x1, y1, line_width, flags, p);
+    }
 }

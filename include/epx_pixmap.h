@@ -140,13 +140,16 @@ extern epx_pixmap_t* epx_pixmap_sub_pixmap(epx_pixmap_t* src,
 					   unsigned int width,
 					   unsigned int height);
 
-extern void epx_pixmap_destroy(epx_pixmap_t* pic);
+extern void epx_pixmap_destroy(epx_pixmap_t* pixmap);
 
-extern void epx_pixmap_copy_to(epx_pixmap_t* src, epx_pixmap_t* dst);
-extern void epx_pixmap_set_clip(epx_pixmap_t* pic, epx_rect_t* clip);
-extern void epx_pixmap_fill(epx_pixmap_t* pic, epx_pixel_t color);
-extern void epx_pixmap_fill_blend(epx_pixmap_t* pic, epx_pixel_t color);
-
+extern void epx_pixmap_copy_to(epx_pixmap_t* pixmap, epx_pixmap_t* dst);
+extern void epx_pixmap_set_clip(epx_pixmap_t* pixmap, epx_rect_t* clip);
+extern void epx_pixmap_fill(epx_pixmap_t* pixmap, epx_pixel_t color);
+extern void epx_pixmap_fill_blend(epx_pixmap_t* pixmap, epx_pixel_t color);
+extern void epx_pixmap_fill_area(epx_pixmap_t* pixmap,
+				 int x, int y,
+				 unsigned int width, unsigned int height,
+				 epx_pixel_t color, epx_flags_t flags);
 extern void epx_pixmap_scale(epx_pixmap_t* src, epx_pixmap_t* dst, 
 			     unsigned int width, unsigned int height);
 extern void epx_pixmap_scale_area(epx_pixmap_t* src, epx_pixmap_t* dst,

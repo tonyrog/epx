@@ -1849,13 +1849,36 @@ void epx_pixmap_fill(epx_pixmap_t* dst, epx_pixel_t p)
     }
 }
 
+void epx_pixmap_fill_area(epx_pixmap_t* pixmap,
+			  int x, int y,
+			  unsigned int width, unsigned int height,
+			  epx_pixel_t color, epx_flags_t flags)
+{
+    uint8_t* ptr;
+    epx_rect_t r;
+    epx_rect_t r0 = {{x,y},{width,height}};
+    unsigned int psz;
+    epx_format_t pt;
+    int wb;
+    
+    if (!epx_rect_intersect(&r0, &pixmap->clip, &r))
+	return;
+    pt = pixmap->pixel_format;
+    psz = EPX_PIXEL_BYTE_SIZE(pt);
+    wb  = pixmap->bytes_per_row;
+    ptr = ((uint8_t*)pixmap->data)+(r.xy.y*wb)+(r.xy.x*psz);
+    if ((flags & EPX_FLAG_BLEND) && (color.a != EPX_ALPHA_OPAQUE))
+	pixmap->func.fill_area_blend(ptr, wb, pt, color, r.wh.width, r.wh.height);
+    else
+	epx_fill_area(ptr, wb, pt, color, r.wh.width, r.wh.height);
+}
+
 void epx_pixmap_fill_blend(epx_pixmap_t* dst, epx_pixel_t p)
 {
     dst->func.fill_area_blend(dst->data, dst->bytes_per_row,
 			      dst->pixel_format, p,
 			      dst->width, dst->height);
 }
-
 
 /* Flip the Pixmap (y direction) */
 void epx_pixmap_flip(epx_pixmap_t* pic)
