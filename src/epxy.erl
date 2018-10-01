@@ -65,7 +65,7 @@
 %% -define(dbg(F), io:format((F))).
 
 -type widget_type() :: window | panel | button | switch | slider | value |
-		       rectangle | ellipse | line | text | user.
+		       menu | rectangle | ellipse | line | text | user.
 
 %% convert to map?
 -record(widget,
@@ -88,6 +88,7 @@
 	  height = 0 :: non_neg_integer(),
 	  text = "",
 	  tabs = [],
+	  items = [],  %% menu items
 	  border  :: number(),
 	  border_color =  16#00000000,
 	  shadow_x :: number(),
@@ -164,6 +165,12 @@
 	    E5->true;E6->true;E7->true;E8->true;
 	    E9->true;E10->true;E11->true;
 	    _->false end).
+-define(MEMBER(X,E1,E2,E3,E4,E5,E6,E7,E8,E9,E10,E11,E12),
+	case X of 
+	    E1->true;E2->true;E3->true;E4->true;
+	    E5->true;E6->true;E7->true;E8->true;
+	    E9->true;E10->true;E11->true;E12->true;
+	    _->false end).
 -define(MEMBER(X,E1,E2,E3,E4,E5,E6,E7,E8,E9,E10,
 	       E11,E12,E13,E14,E15,E16,E17,E18,E19,E20,
 	       E21,E22,E23,E24,E25,E26),
@@ -176,6 +183,19 @@
 	    E19->true;E20->true;
 	    E21->true;E22->true;E23->true;E24->true;
 	    E25->true;E26->true;
+	    _->false end).
+-define(MEMBER(X,E1,E2,E3,E4,E5,E6,E7,E8,E9,E10,
+	       E11,E12,E13,E14,E15,E16,E17,E18,E19,E20,
+	       E21,E22,E23,E24,E25,E26,E27),
+	case X of 
+	    E1->true;E2->true;E3->true;E4->true;
+	    E5->true;E6->true;E7->true;E8->true;
+	    E9->true;E10->true;
+	    E11->true;E12->true;E13->true;E14->true;
+	    E15->true;E16->true;E17->true;E18->true;
+	    E19->true;E20->true;
+	    E21->true;E22->true;E23->true;E24->true;
+	    E25->true;E26->true;E27->true;
 	    _->false end).
 
 -define(TABS_X_OFFSET, 10).  %% should scale with size!
@@ -319,7 +339,8 @@ handle_call({set,ID,Flags}, _From, State) ->
 	{ok,W} ->
 	    try widget_set(W,Flags) of
 		W1 ->
-		    widget_store(W1),
+		    W2 = update_widget(W1),
+		    widget_store(W2),
 		    self() ! refresh,
 		    {reply, ok, State}
 	    catch
@@ -447,7 +468,7 @@ handle_cast(_Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info({epx_event,Win,Event}, State) ->
-    ?dbg("event: ~p", [Event]),
+    ?dbg("event: ~p\n", [Event]),
     %% find window widget (fixme: add reverse map at some point) ?
     case fold_windows(
 	   fun(W,Acc) ->
@@ -546,9 +567,10 @@ widget_create(ID,WID,Flags,State) ->
 			W2#widget.window++"."++W2#widget.id
 		end,
 	    tree_db:insert(State#state.wtree,{Y,W2#widget.id}),
-	    widget_store(W2),
+	    W3 = update_widget(W2),
+	    widget_store(W3),
 	    self() ! refresh,
-	    {ok,W2}
+	    {ok,W3}
     catch
 	error:Reason ->
 	    lager:warning("widget ~p not created ~p\n", [ID, Reason]),
@@ -577,7 +599,7 @@ widget_find(ID) ->
     end.
 
 handle_event(Event={key_press,_Sym,_Mod,_Code},Window,State) ->
-    io:format("event: ~p\n", [Event]),
+    ?dbg("event: ~p\n", [Event]),
     case State#state.focus of
 	[] ->
 	    {noreply, State};
@@ -587,7 +609,7 @@ handle_event(Event={key_press,_Sym,_Mod,_Code},Window,State) ->
 	    {noreply, State1}
     end;
 handle_event(Event={key_release,_Sym,_Mod,_Code},Window,State) ->
-    io:format("event: ~p\n", [Event]),
+    ?dbg("event: ~p\n", [Event]),
     case State#state.focus of
 	[] ->
 	    {noreply, State};
@@ -601,11 +623,11 @@ handle_event(Event={button_press,Button,Where},Window,State) ->
 	true ->
 	    %% locate an active widget at position (X,Y)
 	    WinID = Window#widget.id,
-	    lager:debug("Window = ~p\n", [WinID]),
 	    case widgets_at_location(Where,{0,0},WinID,State) of
 		[] ->
 		    {noreply, State};
 		Ws ->
+		    ?dbg("press widget = ~p\n", [[V#widget.id||{V,_XY}<-Ws]]),
 		    State1 = widgets_event(Ws,Event,Window,State),
 		    {noreply, State1}
 	    end;
@@ -618,6 +640,7 @@ handle_event(Event={button_release,Button,Where},Window,State) ->
 	    WinID = Window#widget.id,
 	    Ws0 = widgets_at_location(Where,{0,0},WinID,State),
 	    %% also add active widgets not already on the list
+	    ?dbg("release widget = ~p\n", [[V#widget.id||{V,_XY}<-Ws0]]),
 	    Ws1 = lists:foldl(
 		    fun({Wid,Offs},Ws) ->
 			    case widget_member(Wid, Ws) of
@@ -720,18 +743,18 @@ widgets_event([{W,XY}|Ws],Event,Window,State) ->
 			%% Focus changed
 			case State#state.focus of
 			    [] ->
-				io:format("focus_in ~s\n", [W1#widget.id]),
+				?dbg("focus_in ~s\n", [W1#widget.id]),
 				[{W1#widget.id,XY}];
 			    [{F,_Fxy}] -> %% old focuse
 				W0 = widget_fetch(F),
-				io:format("focus_out ~s\n", [W0#widget.id]),
+				?dbg("focus_out ~s\n", [W0#widget.id]),
 				widget_store(W0#widget { state = normal }),
-				io:format("focus_in ~s\n", [W1#widget.id]),
+				?dbg("focus_in ~s\n", [W1#widget.id]),
 				[{W1#widget.id,XY}]
 			end;
 		   W#widget.state =:= focus, W1#widget.state =/= focus ->
 			%% Focus changed
-			io:format("focus_out ~s\n", [W1#widget.id]),
+			?dbg("focus_out ~s\n", [W1#widget.id]),
 			State#state.focus -- [{W1#widget.id,XY}];
 		   true ->
 			State#state.focus
@@ -802,7 +825,7 @@ select_children(W,ID,Pos,XY,Acc,State) when
 		    Acc
 	    end;
 	_Tab ->
-	    ?dbg("tab at (~w,~w) = ~w\n", [X,Y,_Tab]),
+	    ?dbg("tab at ~w = ~w\n", [XY,_Tab]),
 	    [{W,XY}|Acc]
     end;
 select_children(_W,ID,Pos,XY,Acc,State) ->
@@ -857,6 +880,19 @@ tab_at_location(W,{Xi,Yi,_Z},_XY={Xw,Yw}) ->
 	    case in_rect(Xi,Yi,X0,Y0,Width,Height*N) of
 		false -> 0;
 		true -> ((Yi-Yoffs) div Height)+1
+	    end
+    end.
+
+item_at_location(W,{Xi,Yi,_Z},_XY={Xw,Yw}) ->
+    case length(W#widget.items) of
+	0 -> 0;
+	N ->
+	    case in_rect(Xi,Yi,Xw,Yw,
+			 W#widget.width,W#widget.height) of
+		false -> 0;
+		true ->
+		    H = W#widget.height div N,
+		    ((Yi-Yw) div H)+1
 	    end
     end.
 
@@ -950,14 +986,26 @@ widget_event(Event={button_press,_Button,Where},W,XY,Window,State) ->
 		    callback_all(W#widget.id,State#state.subs,[{value,Value}]),
 		    W#widget { state=active, value = Value }
 	    end;
+
 	panel ->
 	    case tab_at_location(W,Where,XY) of
 		0 ->
 		    lager:debug("panel box select error"),
 		    W;
 		Value ->
-		    ?dbg("tab at (~w,~w) = ~w\n", [X,Y,Value]),
+		    ?dbg("tab at ~w = ~w\n", [XY,Value]),
 		    callback_all(W#widget.id,State#state.subs,[{value,Value}]),
+		    W#widget { value = Value }
+	    end;
+
+	menu ->
+	    case item_at_location(W,Where,XY) of
+		0 ->
+		    lager:debug("menu box select error"),
+		    W;
+		Value ->
+		    ?dbg("item at ~w = ~w\n", [XY,Value]),
+		    epx:window_enable_events(Window#widget.win, [motion]),
 		    W#widget { value = Value }
 	    end;
 	user ->
@@ -1000,6 +1048,11 @@ widget_event(Event={button_release,_Button,Where},W,XY,Window,State) ->
 	    W#widget{state=normal};
 	panel ->
 	    W;
+	menu ->
+	    epx:window_disable_events(Window#widget.win, [motion]),
+	    Value = W#widget.value,
+	    callback_all(W#widget.id,State#state.subs,[{value,Value}]),
+	    W#widget{state=normal};
 	user ->
 	    case user(W#widget.user,event,Event,W,Window,XY) of
 		W1 when is_record(W1, widget) ->
@@ -1025,6 +1078,12 @@ widget_event(Event={motion,_Button,Where},W,XY,Window,State) ->
 		    callback_all(W#widget.id,State#state.subs,[{value,Value}]),
 		    W#widget { value = Value }
 	    end;
+	menu ->
+	    case item_at_location(W,Where,XY) of
+		Value when Value =/=  W#widget.value ->
+		    W#widget { value = Value };
+		_ -> W
+	    end;
 	user ->
 	    case user(W#widget.user,event,Event,W,Window,XY) of
 		W1 when is_record(W1, widget) -> W1;
@@ -1033,7 +1092,7 @@ widget_event(Event={motion,_Button,Where},W,XY,Window,State) ->
 	_ ->
 	    W
     end;
-widget_event(Event={key_press,Sym,_Mod,_Code},W,_XY,_Window,State) ->
+widget_event(_Event={key_press,Sym,_Mod,_Code},W,_XY,_Window,State) ->
     case W#widget.type of
 	text ->
 	    case Sym of
@@ -1041,15 +1100,15 @@ widget_event(Event={key_press,Sym,_Mod,_Code},W,_XY,_Window,State) ->
 		    Value = W#widget.text,
 		    callback_all(W#widget.id,State#state.subs,[{value,Value}]),
 		    %% will release focus!
-		    io:format("focus_out ~s\n", [W#widget.id]),
+		    ?dbg("focus_out ~s\n", [W#widget.id]),
 		    W#widget { state = normal };
 		$\e ->
 		    %% will release focus!
-		    io:format("focus_out ~s\n", [W#widget.id]),
+		    ?dbg("focus_out ~s\n", [W#widget.id]),
 		    W#widget { state = normal };
 		$\t ->
 		    %% will release focus!
-		    io:format("focus_out ~s\n", [W#widget.id]),
+		    ?dbg("focus_out ~s\n", [W#widget.id]),
 		    W#widget { state = normal };
 		$\b -> %% delete backwards
 		    Text1 = case W#widget.text of
@@ -1061,7 +1120,7 @@ widget_event(Event={key_press,Sym,_Mod,_Code},W,_XY,_Window,State) ->
 		    Text1 = W#widget.text ++ [Sym],
 		    W#widget { text = Text1 };
 		_ ->
-		    io:format("ignore symbol ~p\n", [Event]),
+		    ?dbg("ignore symbol ~p\n", [_Event]),
 		    W
 	    end;
 	_ ->
@@ -1229,6 +1288,7 @@ keypos(Key) ->
 	height -> #widget.height;
 	text -> #widget.text;
 	tabs -> #widget.tabs;
+	items -> #widget.items;
 	border -> #widget.border;
 	border_color -> #widget.border_color;
 	shadow_x -> #widget.shadow_x;
@@ -1266,7 +1326,7 @@ keypos(Key) ->
 
 %% return true|false|{true,Value'}
 validate(#widget.type,Type) ->
-    ?MEMBER(Type,window,panel,button,switch,slider,value,
+    ?MEMBER(Type,window,panel,button,switch,slider,value,menu,
 	    rectangle,ellipse,line,text,user);
 validate(#widget.id,ID) when is_atom(ID) -> {true, atom_to_list(ID)};
 validate(#widget.id,ID) when is_list(ID) -> true;
@@ -1290,6 +1350,7 @@ validate(#widget.height,Arg) -> is_integer(Arg) andalso (Arg >= 0);
 validate(#widget.text,Arg) when is_list(Arg) -> true;
 validate(#widget.text,Arg) when is_atom(Arg) -> {true,atom_to_list(Arg)};
 validate(#widget.tabs,Arg) -> is_list(Arg);
+validate(#widget.items,Arg) -> is_list(Arg);
 validate(#widget.border,Arg) -> is_integer(Arg);
 validate(#widget.border_color,Arg) -> validate_color(Arg);
 validate(#widget.orientation,Arg) -> ?MEMBER(Arg,horizontal,vertical);
@@ -1448,6 +1509,23 @@ update_window(Win,_State) ->
 		    Win#widget.win,0,0,0,0,
 		    Win#widget.width,Win#widget.height).
 
+%% Check automatix adjustments needed after create/set
+update_widget(W) ->
+    case W#widget.type of
+	menu when W#widget.width =:= 0; W#widget.height =:= 0 ->
+	    {_Ascent,TextDims,MaxW,MaxH} = menu_item_box(W),
+	    N = length(TextDims),
+	    Width = if W#widget.width =:= 0 -> MaxW+?TABS_X_PAD;
+		       true -> W#widget.width
+		    end,
+	    Height = if W#widget.height =:= 0 -> (MaxH+?TABS_Y_PAD)*N;
+			true -> W#widget.height
+		     end,
+	    W#widget { width=Width, height=Height };
+	_ ->
+	    W
+    end.
+
 unmap_window(Win,_State) ->
     epx:window_detach(Win#widget.win),
     epx:pixmap_detach(Win#widget.backing).
@@ -1589,6 +1667,13 @@ draw_widget(W, Win, XY={X,Y}, _State) ->
 		      draw_text_box(Win, X, Y, W, Text)
 	      end);
 
+	menu ->
+	    epx_gc:draw(
+	      fun() ->
+		      draw_background(Win, X, Y, W),
+		      draw_menu(Win, X, Y, W)
+	      end);
+
 	rectangle ->
 	    epx_gc:draw(
 	      fun() ->
@@ -1692,17 +1777,34 @@ draw_tabs(Win,X,Y,W) ->
 			W#widget.halign, W#widget.valign)
     end.
 
+draw_menu(Win,X,Y,W) ->
+    {Ascent,TextDims,MaxW,MaxH} = menu_item_box(W),
+    N = length(TextDims),
+    Width =  (MaxW+?TABS_X_PAD),
+    Height = (MaxH+?TABS_Y_PAD),
+    Y0 =  Y + (W#widget.height - (Height*N)) div 2,
+    X0 = X, %% (X + ?TABS_X_OFFSET),
+    set_color(W, ?TABS_COLOR),
+    epx_gc:set_fill_style(solid),
+    epx:draw_rectangle(Win#widget.image, X0, Y0, Width, Height*N),
+    draw_items(Win, W, 1, Ascent, TextDims, X0, Y0, Width, Height,
+	       W#widget.halign, W#widget.valign).
+    
 tabs_item_box(W) ->
+    item_box(W, W#widget.tabs).
+
+menu_item_box(W) ->
+    item_box(W, W#widget.items).
+
+item_box(W, Items) ->
     Font = W#widget.font,
     epx_gc:set_font(Font),
     Ascent = epx:font_info(Font, ascent),
-    Tabs = W#widget.tabs,
     TextDims = [ {epx_font:dimension(epx_gc:current(), Text),Text} || 
-		   Text <- Tabs ],
+		   Text <- Items ],
     MaxW = lists:max([Wi || {{Wi,_},_} <- TextDims]),
     MaxH = lists:max([Hi || {{_,Hi},_} <- TextDims]),
-    {Ascent,TextDims,MaxW,MaxH}.
-
+    {Ascent,TextDims,MaxW,MaxH}.    
 
 draw_h_tabs(Win, W, I, Ascent, [{{TxW,TxH},Text}|TextDims],
 	    Xi, Yi, Width, Height, Halign, Valign) ->
@@ -1748,6 +1850,34 @@ draw_v_tabs(Win, W, I, Ascent, [{{TxW,TxH},Text}|TextDims],
 		Xi, Yi+Height, Width, Height, Halign, Valign);
 draw_v_tabs(_Win, _W, _I, _Ascent, [], 
 	    _Xi, Yi, _Width, _Height, _Halign, _Valign) ->
+    Yi.
+
+%% same as draw_v_tabs
+draw_items(Win, W, I, Ascent, [{{TxW,TxH},Text}|TextDims],
+	  Xi, Yi, Width, Height, Halign, Valign) ->
+    if I =:= W#widget.value ->
+	    Color = color_sub(?TABS_COLOR, 16#00333333),
+	    epx_gc:set_fill_color(Color),
+	    epx_gc:set_fill_style(solid),
+	    epx:draw_rectangle(Win#widget.image, Xi, Yi, Width, Height);
+       true ->
+	    ok
+    end,
+    epx_gc:set_foreground_color(16#00000000),
+    epx_gc:set_fill_style(none),
+    if I =:= 1 ->
+	    epx_gc:set_border_style([]);
+       true ->
+	    epx_gc:set_border_style([ntop])
+    end,
+    epx:draw_rectangle(Win#widget.image, Xi, Yi, Width, Height),
+    set_font_color(W#widget.font_color),
+    draw_text(Win, Ascent, Text, TxW, TxH, Xi, Yi,
+	      Width, Height, Halign, Valign),
+    draw_items(Win, W, I+1, Ascent, TextDims,
+	      Xi, Yi+Height, Width, Height, Halign, Valign);
+draw_items(_Win, _W, _I, _Ascent, [], 
+	  _Xi, Yi, _Width, _Height, _Halign, _Valign) ->
     Yi.
     
     
@@ -2048,20 +2178,8 @@ draw_value_bar(Win,X,Y,W,TopImage) ->
 value_proportion(W) ->
     #widget { min=Min, max=Max, value=Value} = W,
     Delta = abs(Max - Min),
-    if Min < Max ->
-		V = if Value < Min -> Min;
-		       Value > Max -> Max;
-		       true -> Value
-		    end,
-		(V - Min)/Delta;
-       Min > Max -> %% reversed axis
-	    V = if Value > Min -> Min;
-		   Value < Max -> Max;
-		   true -> Value
-		end,
-	    (V - Max)/Delta;
-       true ->
-	    0.5
+    if Delta == 0 -> 0.5;
+       true  -> (clamp(Value,Min,Max)-min(Min,Max))/Delta
     end.
 
 draw_topimage(Win,Xw,Yw, W, TopImage, R) ->
