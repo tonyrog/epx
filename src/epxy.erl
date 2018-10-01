@@ -80,6 +80,7 @@
 	  edit = false,       %% allow edit of text fields
 	  relative = true :: boolean(), %% childrens are relative to parent
 	  user,               %% mfa when type=user
+	  filter,             %% mfa for event filter
 	  children_first = true :: boolean(), %% draw/select children first
 	  x = 0   :: integer(),
 	  y = 0   :: integer(),
@@ -961,7 +962,26 @@ animation_at_location(W,X,Y,Anim) ->
       
 
 %% generate a callback event and start animate the button
-widget_event(Event={button_press,_Button,Where},W,XY,Window,State) ->
+
+%% fixme add widget event_filter the filter fun works like
+%% lists:filter return true to include and false/crash to discard
+widget_event(Event, W, XY, Window, State) ->
+    case W#widget.filter of
+	undefined -> %% include 
+	    widget_event_(Event, W, XY, Window, State);
+	Filter ->
+	    try user(Filter,filter,Event,W,Window,XY) of
+		false -> %% discard
+		    W;
+		true ->  %% include
+		    widget_event_(Event, W, XY, Window, State)
+	    catch
+		error:_ ->  %% discard
+		    W
+	    end
+    end.
+
+widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
     case W#widget.type of
 	button ->
 	    callback_all(W#widget.id, State#state.subs, [{value,1}]),
@@ -1036,7 +1056,7 @@ widget_event(Event={button_press,_Button,Where},W,XY,Window,State) ->
 			 [{press,1},{x,X-Xi},{y,Y-Yi}]),
 	    W#widget { state=selected }
     end;
-widget_event(Event={button_release,_Button,Where},W,XY,Window,State) ->
+widget_event_(Event={button_release,_Button,Where},W,XY,Window,State) ->
     case W#widget.type of
 	button ->
 	    callback_all(W#widget.id, State#state.subs, [{value,0}]),
@@ -1061,6 +1081,10 @@ widget_event(Event={button_release,_Button,Where},W,XY,Window,State) ->
 		    W
 	    end;
 	text ->
+	    {Xi,Yi} = XY,
+	    {X,Y,_} = Where,
+	    callback_all(W#widget.id,State#state.subs,
+			 [{press,0},{x,X-Xi},{y,Y-Yi}]),
 	    W;
 	_ ->
 	    {Xi,Yi} = XY,
@@ -1069,7 +1093,7 @@ widget_event(Event={button_release,_Button,Where},W,XY,Window,State) ->
 			 [{press,0},{x,X-Xi},{y,Y-Yi}]),
 	    W#widget { state=normal }
     end;
-widget_event(Event={motion,_Button,Where},W,XY,Window,State) ->
+widget_event_(Event={motion,_Button,Where},W,XY,Window,State) ->
     case W#widget.type of
 	slider ->
 	    case widget_slider_value(W,Where,XY) of
@@ -1092,7 +1116,7 @@ widget_event(Event={motion,_Button,Where},W,XY,Window,State) ->
 	_ ->
 	    W
     end;
-widget_event(_Event={key_press,Sym,_Mod,_Code},W,_XY,_Window,State) ->
+widget_event_(_Event={key_press,Sym,_Mod,_Code},W,_XY,_Window,State) ->
     case W#widget.type of
 	text ->
 	    case Sym of
@@ -1126,10 +1150,10 @@ widget_event(_Event={key_press,Sym,_Mod,_Code},W,_XY,_Window,State) ->
 	_ ->
 	    W
     end;
-widget_event(close,W,_XY,_Window,State) ->
+widget_event_(close,W,_XY,_Window,State) ->
     callback_all(W#widget.id,State#state.subs,[{closed,true}]),
     W#widget { state=closed };
-widget_event(Event,W,XY,Window,_State) ->
+widget_event_(Event,W,XY,Window,_State) ->
     case W#widget.type of
 	user ->
 	    case user(W#widget.user,event,Event,W,Window,XY) of
@@ -1280,6 +1304,7 @@ keypos(Key) ->
 	disabled -> #widget.disabled;
 	relative -> #widget.relative;
 	user -> #widget.user;
+	filter -> #widget.filter;
 	children_first -> #widget.children_first;
 	x -> #widget.x;
 	y -> #widget.y;
@@ -1331,6 +1356,8 @@ validate(#widget.type,Type) ->
 validate(#widget.id,ID) when is_atom(ID) -> {true, atom_to_list(ID)};
 validate(#widget.id,ID) when is_list(ID) -> true;
 validate(#widget.user,{M,F,As}) -> 
+    is_atom(M) andalso is_atom(F) andalso is_list(As);
+validate(#widget.filter,{M,F,As}) -> 
     is_atom(M) andalso is_atom(F) andalso is_list(As);
 validate(#widget.static,Arg) ->  ?MEMBER(Arg,true,false);
 validate(#widget.hidden,Arg) ->  ?MEMBER(Arg,true,false,none,all);
@@ -2000,20 +2027,12 @@ draw_one_background(Win,W,X,Y,Width,Height,N,Color,Image,Anim,Frame) ->
 	    epx_gc:set_fill_style(W#widget.fill),  %% fill, fill2!
 	    set_color(W, Color),
 	    if W#widget.type =:= button ->
-		    Rw = if W#widget.round_w =:= undefined -> 8; 
-			    true -> W#widget.round_w
-			 end,
-		    Rh = if W#widget.round_h =:= undefined -> 8; 
-			    true -> W#widget.round_h
-			 end,
+		    Rw = optional(W#widget.round_w, 8),
+		    Rh = optional(W#widget.round_h, 8),
 		    epx:draw_roundrect(Win#widget.image,X,Y,Width,Height,Rw,Rh);
 	       W#widget.round_w =/= undefined; W#widget.round_h =/= undefined ->
-		    Rw = if W#widget.round_w =:= undefined -> 0; 
-			    true -> W#widget.round_w
-			 end,
-		    Rh = if W#widget.round_h =:= undefined -> 0; 
-			    true -> W#widget.round_h
-			 end,	    
+		    Rw = optional(W#widget.round_w, 0),
+		    Rh = optional(W#widget.round_h, 0),
 		    epx:draw_roundrect(Win#widget.image,X,Y,Width,Height,Rw,Rh);
 	       true ->
 		    epx:draw_rectangle(Win#widget.image,X,Y,Width,Height)
@@ -2021,7 +2040,7 @@ draw_one_background(Win,W,X,Y,Width,Height,N,Color,Image,Anim,Frame) ->
     end,
     %% optionally draw image possibly with rect as background
     if is_record(Image, epx_pixmap) ->
-	    lager:debug("drawing image ~p", [Image]),
+	    ?dbg("drawing image ~p", [Image]),
 	    IWidth  = epx:pixmap_info(Image,width),
 	    IHeight = epx:pixmap_info(Image,height),
 	    if IWidth =:= Width, IHeight =:= Height ->
@@ -2105,6 +2124,8 @@ update_animation(W, 2, Frame, Count) ->
 	    W
     end.
 
+optional(undefined, Default) -> Default;
+optional(Value, _Default) -> Value.
 
 fmod(A, B) when is_integer(A), is_integer(B), B =/= 0 ->
     A rem B;
@@ -2136,7 +2157,6 @@ create_tmp_pixmap(Format, Width, Height) ->
     put(tmp_pixmap, Pixmap),
     Pixmap.
 
-    
 draw_border(_Win,_X,_Y,_W, undefined) ->
     ok;
 draw_border(_Win,_X,_Y,_W, 0) ->
@@ -2151,7 +2171,7 @@ draw_border(Win,X,Y,W,Border) ->
 		       W#widget.width, W#widget.height).
 
 draw_focus(Win,X,Y,W) when W#widget.edit, W#widget.state =:= focus ->
-    Bw = W#widget.border+2,
+    Bw = optional(W#widget.border, 0) + 2,
     epx_gc:set_border_color(16#009f9f9f),
     epx_gc:set_border_width(2),
     epx_gc:set_fill_style(none),
@@ -2160,7 +2180,6 @@ draw_focus(Win,X,Y,W) when W#widget.edit, W#widget.state =:= focus ->
 		       W#widget.width+2*Bw, W#widget.height+2*Bw);
 draw_focus(_Win,_X,_Y,_W) ->
     ok.
-
 
 draw_value_bar(Win,X,Y,W,TopImage) ->
     #widget { min=Min, max=Max, value=Value} = W,
