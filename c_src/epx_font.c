@@ -565,18 +565,23 @@ static int is_legal_utf8(uint8_t* source, int length)
     const uint8_t *srcptr = source+length;
     switch (length) {
     default: return 0;
-    case 4: if ((a = (*--srcptr)) < 0x80 || a > 0xBF) return 0;
-    case 3: if ((a = (*--srcptr)) < 0x80 || a > 0xBF) return 0;
-    case 2: if ((a = (*--srcptr)) > 0xBF) return 0;
+    case 4:
+	if ((a = (*--srcptr)) < 0x80 || a > 0xBF) return 0; /* fall through */
+    case 3:
+	if ((a = (*--srcptr)) < 0x80 || a > 0xBF) return 0; /* fall through */
+    case 2:
+	if ((a = (*--srcptr)) > 0xBF) return 0;
 	switch (*source) {
 	    /* no fall-through in this inner switch */
-	    case 0xE0: if (a < 0xA0) return 0;
-	    case 0xED: if (a > 0x9F) return 0;
-	    case 0xF0: if (a < 0x90) return 0;
-	    case 0xF4: if (a > 0x8F) return 0;
-	    default:   if (a < 0x80) return 0;
+	    case 0xE0: if (a < 0xA0) return 0; /* fall through */
+	    case 0xED: if (a > 0x9F) return 0; /* fall through */
+	    case 0xF0: if (a < 0x90) return 0; /* fall through */
+	    case 0xF4: if (a > 0x8F) return 0; /* fall through */
+	    default:   if (a < 0x80) return 0; /* fall through */
 	}
-    case 1: if (*source >= 0x80 && *source < 0xC2) return 0;
+	/* fall through */
+    case 1:
+	if (*source >= 0x80 && *source < 0xC2) return 0;  /* fall through */
     }
     if (*source > 0xF4) return 0;
     return 1;
@@ -609,11 +614,11 @@ void epx_font_draw_utf8(epx_gc_t* gc, epx_pixmap_t* dst,
 	    if (!is_legal_utf8(source, n+1))
 		break;
 	    switch (n) {
-	    case 5:  ch += *source++; ch <<= 6;
-	    case 4:  ch += *source++; ch <<= 6;
-	    case 3:  ch += *source++; ch <<= 6;
-	    case 2:  ch += *source++; ch <<= 6;
-	    case 1:  ch += *source++; ch <<= 6;
+	    case 5:  ch += *source++; ch <<= 6; /* fall through */
+	    case 4:  ch += *source++; ch <<= 6; /* fall through */
+	    case 3:  ch += *source++; ch <<= 6; /* fall through */
+	    case 2:  ch += *source++; ch <<= 6; /* fall through */
+	    case 1:  ch += *source++; ch <<= 6; /* fall through */
 	    default: ch += *source++;
 	    }
 
