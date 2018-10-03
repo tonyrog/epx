@@ -61,8 +61,8 @@
 %% HARD DEBUG
 -define(dbg(F), ok).
 -define(dbg(F,A), ok).
-%% -define(dbg(F,A), io:format((F),(A))).
-%% -define(dbg(F), io:format((F))).
+%%-define(dbg(F,A), io:format((F),(A))).
+%%-define(dbg(F), io:format((F))).
 
 -type widget_type() :: window | panel | button | switch | slider | value |
 		       menu | rectangle | ellipse | line | text | user.
@@ -73,7 +73,7 @@
 	  id :: string(),     %% (structured) name of widget
 	  type :: widget_type(),
 	  window :: string(), %% id of base window (if type != window)
-	  state  = normal,    %% or active,selected,closed ..
+	  state  = normal,    %% normal,active
 	  static = false,     %% object may not be deleted
 	  hidden = false,     %% show/hiden false,true,all,none
 	  disabled = false,   %% enable disable event input false,true,all,none
@@ -341,9 +341,16 @@ handle_call({set,ID,Flags}, _From, State) ->
 	    try widget_set(W,Flags) of
 		W1 ->
 		    W2 = update_widget(W1),
+		    State1 = if W#widget.state =:= normal,
+			       W1#widget.state =:= active ->
+				     XY = {W#widget.x,W#widget.y},
+				     add_to_active(W#widget.id,XY,State);
+				true ->
+				     State
+			     end,
 		    widget_store(W2),
 		    self() ! refresh,
-		    {reply, ok, State}
+		    {reply, ok, State1}
 	    catch
 		error:Reason ->
 		    lager:warning("set ~s ~p crashed ~p\n", [ID,Flags,Reason]),
@@ -640,15 +647,18 @@ handle_event(Event={button_release,Button,Where},Window,State) ->
 	true ->
 	    WinID = Window#widget.id,
 	    Ws0 = widgets_at_location(Where,{0,0},WinID,State),
+	    ?dbg("release widgets = ~p\n", [[V#widget.id||{V,_XY}<-Ws0]]),
 	    %% also add active widgets not already on the list
-	    ?dbg("release widget = ~p\n", [[V#widget.id||{V,_XY}<-Ws0]]),
 	    Ws1 = lists:foldl(
-		    fun({Wid,Offs},Ws) ->
+		    fun({Wid,XY},Ws) ->
 			    case widget_member(Wid, Ws) of
-				false -> [{widget_fetch(Wid),Offs}|Ws];
+				false -> [{widget_fetch(Wid),XY}|Ws];
 				true -> Ws
 			    end
 		    end, Ws0, State#state.active),
+	    ?dbg("release widgets = ~p + ~p\n", 
+		 [[V#widget.id||{V,_XY}<-Ws0],
+		  [Vid||{Vid,_Offs}<-State#state.active]]),
 	    State1 = 
 		lists:foldl(
 		  fun({W,Offs},Si) ->
@@ -722,6 +732,12 @@ widget_member(Wid, [{W1,_}|Ws]) ->
 widget_member(_W, []) ->
     false.
 
+add_to_active(Wid, XY, State) ->
+    case widget_member(Wid, State#state.active) of
+	false -> State#state{active=[{Wid,XY}|State#state.active]};
+	true -> State
+    end.
+
 widgets_motion([{W,XY}|Ws],Event,Window,State) ->
     case widget_event(Event,W,XY,Window,State) of
 	W -> 
@@ -736,7 +752,7 @@ widgets_motion([],_Event,_Window,State) ->
 
 widgets_event([{W,XY}|Ws],Event,Window,State) ->
     case widget_event(Event,W,XY,Window,State) of
-	W -> 
+	W ->
 	    widgets_event(Ws,Event,Window,State);
 	W1 ->
 	    Focus = 
@@ -746,7 +762,7 @@ widgets_event([{W,XY}|Ws],Event,Window,State) ->
 			    [] ->
 				?dbg("focus_in ~s\n", [W1#widget.id]),
 				[{W1#widget.id,XY}];
-			    [{F,_Fxy}] -> %% old focuse
+			    [{F,_Fxy}] -> %% old focus
 				W0 = widget_fetch(F),
 				?dbg("focus_out ~s\n", [W0#widget.id]),
 				widget_store(W0#widget { state = normal }),
@@ -760,11 +776,15 @@ widgets_event([{W,XY}|Ws],Event,Window,State) ->
 		   true ->
 			State#state.focus
 		end,
-	    Active = [{W1#widget.id,XY}|State#state.active],
+	    State1 = if W1#widget.state =:= active; 
+			W1#widget.state =:= focus ->
+			     add_to_active(W1#widget.id,XY,State);
+			true ->
+			     State
+		     end,
 	    widget_store(W1),
 	    self() ! refresh,
-	    widgets_event(Ws,Event,Window,State#state { active=Active,
-							focus=Focus })
+	    widgets_event(Ws,Event,Window,State1#state { focus=Focus })
     end;
 widgets_event([],_Event,_Window,State) ->
     State.
@@ -984,18 +1004,18 @@ widget_event(Event, W, XY, Window, State) ->
 widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
     case W#widget.type of
 	button ->
-	    callback_all(W#widget.id,State#state.subs,[{value,1},{xy,XY}]),
+	    callback_all(W#widget.id,State#state.subs,
+			 #{value=>1, xy=>XY}),
 	    W#widget { state=active, value=1 };
-
 	switch ->
 	    {WState,Value} =
 		case W#widget.state of
 		    active -> {normal,0};
 		    _ -> {active,1}
 		end,
-	    callback_all(W#widget.id,State#state.subs,[{value,Value},{xy,XY}]),
+	    callback_all(W#widget.id,State#state.subs,
+			 #{value=>Value,xy=>XY}),
 	    W#widget { frame=Value, state=WState, value=Value };
-
 	slider ->
 	    case widget_slider_value(W,Where,XY) of
 		false ->
@@ -1004,10 +1024,9 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 		Value ->
 		    epx:window_enable_events(Window#widget.win, [motion]),
 		    callback_all(W#widget.id,State#state.subs,
-				 [{value,Value},{xy,XY}]),
+				 #{value=>Value,xy=>XY}),
 		    W#widget { state=active, value = Value }
 	    end;
-
 	panel ->
 	    case tab_at_location(W,Where,XY) of
 		0 ->
@@ -1016,10 +1035,9 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 		Value ->
 		    ?dbg("tab at ~w = ~w\n", [XY,Value]),
 		    callback_all(W#widget.id,State#state.subs,
-				 [{value,Value},{xy,XY}]),
+				 #{value=>Value,xy=>XY}),
 		    W#widget { value = Value }
 	    end;
-
 	menu ->
 	    case item_at_location(W,Where,XY) of
 		0 ->
@@ -1028,7 +1046,7 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 		Value ->
 		    ?dbg("item at ~w = ~w\n", [XY,Value]),
 		    epx:window_enable_events(Window#widget.win, [motion]),
-		    W#widget { value = Value }
+		    W#widget { state=active, value=Value }
 	    end;
 	user ->
 	    case user(W#widget.user,event,Event,W,Window,XY) of
@@ -1049,19 +1067,20 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
 	    callback_all(W1#widget.id,State#state.subs,
-			 [{press,1},{x,X-Xi},{y,Y-Yi},{xy,XY}]),
-	    W1;
+			 #{press=>1,x=>X-Xi,y=>Y-Yi,xy=>XY}),
+	    W1#widget{ state=active };
 	_ ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
 	    callback_all(W#widget.id,State#state.subs,
-			 [{press,1},{x,X-Xi},{y,Y-Yi},{xy,XY}]),
-	    W#widget { state=selected }
+			 #{press=>1,x=>X-Xi,y=>Y-Yi,xy=>XY}),
+	    W#widget { state=active }
     end;
 widget_event_(Event={button_release,_Button,Where},W,XY,Window,State) ->
     case W#widget.type of
 	button ->
-	    callback_all(W#widget.id, State#state.subs, [{value,0},{xy,XY}]),
+	    callback_all(W#widget.id, State#state.subs,
+			 #{value=>0,xy=>XY}),
 	    W#widget{state=normal, value=0};
 	switch ->
 	    W;
@@ -1073,7 +1092,8 @@ widget_event_(Event={button_release,_Button,Where},W,XY,Window,State) ->
 	menu ->
 	    epx:window_disable_events(Window#widget.win, [motion]),
 	    Value = W#widget.value,
-	    callback_all(W#widget.id,State#state.subs,[{value,Value},{xy,XY}]),
+	    callback_all(W#widget.id,State#state.subs,
+			 #{value=>Value,xy=>XY}),
 	    W#widget{state=normal};
 	user ->
 	    case user(W#widget.user,event,Event,W,Window,XY) of
@@ -1086,13 +1106,13 @@ widget_event_(Event={button_release,_Button,Where},W,XY,Window,State) ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
 	    callback_all(W#widget.id,State#state.subs,
-			 [{press,0},{x,X-Xi},{y,Y-Yi},{xy,XY}]),
-	    W;
+			 #{press=>0,x=>X-Xi,y=>Y-Yi,xy=>XY}),
+	    W#widget{state=normal};
 	_ ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
 	    callback_all(W#widget.id,State#state.subs,
-			 [{press,0},{x,X-Xi},{y,Y-Yi},{xy,XY}]),
+			 #{press=>0,x=>X-Xi,y=>Y-Yi,xy=>XY}),
 	    W#widget { state=normal }
     end;
 widget_event_(Event={motion,_Button,Where},W,XY,Window,State) ->
@@ -1102,7 +1122,7 @@ widget_event_(Event={motion,_Button,Where},W,XY,Window,State) ->
 		false -> W;
 		Value ->
 		    callback_all(W#widget.id,State#state.subs,
-				 [{value,Value},{xy,XY}]),
+				 #{value=>Value,xy=>XY}),
 		    W#widget { value = Value }
 	    end;
 	menu ->
@@ -1126,7 +1146,7 @@ widget_event_(_Event={key_press,Sym,_Mod,_Code},W,XY,_Window,State) ->
 		$\r ->
 		    Value = W#widget.text,
 		    callback_all(W#widget.id,State#state.subs,
-				 [{value,Value},{xy,XY}]),
+				 #{value=>Value,xy=>XY}),
 		    %% will release focus!
 		    ?dbg("focus_out ~s\n", [W#widget.id]),
 		    W#widget { state = normal };
@@ -1155,7 +1175,8 @@ widget_event_(_Event={key_press,Sym,_Mod,_Code},W,XY,_Window,State) ->
 	    W
     end;
 widget_event_(close,W,XY,_Window,State) ->
-    callback_all(W#widget.id,State#state.subs,[{closed,true},{xy,XY}]),
+    callback_all(W#widget.id,State#state.subs,
+		 #{closed=>true,xy=>XY}),
     W#widget { state=closed };
 widget_event_(Event,W,XY,Window,_State) ->
     case W#widget.type of
@@ -1197,7 +1218,7 @@ widget_slider_value(W=#widget {min=Min, max=Max,orientation=vertical},
 	    false
     end.
 
-callback_all(Wid, Subs, Env) ->
+callback_all(Wid, Subs, Env) when is_map(Env) ->
     lists:foreach(
       fun(#sub{id=ID,signal=Signal,callback=Callback}) ->
 	      if ID =:= Wid ->
@@ -1267,13 +1288,7 @@ widget_set_(W,[{Key,Value}|Ks],Mask) ->
     end;
 widget_set_(W,[],Mask) ->
     %% some special cases 
-    if Mask band (1 bsl #widget.state) =/= 0 ->
-	    case W#widget.state of
-		active -> W#widget { value=1 };
-		normal -> W#widget { value=0 };
-		_ -> W
-	    end;
-       Mask band ((1 bsl #widget.value) bor
+    if Mask band ((1 bsl #widget.value) bor
 		  (1 bsl #widget.max) bor
 		  (1 bsl #widget.min)) =/= 0 ->
 	    V = clamp(W#widget.value, W#widget.min, W#widget.max),
@@ -1947,7 +1962,9 @@ draw_background(Win, X, Y, Width, Height,
 		     frame = Frame } = W,
 	    if is_integer(W#widget.shadow_x),
 	       is_integer(W#widget.shadow_y) ->
-		    case W#widget.state of
+		    State = if W#widget.type =:= menu -> normal; 
+			       true -> W#widget.state end,
+		    case State of
 			normal ->
 			    Xs = W#widget.shadow_x,
 			    Ys = W#widget.shadow_y,
@@ -1956,12 +1973,6 @@ draw_background(Win, X, Y, Width, Height,
 						Width,Height,
 						1, {85,0,0,0},
 						Image, Anim, Frame),
-%%			    epx:pixmap_filter_area(Win#widget.image,
-%%						   Win#widget.image,
-%%						   {5,1,<<1,1,1,1,1>>},
-%%						   X, Y,
-%%						   X, Y, Width, Height),
-
 			    draw_one_background(Win, W, X, Y, Width, Height, 
 						1, Color, Image, Anim, Frame);
 			active ->
@@ -2283,7 +2294,8 @@ set_font_color(Color) ->
 
 %% set foreground / fillcolor also using animatation state
 set_color(W, Color0) ->
-    Color = case W#widget.state of 
+    State = if W#widget.type =:= menu -> normal; true -> W#widget.state end,
+    Color = case State of 
 		active ->
 		    if is_integer(W#widget.shadow_x),
 		       is_integer(W#widget.shadow_y) ->
