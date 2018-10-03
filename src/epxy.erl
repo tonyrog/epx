@@ -74,6 +74,7 @@
 	  type :: widget_type(),
 	  window :: string(), %% id of base window (if type != window)
 	  state  = normal,    %% normal,active
+	  focus  = false,     %% has key focus
 	  static = false,     %% object may not be deleted
 	  hidden = false,     %% show/hiden false,true,all,none
 	  disabled = false,   %% enable disable event input false,true,all,none
@@ -138,7 +139,7 @@
 -record(state, {
 	  redraw_timer = undefined,
 	  active = [] :: [{string(),xy()}],    %% active widgets (ids) pressed
-	  focus  = [] :: [{string(),xy()}],    %% focused widgets (ids)
+	  key_focus  = [] :: [{string(),xy()}], %% focused widget(s) (ids)
 	  subs = [] :: [#sub{}],
 	  fps = 30.0 :: number(),       %% animation frames per second
 	  mpf = 1000/30.0 :: number(),  %% millis per frame
@@ -341,16 +342,12 @@ handle_call({set,ID,Flags}, _From, State) ->
 	    try widget_set(W,Flags) of
 		W1 ->
 		    W2 = update_widget(W1),
-		    State1 = if W#widget.state =:= normal,
-			       W1#widget.state =:= active ->
-				     XY = {W#widget.x,W#widget.y},
-				     add_to_active(W#widget.id,XY,State);
-				true ->
-				     State
-			     end,
+		    XY = {W#widget.x,W#widget.y},
+		    State1 = update_active(W,W2,XY,State),
+		    State2 = update_key_focus(W,W2,XY,State1),
 		    widget_store(W2),
 		    self() ! refresh,
-		    {reply, ok, State1}
+		    {reply, ok, State2}
 	    catch
 		error:Reason ->
 		    lager:warning("set ~s ~p crashed ~p\n", [ID,Flags,Reason]),
@@ -608,7 +605,7 @@ widget_find(ID) ->
 
 handle_event(Event={key_press,_Sym,_Mod,_Code},Window,State) ->
     ?dbg("event: ~p\n", [Event]),
-    case State#state.focus of
+    case State#state.key_focus of
 	[] ->
 	    {noreply, State};
 	Ws0 ->
@@ -618,7 +615,7 @@ handle_event(Event={key_press,_Sym,_Mod,_Code},Window,State) ->
     end;
 handle_event(Event={key_release,_Sym,_Mod,_Code},Window,State) ->
     ?dbg("event: ~p\n", [Event]),
-    case State#state.focus of
+    case State#state.key_focus of
 	[] ->
 	    {noreply, State};
 	Ws0 ->
@@ -755,39 +752,44 @@ widgets_event([{W,XY}|Ws],Event,Window,State) ->
 	W ->
 	    widgets_event(Ws,Event,Window,State);
 	W1 ->
-	    Focus = 
-		if W#widget.state =/= focus, W1#widget.state =:= focus ->
-			%% Focus changed
-			case State#state.focus of
-			    [] ->
-				?dbg("focus_in ~s\n", [W1#widget.id]),
-				[{W1#widget.id,XY}];
-			    [{F,_Fxy}] -> %% old focus
-				W0 = widget_fetch(F),
-				?dbg("focus_out ~s\n", [W0#widget.id]),
-				widget_store(W0#widget { state = normal }),
-				?dbg("focus_in ~s\n", [W1#widget.id]),
-				[{W1#widget.id,XY}]
-			end;
-		   W#widget.state =:= focus, W1#widget.state =/= focus ->
-			%% Focus changed
-			?dbg("focus_out ~s\n", [W1#widget.id]),
-			State#state.focus -- [{W1#widget.id,XY}];
-		   true ->
-			State#state.focus
-		end,
-	    State1 = if W1#widget.state =:= active; 
-			W1#widget.state =:= focus ->
-			     add_to_active(W1#widget.id,XY,State);
-			true ->
-			     State
-		     end,
+	    State1 = update_key_focus(W, W1, XY, State),
+	    State2 = update_active(W,W1,XY,State1),
 	    widget_store(W1),
 	    self() ! refresh,
-	    widgets_event(Ws,Event,Window,State1#state { focus=Focus })
+	    widgets_event(Ws,Event,Window,State2)
     end;
 widgets_event([],_Event,_Window,State) ->
     State.
+
+update_active(W0, W1, XY, State) ->
+    if W0#widget.state =:= normal, W1#widget.state =:= active;
+       not W0#widget.focus, W1#widget.focus ->
+	    add_to_active(W1#widget.id,XY,State);
+       true ->
+	    State
+    end.
+
+%% W0 and W1 is before and after an update, check 
+update_key_focus(W0, W1, XY, State) ->
+    if not W0#widget.focus, W1#widget.focus -> %% got focus
+	    case State#state.key_focus of
+		[] ->
+		    ?dbg("focus_in ~s\n", [W1#widget.id]),
+		    State#state{key_focus=[{W1#widget.id,XY}]};
+		[{F,_Fxy}] -> %% old focus
+		    Wf = widget_fetch(F),
+		    ?dbg("focus_out ~s\n", [Wf#widget.id]),
+		    widget_store(Wf#widget { focus = false }),
+		    ?dbg("focus_in ~s\n", [W1#widget.id]),
+		    State#state{key_focus=[{W1#widget.id,XY}]}
+	    end;
+       W0#widget.focus, not W1#widget.focus -> %% lost focus
+	    ?dbg("focus_out ~s\n", [W1#widget.id]),
+	    Focus=lists:keydelete(W1#widget.id,1,State#state.key_focus),
+	    State#state{key_focus=Focus};
+       true ->
+	    State
+    end.
 
 %%
 %% Find all widgets in window WinID that is hit by the
@@ -1057,18 +1059,15 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 	    end;
 	text ->
 	    W1 = 
-		case W#widget.state of
-		    focus -> W;
-		    _ ->
-			if W#widget.edit -> W#widget { state = focus };
-			   true -> W
-			end
+		if W#widget.focus -> W;
+		   W#widget.edit  -> W#widget { focus = true };
+		   true -> W
 		end,
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
 	    callback_all(W1#widget.id,State#state.subs,
 			 #{press=>1,x=>X-Xi,y=>Y-Yi,xy=>XY}),
-	    W1#widget{ state=active };
+	    W1;
 	_ ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
@@ -1149,15 +1148,15 @@ widget_event_(_Event={key_press,Sym,_Mod,_Code},W,XY,_Window,State) ->
 				 #{value=>Value,xy=>XY}),
 		    %% will release focus!
 		    ?dbg("focus_out ~s\n", [W#widget.id]),
-		    W#widget { state = normal };
+		    W#widget { focus = false };
 		$\e ->
 		    %% will release focus!
 		    ?dbg("focus_out ~s\n", [W#widget.id]),
-		    W#widget { state = normal };
+		    W#widget { focus = false };
 		$\t ->
 		    %% will release focus!
 		    ?dbg("focus_out ~s\n", [W#widget.id]),
-		    W#widget { state = normal };
+		    W#widget { focus = false };
 		$\b -> %% delete backwards
 		    Text1 = case W#widget.text of
 				"" -> "";
@@ -1319,6 +1318,7 @@ keypos(Key) ->
 	state  -> #widget.state;
 	static -> #widget.static;
 	edit   -> #widget.edit;
+	focus  -> #widget.focus;
 	hidden -> #widget.hidden;
 	disabled -> #widget.disabled;
 	relative -> #widget.relative;
@@ -1382,6 +1382,7 @@ validate(#widget.static,Arg) ->  ?MEMBER(Arg,true,false);
 validate(#widget.hidden,Arg) ->  ?MEMBER(Arg,true,false,none,all);
 validate(#widget.disabled,Arg) -> ?MEMBER(Arg,true,false,none,all);
 validate(#widget.edit,Arg)     ->  ?MEMBER(Arg,true,false);
+validate(#widget.focus,Arg)     ->  ?MEMBER(Arg,true,false);
 validate(#widget.x,Arg) -> is_integer(Arg);
 validate(#widget.y,Arg) -> is_integer(Arg);
 validate(#widget.z,Arg) -> is_integer(Arg);
@@ -2185,7 +2186,7 @@ draw_border(Win,X,Y,W,Border) ->
 		       X, Y,
 		       W#widget.width, W#widget.height).
 
-draw_focus(Win,X,Y,W) when W#widget.edit, W#widget.state =:= focus ->
+draw_focus(Win,X,Y,W) when W#widget.edit, W#widget.focus ->
     Bw = optional(W#widget.border, 0) + 2,
     epx_gc:set_border_color(16#009f9f9f),
     epx_gc:set_border_width(2),
