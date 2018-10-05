@@ -77,12 +77,13 @@
 	  focus  = false,     %% has key focus
 	  static = false,     %% object may not be deleted
 	  hidden = false,     %% show/hiden false,true,all,none
-	  disabled = false,   %% enable disable event input false,true,all,none
+	  disabled = false,   %% enable/disable event input false,true,all,none
 	  edit = false,       %% allow edit of text fields
 	  relative = true :: boolean(), %% childrens are relative to parent
 	  user,               %% mfa when type=user
 	  filter,             %% mfa for event filter
 	  children_first = true :: boolean(), %% draw/select children first
+	  last = false,       %% draw last (ontop)
 	  x = 0   :: integer(),
 	  y = 0   :: integer(),
 	  z = 0   :: integer(),   %% define the order for overlap
@@ -1045,10 +1046,12 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 		0 ->
 		    lager:debug("menu box select error"),
 		    W;
-		Value ->
-		    ?dbg("item at ~w = ~w\n", [XY,Value]),
+		_ ->
+		    ?dbg("item at ~w\n", [XY]),
 		    epx:window_enable_events(Window#widget.win, [motion]),
-		    W#widget { state=active, value=Value }
+		    W1 = W#widget { state=active, last=true },
+		    {Mw,Mh} = menu_dimension(W1),
+		    W1#widget { width=Mw, height=Mh }
 	    end;
 	user ->
 	    case user(W#widget.user,event,Event,W,Window,XY) of
@@ -1091,9 +1094,10 @@ widget_event_(Event={button_release,_Button,Where},W,XY,Window,State) ->
 	menu ->
 	    epx:window_disable_events(Window#widget.win, [motion]),
 	    Value = W#widget.value,
-	    callback_all(W#widget.id,State#state.subs,
-			 #{value=>Value,xy=>XY}),
-	    W#widget{state=normal};
+	    callback_all(W#widget.id,State#state.subs,#{value=>Value,xy=>XY}),
+	    W1 = W#widget{ state=normal, last=false },
+	    {Mw,Mh} = menu_dimension(W1),
+	    W1#widget { width=Mw, height=Mh };
 	user ->
 	    case user(W#widget.user,event,Event,W,Window,XY) of
 		W1 when is_record(W1, widget) ->
@@ -1325,6 +1329,7 @@ keypos(Key) ->
 	user -> #widget.user;
 	filter -> #widget.filter;
 	children_first -> #widget.children_first;
+	last -> #widget.last;
 	x -> #widget.x;
 	y -> #widget.y;
 	z -> #widget.z;
@@ -1391,6 +1396,7 @@ validate(#widget.shadow_y,Arg) -> is_integer(Arg);
 validate(#widget.round_w,Arg) -> is_integer(Arg);
 validate(#widget.round_h,Arg) -> is_integer(Arg);
 validate(#widget.children_first,Arg) -> ?MEMBER(Arg,true,false);
+validate(#widget.last,Arg) -> ?MEMBER(Arg,true,false);
 validate(#widget.relative,Arg) ->  ?MEMBER(Arg,true,false);
 validate(#widget.width,Arg) -> is_integer(Arg) andalso (Arg >= 0);
 validate(#widget.height,Arg) -> is_integer(Arg) andalso (Arg >= 0);
@@ -1559,18 +1565,20 @@ update_window(Win,_State) ->
 %% Check automatix adjustments needed after create/set
 update_widget(W) ->
     case W#widget.type of
-	menu when W#widget.width =:= 0; W#widget.height =:= 0 ->
-	    {_Ascent,TextDims,MaxW,MaxH} = menu_item_box(W),
-	    N = length(TextDims),
-	    Width = if W#widget.width =:= 0 -> MaxW+?TABS_X_PAD;
-		       true -> W#widget.width
-		    end,
-	    Height = if W#widget.height =:= 0 -> (MaxH+?TABS_Y_PAD)*N;
-			true -> W#widget.height
-		     end,
+	menu ->
+	    {Width,Height} = menu_dimension(W),
 	    W#widget { width=Width, height=Height };
 	_ ->
 	    W
+    end.
+
+menu_dimension(W) ->
+    {_Ascent,TextDims,MaxW,MaxH} = menu_item_box(W),
+    if W#widget.state =:= normal -> 
+	    {MaxW+?TABS_X_PAD,MaxH+?TABS_Y_PAD};
+       W#widget.state =:= active ->
+	    N = length(TextDims),
+	    {MaxW+?TABS_X_PAD,(MaxH+?TABS_Y_PAD)*N}
     end.
 
 unmap_window(Win,_State) ->
@@ -1579,81 +1587,93 @@ unmap_window(Win,_State) ->
 
 
 draw_window(Win, State) ->
-    draw_tree(Win#widget.id, Win, {0,0}, State).
+    Last = draw_tree(Win#widget.id, Win, {0,0}, State, []),
+    lists:foreach(fun({W,XY}) ->
+			  widget_draw(W, Win, XY, State)
+		  end, Last).
 
-draw_tree(?EOT, _Win, _XY, State) ->
-    State;
-draw_tree(ID, Win, XY, State) ->
+draw_tree(?EOT, _Win, _XY, _State, Last) ->
+    Last;
+draw_tree(ID, Win, XY, State, Last) ->
     draw_siblings(tree_db:first_child(State#state.wtree, ID), 
-		  Win, XY, State).
+		  Win, XY, State, Last).
 
-draw_siblings(?EOT, _Win, _XY, State) ->
-    State;
-draw_siblings(ID, Win, XY, State) ->
-    State1 = draw_one(ID, Win, XY, State),
+draw_siblings(?EOT, _Win, _XY, _State, Last) ->
+    Last;
+draw_siblings(ID, Win, XY, State, Last) ->
+    Last1 = draw_one(ID, Win, XY, State, Last),
     draw_siblings(tree_db:next_sibling(State#state.wtree, ID), 
-		  Win, XY, State1).
+		  Win, XY, State, Last1).
 
-draw_one(ID, Win, XY, State) ->
+draw_one(ID, Win, XY, State, Last) ->
     case tree_db:lookup(State#state.wtree,ID) of
 	[] ->
 	    lager:error("widget ~p not in the tree", [ID]),
-	    State;
+	    Last;
 	[{_,Wid}] ->
 	    %% ?dbg("draw_one: ~p\n", [Wid]),
 	    W = widget_fetch(Wid),
-	    draw_one_(ID, Win, XY, W, W#widget.children_first, State)
+	    draw_one_(ID, Win, XY, W, W#widget.children_first, State, Last)
     end.
 
-draw_one_(ID, Win, XY, W, ChildrenFirst, State) ->
+draw_one_(ID, Win, XY, W, ChildrenFirst, State, Last) ->
     XY1 = widget_pos(W,XY),
     if ChildrenFirst ->
-	    State1 = draw_children(ID, Win, XY1, W, State),
-	    draw_widget(W, Win, XY1, State1),
-	    State1;
+	    Last1 = draw_children(ID, Win, XY1, W, State, Last),
+	    if W#widget.last -> 
+		    [{W,XY1}|Last1];
+	       true ->
+		    widget_draw(W, Win, XY1, State),
+		    Last1
+	    end;
        true ->
-	    draw_widget(W, Win, XY1, State),
-	    draw_children(ID, Win, XY1, W, State)
+	    if W#widget.last -> 
+		    Last1 = [{W,XY1}|Last],
+		    draw_children(ID, Win, XY1, W, State, Last1);
+	       true ->
+		    widget_draw(W, Win, XY1, State),
+		    draw_children(ID, Win, XY1, W, State, Last)
+	    end
     end.
 
 %% Fixme: implement hidden =:= none to override all hidden children!
-draw_children(_ID, _Win, _XY, W, State) when W#widget.hidden =:= all ->
-    State;
-draw_children(ID, Win, XY, W, State) when 
+draw_children(_ID, _Win, _XY, W, _State, Last) when W#widget.hidden =:= all ->
+    Last;
+draw_children(ID, Win, XY, W, State, Last) when 
       W#widget.type =:= panel, W#widget.disabled =:= false ->
     V = W#widget.value,
     N = length(W#widget.tabs),
     if V =:= 0 ->
 	    %% no child selected
-	    State;
+	    Last;
        V >= 1, V =< N ->
 	    Tab = lists:nth(V, W#widget.tabs),
 	    %% tree children first
 	    TabID = ID++[list_to_binary(Tab)],
-	    draw_child(TabID, Win, XY, State);
+	    draw_child(TabID, Win, XY, State, Last);
        true ->
 	    lager:error("panel tab ~w not defined in ~s\n",
 			[V,W#widget.id]),
-	    State
+	    Last
     end;
-draw_children(ID, Win, XY, _W, State) ->
-    draw_tree(ID, Win, XY, State).
+draw_children(ID, Win, XY, _W, State, Last) ->
+    draw_tree(ID, Win, XY, State, Last).
 
-draw_child(ID, Win, XY, State) ->
+draw_child(ID, Win, XY, State, Last) ->
     case tree_db:lookup(State#state.wtree,ID) of
 	[] ->
 	    lager:error("widget ~p not in the tree", [ID]),
-	    State;
+	    Last;
 	[{_,Wid}] ->
 	    W = widget_fetch(Wid),
-	    draw_one_(ID, Win, XY, W, false, State)
+	    draw_one_(ID, Win, XY, W, false, State, Last)
     end.
 
 
-draw_widget(W, _Win, _XY, _State) when 
+widget_draw(W, _Win, _XY, _State) when 
       W#widget.hidden =:= true; W#widget.hidden =:= all ->
     ok;
-draw_widget(W, Win, XY={X,Y}, _State) ->
+widget_draw(W, Win, XY={X,Y}, _State) ->
     case W#widget.type of
 	window ->
 	    %% do not draw (yet), we may use this
@@ -1824,9 +1844,24 @@ draw_tabs(Win,X,Y,W) ->
 			W#widget.halign, W#widget.valign)
     end.
 
+%%
+%% state=normal menu is drawn as the current item only or 
+%% blank if value=0
+%% state=active full menu is draw
+%%
+
 draw_menu(Win,X,Y,W) ->
-    {Ascent,TextDims,MaxW,MaxH} = menu_item_box(W),
-    N = length(TextDims),
+    {Ascent,TextDims0,MaxW,MaxH} = menu_item_box(W),
+    {N,I,TextDims} =
+	case W#widget.state of
+	    normal ->
+		try lists:nth(W#widget.value, TextDims0) of
+		    TextDim -> {1,W#widget.value, [TextDim]}
+		catch
+		    error:_ -> {1,1,[{{MaxW,MaxH},""}]}
+		end;
+	    active -> {length(TextDims0),1,TextDims0}
+	end,
     Width =  (MaxW+?TABS_X_PAD),
     Height = (MaxH+?TABS_Y_PAD),
     Y0 =  Y + (W#widget.height - (Height*N)) div 2,
@@ -1834,7 +1869,7 @@ draw_menu(Win,X,Y,W) ->
     set_color(W, ?TABS_COLOR),
     epx_gc:set_fill_style(solid),
     epx:draw_rectangle(Win#widget.image, X0, Y0, Width, Height*N),
-    draw_items(Win, W, 1, Ascent, TextDims, X0, Y0, Width, Height,
+    draw_items(Win, W, I, Ascent, TextDims, X0, Y0, Width, Height,
 	       W#widget.halign, W#widget.valign).
     
 tabs_item_box(W) ->
@@ -1847,7 +1882,7 @@ item_box(W, Items) ->
     Font = W#widget.font,
     epx_gc:set_font(Font),
     Ascent = epx:font_info(Font, ascent),
-    TextDims = [ {epx_font:dimension(epx_gc:current(), Text),Text} || 
+    TextDims = [ {epx_font:dimension(epx_gc:current(),Text),Text} || 
 		   Text <- Items ],
     MaxW = lists:max([Wi || {{Wi,_},_} <- TextDims]),
     MaxH = lists:max([Hi || {{_,Hi},_} <- TextDims]),
