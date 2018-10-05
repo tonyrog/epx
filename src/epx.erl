@@ -138,7 +138,7 @@
 
 %% Utils
 -export([draw_point/3, draw_point/2]).
--export([draw_line/5]).
+-export([draw_line/3, draw_line/5]).
 -export([draw_triangle/2, draw_triangle/4]).
 -export([draw_rectangle/5, draw_rectangle/2, draw_rectangle/3]).
 -export([draw_roundrect/7, draw_roundrect/4, draw_roundrect/5]).
@@ -1235,6 +1235,9 @@ draw_point(Pixmap,Gc,{X,Y}) ->
     pixmap_draw_point(Pixmap,Gc,X,Y);
 draw_point(Pixmap,X,Y) ->
     pixmap_draw_point(Pixmap,epx_gc:current(),X,Y).
+
+draw_line(Pixmap, {X1, Y1}, {X2, Y2}) ->
+    draw_line(Pixmap, X1, Y1, X2, Y2).
 
 draw_line(Pixmap, X1, Y1, X2, Y2) ->
     pixmap_draw_line(Pixmap,epx_gc:current(),X1,Y1,X2,Y2).
