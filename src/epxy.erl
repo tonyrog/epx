@@ -111,8 +111,8 @@
 	  font_color = 16#00000000,
 	  fill   = none :: epx:epx_fill_style(),
 	  events  :: epx:epx_window_event_flags(),
-	  halign  = center :: top|bottom|center,
-	  valign  = center :: left|right|center,
+	  halign  = center :: top|bottom|center,  %% text alignment
+	  valign  = center :: left|right|center,  %% text alignment
 	  min     :: number(),          %% type=value|slider
 	  max     :: number(),          %% type=value|slider
 	  format = "~w" :: string(),    %% io_lib:format format
@@ -358,9 +358,9 @@ handle_call({set,ID,Flags}, _From, State) ->
 handle_call({get,ID,Flags},_From,State) ->
     case widget_find(ID) of
 	error ->
-	    {reply,{error,enoent}, State};
+	    {reply,[], State};
 	{ok,W} ->
-	    {reply,{ok,widget_get(W,Flags)}, State}
+	    {reply,widget_get(W,Flags), State}
     end;
 handle_call({new,ID,Flags}, _From, State) ->
     case id_split(ID) of
@@ -627,7 +627,6 @@ handle_event(Event={key_release,_Sym,_Mod,_Code},Window,State) ->
 handle_event(Event={button_press,Button,Where},Window,State) ->
     case lists:member(left,Button) of
 	true ->
-	    %% locate an active widget at position (X,Y)
 	    WinID = Window#widget.id,
 	    case widgets_at_location(Where,{0,0},WinID,State) of
 		[] ->
@@ -775,17 +774,21 @@ update_key_focus(W0, W1, XY, State) ->
     if not W0#widget.focus, W1#widget.focus -> %% got focus
 	    case State#state.key_focus of
 		[] ->
-		    ?dbg("focus_in ~s\n", [W1#widget.id]),
+		    callback_all(W1#widget.id,State#state.subs,
+				 #{event=>focus_in,xy=>XY}),
 		    State#state{key_focus=[{W1#widget.id,XY}]};
 		[{F,_Fxy}] -> %% old focus
 		    Wf = widget_fetch(F),
-		    ?dbg("focus_out ~s\n", [Wf#widget.id]),
+		    callback_all(Wf#widget.id,State#state.subs,
+				 #{event=>focus_out,xy=>XY}),
 		    widget_store(Wf#widget { focus = false }),
-		    ?dbg("focus_in ~s\n", [W1#widget.id]),
+		    callback_all(W1#widget.id,State#state.subs,
+				 #{event=>focus_in,xy=>XY}),
 		    State#state{key_focus=[{W1#widget.id,XY}]}
 	    end;
        W0#widget.focus, not W1#widget.focus -> %% lost focus
-	    ?dbg("focus_out ~s\n", [W1#widget.id]),
+	    callback_all(W1#widget.id,State#state.subs,
+			 #{event=>focus_out,xy=>XY}),
 	    Focus=lists:keydelete(W1#widget.id,1,State#state.key_focus),
 	    State#state{key_focus=Focus};
        true ->
@@ -1008,7 +1011,7 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
     case W#widget.type of
 	button ->
 	    callback_all(W#widget.id,State#state.subs,
-			 #{value=>1, xy=>XY}),
+			 #{event=>button_press, value=>1, xy=>XY}),
 	    W#widget { state=active, value=1 };
 	switch ->
 	    {WState,Value} =
@@ -1017,7 +1020,7 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 		    _ -> {active,1}
 		end,
 	    callback_all(W#widget.id,State#state.subs,
-			 #{value=>Value,xy=>XY}),
+			 #{event=>changed, value=>Value, xy=>XY}),
 	    W#widget { frame=Value, state=WState, value=Value };
 	slider ->
 	    case widget_slider_value(W,Where,XY) of
@@ -1027,7 +1030,7 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 		Value ->
 		    epx:window_enable_events(Window#widget.win, [motion]),
 		    callback_all(W#widget.id,State#state.subs,
-				 #{value=>Value,xy=>XY}),
+				 #{event=>changed,value=>Value,xy=>XY}),
 		    W#widget { state=active, value = Value }
 	    end;
 	panel ->
@@ -1038,7 +1041,7 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 		Value ->
 		    ?dbg("tab at ~w = ~w\n", [XY,Value]),
 		    callback_all(W#widget.id,State#state.subs,
-				 #{value=>Value,xy=>XY}),
+				 #{event=>changed,value=>Value,xy=>XY}),
 		    W#widget { value = Value }
 	    end;
 	menu ->
@@ -1069,20 +1072,20 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
 	    callback_all(W1#widget.id,State#state.subs,
-			 #{press=>1,x=>X-Xi,y=>Y-Yi,xy=>XY}),
+			 #{event=>button_press,x=>X-Xi,y=>Y-Yi,xy=>XY}),
 	    W1;
 	_ ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
 	    callback_all(W#widget.id,State#state.subs,
-			 #{press=>1,x=>X-Xi,y=>Y-Yi,xy=>XY}),
+			 #{event=>button_press,x=>X-Xi,y=>Y-Yi,xy=>XY}),
 	    W#widget { state=active }
     end;
 widget_event_(Event={button_release,_Button,Where},W,XY,Window,State) ->
     case W#widget.type of
 	button ->
 	    callback_all(W#widget.id, State#state.subs,
-			 #{value=>0,xy=>XY}),
+			 #{event=>button_release,value=>0,xy=>XY}),
 	    W#widget{state=normal, value=0};
 	switch ->
 	    W;
@@ -1094,7 +1097,8 @@ widget_event_(Event={button_release,_Button,Where},W,XY,Window,State) ->
 	menu ->
 	    epx:window_disable_events(Window#widget.win, [motion]),
 	    Value = W#widget.value,
-	    callback_all(W#widget.id,State#state.subs,#{value=>Value,xy=>XY}),
+	    callback_all(W#widget.id,State#state.subs,
+			 #{event=>changed,value=>Value,xy=>XY}),
 	    W1 = W#widget{ state=normal, last=false },
 	    {Mw,Mh} = menu_dimension(W1),
 	    W1#widget { width=Mw, height=Mh };
@@ -1109,13 +1113,13 @@ widget_event_(Event={button_release,_Button,Where},W,XY,Window,State) ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
 	    callback_all(W#widget.id,State#state.subs,
-			 #{press=>0,x=>X-Xi,y=>Y-Yi,xy=>XY}),
+			 #{event=>button_release,x=>X-Xi,y=>Y-Yi,xy=>XY}),
 	    W#widget{state=normal};
 	_ ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
 	    callback_all(W#widget.id,State#state.subs,
-			 #{press=>0,x=>X-Xi,y=>Y-Yi,xy=>XY}),
+			 #{event=>button_release,x=>X-Xi,y=>Y-Yi,xy=>XY}),
 	    W#widget { state=normal }
     end;
 widget_event_(Event={motion,_Button,Where},W,XY,Window,State) ->
@@ -1125,7 +1129,7 @@ widget_event_(Event={motion,_Button,Where},W,XY,Window,State) ->
 		false -> W;
 		Value ->
 		    callback_all(W#widget.id,State#state.subs,
-				 #{value=>Value,xy=>XY}),
+				 #{event=>motion,value=>Value,xy=>XY}),
 		    W#widget { value = Value }
 	    end;
 	menu ->
@@ -1149,17 +1153,17 @@ widget_event_(_Event={key_press,Sym,_Mod,_Code},W,XY,_Window,State) ->
 		$\r ->
 		    Value = W#widget.text,
 		    callback_all(W#widget.id,State#state.subs,
-				 #{value=>Value,xy=>XY}),
-		    %% will release focus!
-		    ?dbg("focus_out ~s\n", [W#widget.id]),
+				 #{event=>changed,value=>Value,xy=>XY}),
+		    callback_all(W#widget.id,State#state.subs,
+				 #{event=>focus_out,xy=>XY}),
 		    W#widget { focus = false };
 		$\e ->
-		    %% will release focus!
-		    ?dbg("focus_out ~s\n", [W#widget.id]),
+		    callback_all(W#widget.id,State#state.subs,
+				 #{event=>focus_out,xy=>XY}),
 		    W#widget { focus = false };
 		$\t ->
-		    %% will release focus!
-		    ?dbg("focus_out ~s\n", [W#widget.id]),
+		    callback_all(W#widget.id,State#state.subs,
+				 #{event=>focus_out,xy=>XY}),
 		    W#widget { focus = false };
 		$\b -> %% delete backwards
 		    Text1 = case W#widget.text of
@@ -1179,7 +1183,7 @@ widget_event_(_Event={key_press,Sym,_Mod,_Code},W,XY,_Window,State) ->
     end;
 widget_event_(close,W,XY,_Window,State) ->
     callback_all(W#widget.id,State#state.subs,
-		 #{closed=>true,xy=>XY}),
+		 #{event=>closed,xy=>XY}),
     W#widget { state=closed };
 widget_event_(Event,W,XY,Window,_State) ->
     case W#widget.type of
