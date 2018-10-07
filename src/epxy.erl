@@ -59,71 +59,71 @@
 -define(is_string(Cs), is_list((Cs))).
 
 %% HARD DEBUG
--define(dbg(F), ok).
 -define(dbg(F,A), ok).
 %%-define(dbg(F,A), io:format((F),(A))).
-%%-define(dbg(F), io:format((F))).
 
 -type widget_type() :: window | panel | button | switch | slider | value |
 		       menu | rectangle | ellipse | line | text | user.
 
+-type disabled() :: true | false | none | all | rest.
+
 %% convert to map?
 -record(widget,
 	{
-	  id :: string(),     %% (structured) name of widget
-	  type :: widget_type(),
-	  window :: string(), %% id of base window (if type != window)
-	  state  = normal,    %% normal,active
-	  focus  = false,     %% has key focus
-	  static = false,     %% object may not be deleted
-	  hidden = false,     %% show/hiden false,true,all,none
-	  disabled = false,   %% enable/disable event input false,true,all,none
-	  edit = false,       %% allow edit of text fields
-	  relative = true :: boolean(), %% childrens are relative to parent
-	  user,               %% mfa when type=user
-	  filter,             %% mfa for event filter
-	  children_first = true :: boolean(), %% draw/select children first
-	  last = false,       %% draw last (ontop)
-	  x = 0   :: integer(),
-	  y = 0   :: integer(),
-	  z = 0   :: integer(),   %% define the order for overlap
-	  width  = 0 :: non_neg_integer(),
-	  height = 0 :: non_neg_integer(),
-	  text = "",
-	  tabs = [],
-	  items = [],  %% menu items
-	  border  :: number(),
-	  border_color =  16#00000000,
-	  shadow_x :: number(),
-	  shadow_y :: number(),
-	  round_w :: number(),
-	  round_h :: number(),
-	  orientation = horizontal :: horizontal|vertical,
-	  image   :: epx:epx_pixmap(),
-	  image2   :: epx:epx_pixmap(),
-	  topimage :: epx:epx_pixmap(),
-	  animation :: epx:epx_animation(),
-	  animation2 :: epx:epx_animation(),
-	  frame :: number(),
-	  frame2 :: number(),
-	  color,    %% = 16#ff000000,
-	  color2,
-	  font_color = 16#00000000,
-	  fill   = none :: epx:epx_fill_style(),
-	  events  :: epx:epx_window_event_flags(),
-	  halign  = center :: top|bottom|center,  %% text alignment
-	  valign  = center :: left|right|center,  %% text alignment
-	  min     :: number(),          %% type=value|slider
-	  max     :: number(),          %% type=value|slider
-	  format = "~w" :: string(),    %% io_lib:format format
-	  value = 0 :: number(),        %% type=value|slider
-	  vscale :: number(),           %% scale value (multiplier)
-	  animate = undefined,          %% animation state.
-	  animate2 = undefined,         %% animation state of second animation.
-	  font    :: epx:epx_font(),    %% type=text|button|value
-	  win     :: epx:epx_window(),  %% type = window
-	  backing :: epx:epx_pixmap(),
-	  user_data = undefined :: term() %% what ever
+	 id :: string(),     %% (structured) name of widget
+	 type :: widget_type(),
+	 window :: string(), %% id of base window (if type != window)
+	 state  = normal,    %% normal,active
+	 focus  = false,     %% has key focus
+	 static = false,     %% object may not be deleted
+	 hidden = false,     %% show/hiden false,true,all,none
+	 disabled = false :: disabled(),
+	 edit = false :: boolean(),  %% allow edit of text fields
+	 relative = true :: boolean(), %% childrens are relative to parent
+	 user,               %% mfa when type=user
+	 filter,             %% mfa for event filter
+	 children_first = true :: boolean(), %% draw/select children first
+	 last = false,       %% draw last (ontop)
+	 x = 0   :: integer(),
+	 y = 0   :: integer(),
+	 z = 0   :: integer(),   %% define the order for overlap
+	 width  = 0 :: non_neg_integer(),
+	 height = 0 :: non_neg_integer(),
+	 text = "",
+	 tabs = [],
+	 items = [],  %% menu items
+	 border  :: number(),
+	 border_color =  16#00000000,
+	 shadow_x :: number(),
+	 shadow_y :: number(),
+	 round_w :: number(),
+	 round_h :: number(),
+	 orientation = horizontal :: horizontal|vertical,
+	 image   :: epx:epx_pixmap(),
+	 image2   :: epx:epx_pixmap(),
+	 topimage :: epx:epx_pixmap(),
+	 animation :: epx:epx_animation(),
+	 animation2 :: epx:epx_animation(),
+	 frame :: number(),
+	 frame2 :: number(),
+	 color,    %% = 16#ff000000,
+	 color2,
+	 font_color = 16#00000000,
+	 fill   = none :: epx:epx_fill_style(),
+	 events  :: epx:epx_window_event_flags(),
+	 halign  = center :: top|bottom|center,  %% text alignment
+	 valign  = center :: left|right|center,  %% text alignment
+	 min     :: number(),          %% type=value|slider
+	 max     :: number(),          %% type=value|slider
+	 format = "~w" :: string(),    %% io_lib:format format
+	 value = 0 :: number(),        %% type=value|slider
+	 vscale :: number(),           %% scale value (multiplier)
+	 animate = undefined,          %% animation state.
+	 animate2 = undefined,         %% animation state of second animation.
+	 font    :: epx:epx_font(),    %% type=text|button|value
+	 win     :: epx:epx_window(),  %% type = window
+	 backing :: epx:epx_pixmap(),
+	 user_data = undefined :: term() %% what ever
 	}).
 
 -record(sub,
@@ -159,6 +159,8 @@
 	case X of E1->true;E2->true;E3->true;_->false end).
 -define(MEMBER(X,E1,E2,E3,E4),
 	case X of E1->true;E2->true;E3->true;E4->true;_->false end).
+-define(MEMBER(X,E1,E2,E3,E4,E5),
+	case X of E1->true;E2->true;E3->true;E4->true;E5->true;_->false end).
 -define(MEMBER(X,E1,E2,E3,E4,E5,E6),
 	case X of E1->true;E2->true;E3->true;E4->true;
 	    E5->true;E6->true;_->false end).
@@ -632,7 +634,6 @@ handle_event(Event={button_press,Button,Where},Window,State) ->
 		[] ->
 		    {noreply, State};
 		Ws ->
-		    ?dbg("press widget = ~p\n", [[V#widget.id||{V,_XY}<-Ws]]),
 		    State1 = widgets_event(Ws,Event,Window,State),
 		    {noreply, State1}
 	    end;
@@ -796,15 +797,20 @@ update_key_focus(W0, W1, XY, State) ->
     end.
 
 %%
-%% Find all widgets in window WinID that is hit by the
-%% point (X,Y).
-%% FIXME? Return a Z sorted list
+%% Find all widgets in window WinID that is hit by the point (X,Y).
 %%
 widgets_at_location(Pos,XY,WinID,State) ->
-    Ws = select_tree(WinID,Pos,XY,[],State),
-    %% sort according to Z order
-    %% lists:sort(fun(A,B) -> A#widget.z > B#widget.z end, Ws).
-    lists:reverse(Ws).
+    WsXY = select_tree(WinID,Pos,XY,[],State),
+    select_rest(WsXY, []).
+
+%% reverse list but stop if widget disables rest
+select_rest([WXY={W,_XY}|Ws], Acc) ->
+    case W#widget.disabled of
+	rest -> [WXY];
+	_ -> select_rest(Ws, [WXY|Acc])
+    end;
+select_rest([], Acc) ->
+    Acc.
 
 select_tree(?EOT,_Pos,_XY,Acc,_State) ->
     Acc;
@@ -834,7 +840,8 @@ select_one(ID,Pos,XY,Acc,ChildrenFirst,State) ->
 select_children(W,_ID,_Pos,_XY,Acc,_State) when W#widget.disabled =:= all ->
     Acc;
 select_children(W,ID,Pos,XY,Acc,State) when 
-      W#widget.type =:= panel, W#widget.disabled =:= false ->
+      W#widget.type =:= panel, 
+      ((W#widget.disabled =:= false) orelse (W#widget.disabled =:= rest)) ->
     case tab_at_location(W,Pos,XY) of
 	0 -> %% check in current tab
 	    V = W#widget.value,
@@ -1389,7 +1396,7 @@ validate(#widget.filter,{M,F,As}) ->
     is_atom(M) andalso is_atom(F) andalso is_list(As);
 validate(#widget.static,Arg) ->  ?MEMBER(Arg,true,false);
 validate(#widget.hidden,Arg) ->  ?MEMBER(Arg,true,false,none,all);
-validate(#widget.disabled,Arg) -> ?MEMBER(Arg,true,false,none,all);
+validate(#widget.disabled,Arg) -> ?MEMBER(Arg,true,false,none,all,rest);
 validate(#widget.edit,Arg)     ->  ?MEMBER(Arg,true,false);
 validate(#widget.focus,Arg)     ->  ?MEMBER(Arg,true,false);
 validate(#widget.x,Arg) -> is_integer(Arg);
@@ -1644,7 +1651,8 @@ draw_one_(ID, Win, XY, W, ChildrenFirst, State, Last) ->
 draw_children(_ID, _Win, _XY, W, _State, Last) when W#widget.hidden =:= all ->
     Last;
 draw_children(ID, Win, XY, W, State, Last) when 
-      W#widget.type =:= panel, W#widget.disabled =:= false ->
+      W#widget.type =:= panel, 
+      ((W#widget.disabled =:= false) orelse (W#widget.disabled =:= rest)) ->
     V = W#widget.value,
     N = length(W#widget.tabs),
     if V =:= 0 ->
