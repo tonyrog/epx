@@ -2676,7 +2676,7 @@ static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc,
 {
     (void) argc;
     epx_pixmap_t* pixmap;
-    epx_pixel_t pixel;
+    epx_pixel_t color;
     epx_flags_t flags;
     int x;
     int y;
@@ -2687,11 +2687,12 @@ static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_coord(env, argv[2], &y))
 	return enif_make_badarg(env);
-    if (!get_flags(env, argv[3], &flags))
+    if (!get_color(env, argv[3], &color))
+	return enif_make_badarg(env);    
+    if (!get_flags(env, argv[4], &flags))
 	return enif_make_badarg(env);
-    if (!get_color(env, argv[4], &pixel))
-	return enif_make_badarg(env);
-    epx_pixmap_put_pixel(pixmap, x, y, flags, pixel);
+    // flags/color arguments reversed
+    epx_pixmap_put_pixel(pixmap, x, y, flags, color);
     return ATOM(ok);
 }
 

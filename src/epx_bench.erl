@@ -40,7 +40,7 @@ loop_ref(Pixmap) ->  loop_ref(Pixmap, 1000000).
 loop_nif_ref(Pixmap) -> loop_nif_ref(Pixmap, 1000000).
      
 loop_wr(Pixmap, I) when I > 0 ->
-    epx:pixmap_put_pixel(Pixmap, 1, 1, 0, 16#01020304),
+    epx:pixmap_put_pixel(Pixmap, 1, 1, 16#01020304, 0),
     loop_wr(Pixmap, I-1);
 loop_wr(_Pixmap, _I) ->
     ok.

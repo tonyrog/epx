@@ -488,7 +488,7 @@ pixmap_fill(_Dst, _Color, _Flags) ->
 		       Color::epx_color()) -> void().
 
 pixmap_fill_area(Dst, X, Y, Width, Height, Color) ->
-    pixmap_fill_area(Dst, X, Y, Width, Height, Color, []).
+    pixmap_fill_area(Dst, X, Y, Width, Height, [], Color).
 
 %% @doc
 %%   Fill and blend the rectangle Dst with Color
@@ -602,17 +602,17 @@ pixmap_get_pixels(_Pixmap,_X,_Y,_W,_H) ->
 %%  Write the pixel value to position (`X',`Y') in the pixmap `Dst'
 %% @end
 -spec pixmap_put_pixel(Dst::epx_pixmap(), X::coord(), Y::coord(),
-		       Value::epx_color()) -> void().
-pixmap_put_pixel(Dst,X,Y,Value) ->
-    pixmap_put_pixel(Dst,X,Y,0,Value).
+		       Color::epx_color()) -> void().
+pixmap_put_pixel(Dst,X,Y,Color) ->
+    pixmap_put_pixel(Dst,X,Y,Color,[]).
 
 %% @doc
 %%  Write the pixel value to position (`X',`Y') in the pixmap `Dst'
 %%  using the flags in `Flags'.
 %% @end
 -spec pixmap_put_pixel(Dst::epx_pixmap(), X::coord(), Y::coord(),
-		       Flags::epx_flags(),Value::epx_color()) -> void().
-pixmap_put_pixel(_Dst,_X,_Y,_Flags,_Value) ->
+		       Color::epx_color(),Flags::epx_flags()) -> void().
+pixmap_put_pixel(_Dst,_X,_Y,_Color,_Flags) ->
     erlang:error(nif_not_loaded).
 
 %% @doc
