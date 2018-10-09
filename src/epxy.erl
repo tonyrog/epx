@@ -89,6 +89,7 @@
 	 z = 0   :: integer(),   %% define the order for overlap
 	 width  = 0 :: non_neg_integer(),
 	 height = 0 :: non_neg_integer(),
+	 max_length = 0 :: non_neg_integer(),  %% 0=no limit
 	 text = "",
 	 tabs = [],
 	 items = [],  %% menu items
@@ -1179,7 +1180,13 @@ widget_event_(_Event={key_press,Sym,_Mod,_Code},W,XY,_Window,State) ->
 			    end,
 		    W#widget { text = Text1 };
 		_ when is_integer(Sym), Sym >= $\s, Sym =< $~ ->
-		    Text1 = W#widget.text ++ [Sym],
+		    Len = length(W#widget.text),
+		    Text1 = if Len < W#widget.max_length;
+			       W#widget.max_length =:= 0 ->
+				    W#widget.text ++ [Sym];
+			       true ->
+				    W#widget.text
+			    end,
 		    W#widget { text = Text1 };
 		_ ->
 		    ?dbg("ignore symbol ~p\n", [_Event]),
@@ -1346,6 +1353,7 @@ keypos(Key) ->
 	z -> #widget.z;
 	width -> #widget.width;
 	height -> #widget.height;
+	max_length -> #widget.max_length;
 	text -> #widget.text;
 	tabs -> #widget.tabs;
 	items -> #widget.items;
@@ -1411,6 +1419,7 @@ validate(#widget.last,Arg) -> ?MEMBER(Arg,true,false);
 validate(#widget.relative,Arg) ->  ?MEMBER(Arg,true,false);
 validate(#widget.width,Arg) -> is_integer(Arg) andalso (Arg >= 0);
 validate(#widget.height,Arg) -> is_integer(Arg) andalso (Arg >= 0);
+validate(#widget.max_length,Arg) -> is_integer(Arg) andalso (Arg >= 0);
 validate(#widget.text,Arg) when is_list(Arg) -> true;
 validate(#widget.text,Arg) when is_atom(Arg) -> {true,atom_to_list(Arg)};
 validate(#widget.tabs,Arg) -> is_list(Arg);
@@ -1756,7 +1765,8 @@ widget_draw(W, Win, XY={X,Y}, _State) ->
 	rectangle ->
 	    epx_gc:draw(
 	      fun() ->
-		      draw_background(Win, X, Y, W)
+		      draw_background(Win, X, Y, W),
+		      draw_border(Win, X, Y, W, W#widget.border)
 	      end);
 
 	ellipse ->
@@ -2012,27 +2022,36 @@ draw_background(Win, X, Y, Width, Height,
 	       is_integer(W#widget.shadow_y) ->
 		    State = if W#widget.type =:= menu -> normal; 
 			       true -> W#widget.state end,
+		    Xs = W#widget.shadow_x,
+		    Ys = W#widget.shadow_y,
 		    case State of
 			normal ->
-			    Xs = W#widget.shadow_x,
-			    Ys = W#widget.shadow_y,
-			    draw_one_background(Win,W#widget{fill=[blend]},
-						X+Xs,Y+Ys,
-						Width,Height,
-						1, {85,0,0,0},
-						Image, Anim, Frame),
+			    if Xs > 0; Ys > 0 ->
+				    draw_one_background(Win,
+							W#widget{fill=[blend]},
+							X+Xs,
+							Y+Ys,
+							Width,Height,
+							1, {85,0,0,0},
+							Image, Anim, Frame);
+			       true ->
+				    ok
+			    end,
 			    draw_one_background(Win, W, X, Y, Width, Height, 
 						1, Color, Image, Anim, Frame);
 			active ->
-			    Xs = W#widget.shadow_x,
-			    Ys = W#widget.shadow_y,
+			    if Xs > 0; Ys > 0 ->
+				    draw_one_background(Win,
+							W#widget{fill=[blend]},
+							X+Xs,Y+Xs,
+							Width,Height,
+							1, {200,0,0,0},
+							Image, Anim, Frame);
+			       true ->
+				    ok
+			    end,
 			    Xi = Xs bsr 1,
 			    Yi = Ys bsr 1,
-			    draw_one_background(Win,W#widget{fill=[blend]},
-						X+Xs,Y+Xs,
-						Width,Height,
-						1, {200,0,0,0},
-						Image, Anim, Frame),
 			    draw_one_background(Win, W, X+Xi,Y+Yi,
 						Width, Height,
 						1, Color, Image, Anim, Frame);
