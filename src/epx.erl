@@ -26,7 +26,6 @@
 
 %%
 -export([start/0]).
--export([old_start/0, old_start/1]).
 %% set epx debug level
 -export([debug/1]).
 %% simd
@@ -256,30 +255,7 @@ init() ->
 %%
 start() ->
     application:load(?MODULE), %% make sure command line env is loaded
-    application:start(?MODULE).
-
-old_start() ->
-    Backend = epx_backend:assumed_backend(),
-    old_start(Backend).
-
-old_start(Prefered) ->
-    case epx_backend:start() of
-	{error,{already_started,_Pid}} ->
-	    ok;
-	{ok,_Pid} ->
-	    epx_font:start(),
-	    epx_animation:start(),
-	    epx_style:start(),
-	    List = epx:backend_list(),
-	    Name = case lists:member(Prefered, List) of
-		       true -> Prefered;
-		       false when Prefered =:= "", List =/= [] ->
-			   hd(List);
-		       false ->
-			   "none"
-		   end,
-	    epx_backend:create(Name, [])
-    end.
+    application:ensure_all_started(?MODULE).
 
 %% @doc
 %%  Set epx internal debug logging
