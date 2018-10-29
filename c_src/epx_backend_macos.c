@@ -1209,7 +1209,7 @@ int carbon_win_adjust(epx_window_t* win, epx_dict_t* param)
     int bool_val;
     CarbonWindow* cwin = (CarbonWindow*)win->opaque;
 
-    printf("carbon: Window adjust\n");
+    EPX_DBGFMT("carbon: Window adjust");
     wi=epx_dict_lookup_integer(param, "width", &width);
     hi=epx_dict_lookup_integer(param, "height", &height);
 

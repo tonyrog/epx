@@ -99,7 +99,7 @@ static ERL_NIF_TERM pixmap_detach(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_draw(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_sync(ErlNifEnv* env, int argc,
+static ERL_NIF_TERM window_sync(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_draw_point(ErlNifEnv* env, int argc,
 				      const ERL_NIF_TERM argv[]);
@@ -218,7 +218,7 @@ typedef enum {
     EPX_MESSAGE_WINDOW_SWAP,    // backend main - swap window
     EPX_MESSAGE_WINDOW_ADJUST,  // backend main - set window parameters
     EPX_MESSAGE_ADJUST,         // backend main - set backend parameters
-    EPX_MESSAGE_PIXMAP_SYNC,    // backend main - sync pixmap (on window)
+    EPX_MESSAGE_WINDOW_SYNC,    // backend main - sync window
 } epx_message_type_t;
 
 struct _epx_thread_t;
@@ -249,10 +249,6 @@ typedef struct epx_message_t
 	    unsigned int width;
 	    unsigned int height;
 	} wdraw;
-	struct {
-	    epx_pixmap_t* pixmap;  // attached pixmap
-	    epx_window_t* window;  // attached window
-	} wsync;
 	void* (*upgrade)(void* arg);
 	struct _epx_queue_t* reply_q;
     };
@@ -355,13 +351,13 @@ ErlNifFunc epx_funcs[] =
     // Debug
     NIF_FUNC("debug",         1,  debug),
     // Simd interface
-    NIF_FUNC("simd_info",     1,  simd_info),
+    NIF_FUNC("simd_info_",    1,  simd_info),
     NIF_FUNC("simd_set",      1,  simd_set ),
 
     // Pixmap interface
     NIF_FUNC("pixmap_create", 3, pixmap_create),
     NIF_FUNC("pixmap_copy",   1, pixmap_copy),
-    NIF_FUNC("pixmap_info",    2, pixmap_info),
+    NIF_FUNC("pixmap_info_",  2, pixmap_info),
     NIF_FUNC("pixmap_sub_pixmap", 5, pixmap_sub_pixmap),
     NIF_FUNC("pixmap_set_clip", 2, pixmap_set_clip),
     NIF_FUNC("pixmap_fill", 3, pixmap_fill),
@@ -387,7 +383,6 @@ ErlNifFunc epx_funcs[] =
     NIF_FUNC("pixmap_attach", 2, pixmap_attach),
     NIF_FUNC("pixmap_detach", 1, pixmap_detach),
     NIF_FUNC("pixmap_draw", 8, pixmap_draw),
-    NIF_FUNC("pixmap_sync", 2, pixmap_sync),
     NIF_FUNC("pixmap_draw_point", 4, pixmap_draw_point),
     NIF_FUNC("pixmap_draw_line", 6, pixmap_draw_line),
     NIF_FUNC("pixmap_draw_triangle", 8, pixmap_draw_triangle),
@@ -408,7 +403,7 @@ ErlNifFunc epx_funcs[] =
     NIF_FUNC("dict_is_key",     2, dict_is_key),
     NIF_FUNC("dict_first",      1, dict_first),
     NIF_FUNC("dict_next",       2, dict_next),
-    NIF_FUNC("dict_info",       2, dict_info),
+    NIF_FUNC("dict_info_",      2, dict_info),
 
     // Graphic context
     NIF_FUNC("gc_create", 0, gc_create),
@@ -423,28 +418,29 @@ ErlNifFunc epx_funcs[] =
     NIF_FUNC("font_unload", 1, font_unload),
     NIF_FUNC("font_map", 1, font_map),
     NIF_FUNC("font_unmap", 1, font_unmap),
-    NIF_FUNC("font_info", 2, font_info),
+    NIF_FUNC("font_info_", 2, font_info),
     NIF_FUNC("font_draw_glyph", 5, font_draw_glyph),
     NIF_FUNC("font_draw_string", 5, font_draw_string),
     NIF_FUNC("font_draw_utf8", 5, font_draw_utf8),
     // Backend
     NIF_FUNC("backend_list", 0, backend_list),
-    NIF_FUNC("backend_open", 2, backend_open),
-    NIF_FUNC("backend_info", 2, backend_info),
-    NIF_FUNC("backend_adjust", 2, backend_adjust),
+    NIF_FUNC("backend_open_", 2, backend_open),
+    NIF_FUNC("backend_info_", 2, backend_info),
+    NIF_FUNC("backend_adjust_", 2, backend_adjust),
 
     // Window
     NIF_FUNC("window_create", 4, window_create),
     NIF_FUNC("window_create", 5, window_create),
-    NIF_FUNC("window_adjust", 2, window_adjust),
-    NIF_FUNC("window_info",   2, window_info),
+    NIF_FUNC("window_adjust_", 2, window_adjust),
+    NIF_FUNC("window_info_",   2, window_info),
     NIF_FUNC("window_attach", 2, window_attach),
     NIF_FUNC("window_detach", 1, window_detach),
     NIF_FUNC("window_set_event_mask", 2, window_set_event_mask),
     NIF_FUNC("window_enable_events", 2, window_enable_events),
     NIF_FUNC("window_disable_events", 2, window_disable_events),
+    NIF_FUNC("window_sync", 1, window_sync),
 
-    NIF_FUNC("animation_info", 2, animation_info),
+    NIF_FUNC("animation_info_", 2, animation_info),
     NIF_FUNC("animation_draw", 6, animation_draw),
     NIF_FUNC("animation_copy", 6, animation_copy),
     NIF_FUNC("animation_open", 1, animation_open),
@@ -965,7 +961,7 @@ static char* format_message(epx_message_t* m)
     case EPX_MESSAGE_PIXMAP_ATTACH: return "pixmap_attach";
     case EPX_MESSAGE_PIXMAP_DETACH: return "pixmap_detach";
     case EPX_MESSAGE_PIXMAP_DRAW: return "pixmap_draw";
-    case EPX_MESSAGE_PIXMAP_SYNC: return "pixmap_sync";
+    case EPX_MESSAGE_WINDOW_SYNC: return "window_sync";
     default: return "unknown";
     }
 }
@@ -3333,29 +3329,22 @@ static ERL_NIF_TERM pixmap_draw(ErlNifEnv* env, int argc,
 // the backend thread should responed with a
 // synced event.
 //
-static ERL_NIF_TERM pixmap_sync(ErlNifEnv* env, int argc,
+static ERL_NIF_TERM window_sync(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[])
 {
     (void) argc;
     epx_nif_backend_t* backend;
-    epx_pixmap_t* pixmap;
     epx_window_t* window;
     epx_message_t m;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
-	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &window_res, (void**) &window))
+    if (!get_object(env, argv[0], &window_res, (void**) &window))
 	return enif_make_badarg(env);
 
-    if (!(backend = pixmap->user))
+    if (!(backend = window->user))
 	return enif_make_badarg(env);
-    if (backend != window->user)
-	return enif_make_badarg(env);
-    m.wsync.pixmap = pixmap;
-    m.wsync.window = window;
+    m.window = window;
     enif_keep_resource(window);
-    enif_keep_resource(pixmap);
-    m.type = EPX_MESSAGE_PIXMAP_SYNC;
+    m.type = EPX_MESSAGE_WINDOW_SYNC;
     epx_message_send(backend->main, 0, &m);
     return ATOM(ok);
 }
@@ -4598,7 +4587,7 @@ static void* reaper_main(void* arg)
 	case EPX_MESSAGE_PIXMAP_ATTACH:
 	case EPX_MESSAGE_PIXMAP_DETACH:
 	case EPX_MESSAGE_PIXMAP_DRAW:
-	case EPX_MESSAGE_PIXMAP_SYNC:
+	case EPX_MESSAGE_WINDOW_SYNC:
 	case EPX_MESSAGE_SYNC_ACK:
 	default:
 	    DEBUGF("reaper: unhandled message %s",
@@ -4644,7 +4633,7 @@ static int backend_poll_dispatch(epx_thread_t* self, epx_message_t* mp)
     case EPX_MESSAGE_PIXMAP_ATTACH:
     case EPX_MESSAGE_PIXMAP_DETACH:
     case EPX_MESSAGE_PIXMAP_DRAW:
-    case EPX_MESSAGE_PIXMAP_SYNC:
+    case EPX_MESSAGE_WINDOW_SYNC:
     case EPX_MESSAGE_SYNC_ACK:
     default:
 	DEBUGF("backend_poll_dispatch: unhandled message %s",
@@ -4862,6 +4851,8 @@ static void* backend_main(void* arg)
 	case EPX_MESSAGE_WINDOW_ADJUST:
 	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_ADJUST");
 	    epx_window_adjust(m.wadjust.window, m.wadjust.param);
+	    enif_release_resource(m.wadjust.window);   // thread safe?
+	    enif_release_resource(m.wadjust.param);    // thread safe?
 	    break;
 
 	case EPX_MESSAGE_WINDOW_SWAP:
@@ -4872,6 +4863,7 @@ static void* backend_main(void* arg)
 	case EPX_MESSAGE_ADJUST:
 	    DEBUGF("backend_main: EPX_MESSAGE_ADJUST");
 	    epx_backend_adjust(backend, m.param);
+	    enif_release_resource(m.param);    // thread safe?	    
 	    break;
 
 	case EPX_MESSAGE_PIXMAP_ATTACH:
@@ -4905,25 +4897,24 @@ static void* backend_main(void* arg)
 	    enif_release_resource(m.wdraw.window);
 	    break;
 
-	case EPX_MESSAGE_PIXMAP_SYNC: {
+	case EPX_MESSAGE_WINDOW_SYNC: {
 	    ERL_NIF_TERM msg;
 	    ErlNifPid* pid;
-	    DEBUGF("backend_main: EPX_MESSAGE_PIXMAP_SYNC");
+	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_SYNC");
 
-	    epx_backend_pixmap_sync(backend, m.wsync.pixmap, m.wsync.window);
-			     
-	    pid = m.wsync.window->owner;
+	    // FIXME: we should/could update backend interface
+	    epx_backend_pixmap_sync(backend, NULL, m.window);
+
+	    pid = m.window->owner;
 	    msg = enif_make_tuple3(priv->env,
 				   ATOM(epx_event),
 				   make_object(priv->env,
 					       ATOM(epx_window),
-					       m.wsync.window),
-				    ATOM(synced));
+					       m.window),
+				   ATOM(synced));
 	    enif_send(0, pid, priv->env, msg);
 	    enif_clear_env(priv->env);
-
-	    enif_release_resource(m.wsync.pixmap);
-	    enif_release_resource(m.wsync.window);
+	    enif_release_resource(m.window);
 	    break;
 	}
 
@@ -5099,8 +5090,19 @@ static ERL_NIF_TERM backend_adjust(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
-    return enif_make_badarg(env);
+    epx_nif_backend_t* backend;
+    epx_dict_t* param;
+    epx_message_t m;
+
+    if (!get_object(env, argv[0], &backend_res, (void**) &backend))
+	return enif_make_badarg(env);    
+    if (!get_object(env, argv[1], &dict_res, (void**) &param))
+	return enif_make_badarg(env);
+    enif_keep_resource(param);
+    m.type = EPX_MESSAGE_ADJUST;
+    m.param = param;
+    epx_message_send(backend->main, 0, &m);
+    return ATOM(ok);    
 }
 
 
@@ -5155,8 +5157,25 @@ static ERL_NIF_TERM window_adjust(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
-    return enif_make_badarg(env);
+    epx_nif_backend_t* backend;
+    epx_window_t* window;
+    epx_dict_t* param;
+    epx_message_t m;
+    
+    if (!get_object(env, argv[0], &window_res, (void**) &window))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[1], &dict_res, (void**) &param))
+	return enif_make_badarg(env);
+
+    if (!(backend = window->user))
+	return enif_make_badarg(env);
+    enif_keep_resource(window);
+    enif_keep_resource(param);
+    m.type = EPX_MESSAGE_WINDOW_ADJUST;
+    m.wadjust.window = window;
+    m.wadjust.param  = param;
+    epx_message_send(backend->main, 0, &m);
+    return ATOM(ok);
 }
 
 static ERL_NIF_TERM window_info(ErlNifEnv* env, int argc,

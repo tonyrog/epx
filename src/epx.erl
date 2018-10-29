@@ -29,13 +29,13 @@
 %% set epx debug level
 -export([debug/1]).
 %% simd
--export([simd_info/0,simd_info/1,simd_set/1]).
+-export([simd_info/0,simd_info/1,simd_set/1,simd_info_/1]).
 -export([simd_info_keys/0]).
 %% Pixmap access
 -export([pixmap_create/3,pixmap_create/2]).
 -export([pixmap_copy/1]).
 -export([pixmap_sub_pixmap/5]).
--export([pixmap_info/1, pixmap_info/2]).
+-export([pixmap_info/1, pixmap_info/2, pixmap_info_/2]).
 -export([pixmap_info_keys/0]).
 -export([pixmap_set_clip/2]).
 -export([pixmap_fill/2, pixmap_fill/3]).
@@ -62,8 +62,7 @@
 -export([pixmap_attach/2, pixmap_attach/1]).
 -export([pixmap_detach/1]).
 -export([pixmap_draw/8]).
--export([pixmap_sync/2]).
--export([sync/2]).
+-export([sync/1, sync/2]).
 -export([pixmap_draw_point/4]).
 -export([pixmap_draw_line/6]).
 -export([pixmap_draw_triangle/8]).
@@ -75,7 +74,7 @@
 -export([animation_open/1]).
 -export([animation_copy/6]).
 -export([animation_draw/6]).
--export([animation_info/1, animation_info/2]).
+-export([animation_info/1, animation_info/2, animation_info_/2]).
 -export([animation_info_keys/0]).
 
 %% Dictionary access
@@ -110,7 +109,7 @@
 -export([font_unload/1]).
 -export([font_map/1]).
 -export([font_unmap/1]).
--export([font_info/1, font_info/2]).
+-export([font_info/1, font_info/2, font_info_/2]).
 -export([font_info_keys/0]).
 -export([font_draw_glyph/5]).
 -export([font_draw_string/5]).
@@ -118,22 +117,23 @@
 
 %% Backend
 -export([backend_list/0]).
--export([backend_open/2]).
--export([backend_info/1,backend_info/2]).
--export([backend_adjust/2]).
+-export([backend_open_/2, backend_open/2]).
+-export([backend_info/1,backend_info/2,backend_info_/2]).
+-export([backend_adjust_/2, backend_adjust/2]).
 -export([backend_info_keys/0]).
 
 %% Window
 -export([window_create/4]).
 -export([window_create/5]).
--export([window_info/1, window_info/2]).
+-export([window_info/1, window_info/2, window_info_/2]).
 -export([window_info_keys/0]).
--export([window_adjust/2]).
+-export([window_adjust_/2, window_adjust/2]).
 -export([window_set_event_mask/2]).
 -export([window_enable_events/2]).
 -export([window_disable_events/2]).
 -export([window_attach/2, window_attach/1]).
 -export([window_detach/1]).
+-export([window_sync/1]).
 
 %% Utils
 -export([draw_point/3, draw_point/2]).
@@ -312,15 +312,23 @@ simd_info_keys() ->
 -spec simd_info() -> [epx_simd_info()].
 
 simd_info() ->
-    [{K,simd_info(K)} || K <- simd_info_keys()].
+    simd_info(simd_info_keys()).
+
+-spec simd_info(Keys::[epx_simd_info_key()]) -> [epx_simd_info()].
+
+simd_info(Keys) when is_list(Keys) ->
+    [{K,simd_info_(K)} || K <- Keys];
+simd_info(K) when is_atom(K) ->
+    simd_info_(K).
+
 
 %% @doc
 %%   Get information about SIMD support
 %% @end
 
--spec simd_info(Key::epx_simd_info_key()) -> term().
+-spec simd_info_(Key::epx_simd_info_key()) -> term().
 
-simd_info(_Info) ->
+simd_info_(_Info) ->
     erlang:error(nif_not_loaded).
 
 %% @doc
@@ -417,16 +425,20 @@ pixmap_info_keys() ->
 -spec pixmap_info(Pixmap::epx_pixmap()) -> [epx_pixmap_info()].
 
 pixmap_info(Pixmap) ->
-    map(fun(Info) -> {Info,pixmap_info(Pixmap,Info)} end,
-	pixmap_info_keys()).
+    pixmap_info(Pixmap, pixmap_info_keys()).
+
+pixmap_info(Pixmap, Keys) when is_list(Keys) ->
+    [{K,pixmap_info_(Pixmap,K)} || K <- Keys];
+pixmap_info(Pixmap, K) when is_atom(K) ->
+    pixmap_info_(Pixmap, K).
 
 %% @doc
 %%   Get specific pixmap information
 %% @end
--spec pixmap_info(Pixmap::epx_pixmap(),Key::epx_pixmap_info_key()) ->
-			 term().
+-spec pixmap_info_(Pixmap::epx_pixmap(),Key::epx_pixmap_info_key()) ->
+			  term().
 
-pixmap_info(_Pixmap, _Key) ->
+pixmap_info_(_Pixmap, _Key) ->
     erlang:error(nif_not_loaded).
 
 %% @doc
@@ -811,18 +823,22 @@ pixmap_draw(_Pixmap, _Win, _XSrx, _YSrc, _XDst, _YDst, _Width, _Height) ->
 
 %% Send a sync event to the window, the response from the
 %% window is to send a synced event back.
--spec pixmap_sync(Pixmap::epx_pixmap(), Win::epx_window()) ->
+-spec window_sync(Win::epx_window()) ->
 			 ok.
-pixmap_sync(_Pixmap, _Win) ->
+window_sync(_Win) ->
     erlang:error(nif_not_loaded).
 
-sync(Pixmap, Win) ->
-    pixmap_sync(Pixmap, Win),
+sync(Win) ->
+    window_sync(Win),
     receive
 	{epx_event,Win,synced} ->
 	    %% io:format("Got SYNCED\r\n"),
 	    ok
     end.
+
+sync(_Pixmap, Win) -> %% previous interface deprecated...
+    sync(Win).
+
 
 pixmap_draw_point(_Pixmap, _Gc, _X, _Y) ->
     erlang:error(nif_not_loaded).
@@ -859,10 +875,14 @@ animation_info_keys() ->
     [file_name, file_size, count, width, height, pixel_format].
 
 animation_info(Anim) ->
-    map(fun(Info) -> {Info,animation_info(Anim,Info)} end,
-	animation_info_keys()).
+    animation_info(Anim).
 
-animation_info(_Anim, _Key) ->
+animation_info(Anim, Keys) when is_list(Keys) ->
+    [{K,animation_info_(Anim,K)} || K <- Keys];
+animation_info(Anim, K) when is_atom(K) ->
+    animation_info_(Anim, K).
+
+animation_info_(_Anim, _Key) ->
     erlang:error(nif_not_loaded).
 
 %%
@@ -914,7 +934,12 @@ dict_from_list(Dict, [{Key,Value}|List]) ->
 dict_from_list(Dict, []) ->
     Dict.
 
-dict_info(_Dict, _Info) ->
+dict_info(Dict, Keys) when is_list(Keys) ->
+    [{K,dict_info_(Dict,K)} || K <- Keys];
+dict_info(Dict, K) when is_atom(K) ->
+    dict_info_(Dict, K).
+
+dict_info_(_Dict, _Info) ->
     erlang:error(nif_not_loaded).
 
 dict_info_keys() ->
@@ -922,6 +947,8 @@ dict_info_keys() ->
 
 dict_info(Dict) ->
     [{K,dict_info(Dict,K)} || K <- dict_info_keys()].
+
+
 
 -type epx_gc_info_key() ::
 	'fill_style' |
@@ -1049,13 +1076,14 @@ gc_info_keys() ->
 -spec gc_info(Gc::epx_gc()) -> [epx_gc_info()].
 
 gc_info(Gc) ->
-    map(fun(Info) -> {Info,gc_info(Gc,Info)} end,
-	gc_info_keys()).
+    gc_info(Gc, gc_info_keys()).
 
 -spec gc_info(Gc::epx_gc(), Item::epx_gc_info_key()) -> term().
 
-gc_info(Gc, Item) ->
-    gc_get(Gc, Item).
+gc_info(Gc, Keys) when is_list(Keys) ->
+    [{K,gc_info(Gc,K)} || K <- Keys];
+gc_info(Gc, Key) when is_atom(Key) ->
+    gc_get(Gc, Key).
 
 %% Font
 font_open(_Filename) ->
@@ -1079,10 +1107,15 @@ font_info_keys() ->
      descent, ascent ].
 
 font_info(Font) ->
-    map(fun(Info) -> {Info,font_info(Font,Info)} end,
-	font_info_keys()).
+    font_info(Font, font_info_keys()).
 
-font_info(_Font, _Item) ->
+font_info(Font, Keys) when is_list(Keys) ->
+    [{K,font_info_(Font,K)} || K <- Keys];
+font_info(Font, K) when is_atom(K) ->
+    font_info_(Font, K).
+
+
+font_info_(_Font, _Item) ->
     erlang:error(nif_not_loaded).
 
 font_draw_glyph(_Pixmap,_Gc,_X, _Y, _C) ->
@@ -1098,21 +1131,39 @@ font_draw_utf8(_Pixmap,_Gc, _X, _Y, _IOList) ->
 backend_list() ->
     erlang:error(nif_not_loaded).
 
-backend_open(_Name, _Dict) ->
+backend_open(Name, Params) when is_list(Params) ->
+    backend_open_(Name, dict_from_list(Params));
+backend_open(Name, Params) when is_map(Params) ->
+    backend_open_(Name, dict_from_list(maps:map_to_list(Params)));
+backend_open(Name, Params) when is_record(Params, epx_dict) ->
+    backend_open_(Name, Params).
+
+backend_open_(_Name, _Dict) ->
     erlang:error(nif_not_loaded).
 
-backend_info(_Backend, _Item) ->
+backend_info_(_Backend, _Item) ->
     erlang:error(nif_not_loaded).
 
 backend_info(Backend) ->
     [{K,backend_info(Backend,K)} || K <- backend_info_keys()].
 
+backend_info(Backend, Keys) when is_list(Keys) ->
+    [{K,backend_info_(Backend,K)} || K <- Keys];
+backend_info(Backend, Key) when is_atom(Key) ->
+    backend_info_(Backend,Key).
+
 backend_info_keys() ->
     [name, pending, opengl, use_opengl, width, height,
      windows, pixmaps, pixel_formats, epx_pixel_formats].
 
+backend_adjust(Backend, Params) when is_list(Params) ->
+    backend_adjust_(Backend, dict_from_list(Params));
+backend_adjust(Backend, Params) when is_map(Params) ->
+    backend_adjust_(Backend, dict_from_list(maps:map_to_list(Params)));
+backend_adjust(Backend, Params) when is_record(Params,epx_dict) ->
+    backend_adjust_(Backend, Params).
 
-backend_adjust(_Backend, _Dict) ->
+backend_adjust_(_Backend, _Dict) ->
     erlang:error(nif_not_loaded).
 
 %% Window
@@ -1161,16 +1212,27 @@ window_info_keys() ->
 			 [epx_window_info()].
 
 window_info(Window) ->
-    map(fun(Info) -> {Info,window_info(Window,Info)} end,
-	window_info_keys()).
+    window_info(Window, window_info_keys()).
 
--spec window_info(Window::epx_window(),Item::epx_window_info_key()) ->
+window_info(Window, Keys) when is_list(Keys) ->
+    [{K,window_info_(Window,K)} || K <- Keys];
+window_info(Window, K) when is_atom(K) ->
+    window_info_(Window, K).
+
+-spec window_info_(Window::epx_window(),Item::epx_window_info_key()) ->
 			 term().
 
-window_info(_Window, _Item) ->
+window_info_(_Window, _Item) ->
     erlang:error(nif_not_loaded).
 
-window_adjust(_Window, _Dict) ->
+window_adjust(Window, Params) when is_list(Params) ->
+    window_adjust_(Window, dict_from_list(Params));
+window_adjust(Window, Params) when is_map(Params) ->
+    window_adjust_(Window, dict_from_list(maps:map_to_list(Params)));
+window_adjust(Window, Params) when is_record(Params,epx_dict) ->
+    window_adjust_(Window, Params).
+
+window_adjust_(_Window, _Dict) ->
     erlang:error(nif_not_loaded).
 
 -spec window_set_event_mask(Window::epx_window(),

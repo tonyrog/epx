@@ -46,6 +46,8 @@ typedef struct {
     Window window;
     Pixmap pm;     /* off-screen pixmap */
     GC gc;
+    int x;
+    int y;    
     int height;
     int width;
     int grabbed;
@@ -714,6 +716,8 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	xwin->accel_den = 0;
 	xwin->thres = 0;
 	xwin->window = win;
+	xwin->x = ewin->x;
+	xwin->y = ewin->y;	
 	xwin->width = ewin->width;
 	xwin->height = ewin->height;
 	/* FIXME: allocate this ? */
@@ -1349,9 +1353,62 @@ int x11_info(epx_backend_t* backend, epx_dict_t*param)
 
 int x11_win_adjust(epx_window_t *win, epx_dict_t*param)
 {
-    (void) win;
-    (void) param;
-    return 1;
+    int bool_val;
+    X11Window*  w  = (X11Window*) win->opaque;
+    X11Backend* b  = (X11Backend*) win->backend;
+    XWindowChanges value;
+    unsigned int mask = 0;
+
+    EPX_DBGFMT("x11: Window adjust\n");
+
+    if (epx_dict_lookup_integer(param, "x", &value.x) >= 0) {
+	EPX_DBGFMT("x11: x=%d", value.x);
+	mask |= CWX;
+    }
+    if (epx_dict_lookup_integer(param, "y", &value.y) >= 0) {
+	EPX_DBGFMT("x11: y=%d", value.y);
+	mask |= CWY;
+    }
+    if (epx_dict_lookup_integer(param, "width", &value.width) >= 0) {
+	EPX_DBGFMT("x11: width=%d", value.width);
+	mask |= CWWidth;
+    }
+    if (epx_dict_lookup_integer(param, "height", &value.height) >= 0) {
+	EPX_DBGFMT("x11: height=%d", value.height);
+	mask |= CWHeight;
+    }
+    if (epx_dict_lookup_integer(param, "border_width", &value.border_width)
+	>= 0) {
+	EPX_DBGFMT("x11: border_width=%d", value.border_width);
+	mask |= CWBorderWidth;
+    }
+    if (mask) {
+	XConfigureWindow(b->display, w->window, mask, &value);
+	// fixme capture error
+	if (mask & CWX)      w->x = win->x = value.x;
+	if (mask & CWY)      w->y = win->y = value.y;
+	if (mask & CWWidth)  w->width  = win->width = value.width;
+	if (mask & CWHeight) w->height = win->height = value.height;
+	XFlush(b->display);	
+    }
+    if (epx_dict_lookup_boolean(param, "show", &bool_val) >= 0) {
+	EPX_DBGFMT("x11: show=%d", bool_val);
+	if (bool_val)
+	    XMapWindow(b->display, w->window);
+	else
+	    XUnmapWindow(b->display, w->window);
+	XFlush(b->display);	
+    }
+
+    if (epx_dict_lookup_boolean(param, "select", &bool_val) >= 0) {
+	EPX_DBGFMT("x11: select=%d", bool_val);	
+	if (bool_val) {
+	    XMapRaised(b->display, w->window);
+	    XFlush(b->display);
+	}
+    }
+    //  "focus", "modal" ...
+    return 1;    
 }
 
 
