@@ -17,6 +17,8 @@
 #ifndef __EPX_WINDOW_H__
 #define __EPX_WINDOW_H__
 
+#include "epx_geometry.h"
+
 struct _epx_backend_t;
 
 // window interface
@@ -27,10 +29,8 @@ typedef struct _epx_window_t {
     void* user;                           // extra user data
     uint32_t mask;                        // event mask, FIXME lock!
     int opengl;                           // window supportes OpenGL
-    int x;
-    int y;
-    unsigned int width;
-    unsigned int height;
+    epx_rect_t area;                      // set window area
+    epx_rect_t rarea;                     // reported window area
 } epx_window_t;
 
 //

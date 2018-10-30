@@ -941,8 +941,8 @@ static int fb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     // Do some tests
     //
     be->vinfo.activate = FB_ACTIVATE_NOW;
-    be->vinfo.yres = be->vinfo.yres_virtual = ewin->height;
-    be->vinfo.xres = be->vinfo.xres_virtual = ewin->width;
+    be->vinfo.yres = be->vinfo.yres_virtual = ewin->area.wh.height;
+    be->vinfo.xres = be->vinfo.xres_virtual = ewin->area.wh.width;
 
     fb_dump_vinfo("Modified values to be set.", &be->vinfo);
     if (ioctl(be->fb_fd, FBIOPUT_VSCREENINFO, &be->vinfo) < 0) {

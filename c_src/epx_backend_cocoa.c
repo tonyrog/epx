@@ -764,7 +764,11 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
 
     cwin->winBounds = appwin.contentLayoutRect;
-    // fixme: change size of layer!?
+    // update reported values (access through window_info)
+    if (ewin) {
+	ewin->rarea.wh.width = cwin->winBounds.size.width;
+	ewin->rarea.wh.height = cwin->winBounds.size.height;
+    }
     
     e.window = ewin;
     e.type = EPX_EVENT_RESIZE;
@@ -806,7 +810,13 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     be   = ewin ? (CocoaBackend*) (ewin->backend) : 0;
 
     cwin->winBounds = appwin.contentLayoutRect;
-    
+    // update reported values
+    if (ewin) {
+	ewin->rarea.xy.x = cwin->winBounds.origin.x;
+	ewin->rarea.xy.y = cwin->winBounds.origin.y;
+	ewin->rarea.wh.width = cwin->winBounds.size.width;
+	ewin->rarea.wh.height = cwin->winBounds.size.height;
+    }
     e.window = ewin;
     e.type = EPX_EVENT_CONFIGURE;
     e.pointer.button = 0;
@@ -1524,10 +1534,10 @@ static int cocoa_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	NSWindowStyleMaskResizable;
 	// NSTexturedBackgroundWindowMask	
 
-    cwin->winBounds.origin.x = ewin->x;
-    cwin->winBounds.origin.y = ewin->y;
-    cwin->winBounds.size.height = ewin->height;
-    cwin->winBounds.size.width  = ewin->width;
+    cwin->winBounds.origin.x = ewin->area.xy.x;
+    cwin->winBounds.origin.y = ewin->area.xy.y;
+    cwin->winBounds.size.height = ewin->area.wh.height;
+    cwin->winBounds.size.width  = ewin->area.wh.width;
 
     EPX_DBGFMT("cocoa_win_attach: cwin=%p", cwin);
     // Relase pool

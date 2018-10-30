@@ -5187,16 +5187,16 @@ static ERL_NIF_TERM window_info(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[0], &window_res, (void**) &win))
 	return enif_make_badarg(env);
     if (argv[1] == ATOM(x)) {
-	return enif_make_int(env, win->x);
+	return enif_make_int(env, win->rarea.xy.x);
     }
     else if (argv[1] == ATOM(y)) {
-	return enif_make_uint(env, win->y);
+	return enif_make_uint(env, win->rarea.xy.y);
     }
     else if (argv[1] == ATOM(width)) {
-	return enif_make_uint(env, win->width);
+	return enif_make_uint(env, win->rarea.wh.width);
     }
     else if (argv[1] == ATOM(height)) {
-	return enif_make_uint(env, win->height);
+	return enif_make_uint(env, win->rarea.wh.height);
     }
     else if (argv[1] == ATOM(backend)) {
 	epx_nif_backend_t* backend = (epx_nif_backend_t*) win->user;

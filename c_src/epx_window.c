@@ -47,10 +47,8 @@ int epx_window_init(epx_window_t* win, int x, int y,
     win->owner   = 0;
     win->opengl  = 0;
     win->mask    = 0;
-    win->x = x;
-    win->y = y;
-    win->width = width;
-    win->height = height;
+    epx_rect_set(&win->area, x, y, width, height);
+    epx_rect_set(&win->rarea, x, y, width, height);
     return 0;
 }
 

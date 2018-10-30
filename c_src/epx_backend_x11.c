@@ -671,10 +671,10 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	valuemask |= (CWBorderPixel | CWColormap);
 	win = XCreateWindow(be->display, 
 			    RootWindow(be->display, vinfo->screen),
-			    ewin->x, /* x */
-			    ewin->y,	/* y */
-			    ewin->width,	/* width */
-			    ewin->height,	/* height */
+			    ewin->area.xy.x, /* x */
+			    ewin->area.xy.y,	/* y */
+			    ewin->area.wh.width,	/* width */
+			    ewin->area.wh.height,	/* height */
 			    0,		/* border */
 			    vinfo->depth,	/* depth */
 			    InputOutput,	/* class */
@@ -697,10 +697,10 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     if (!win)
 	win = XCreateWindow(be->display, 
 			    XDefaultRootWindow(be->display), 
-			    ewin->x, /* x */
-			    ewin->y,	/* y */
-			    ewin->width,	/* width */
-			    ewin->height,	/* height */
+			    ewin->area.xy.x, /* x */
+			    ewin->area.xy.y,	/* y */
+			    ewin->area.wh.width,	/* width */
+			    ewin->area.wh.height,	/* height */
 			    2,		/* border */
 			    CopyFromParent,	/* depth */
 			    InputOutput,	/* class */
@@ -716,17 +716,17 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	xwin->accel_den = 0;
 	xwin->thres = 0;
 	xwin->window = win;
-	xwin->x = ewin->x;
-	xwin->y = ewin->y;	
-	xwin->width = ewin->width;
-	xwin->height = ewin->height;
+	xwin->x = ewin->area.xy.x;
+	xwin->y = ewin->area.xy.y;	
+	xwin->width = ewin->area.wh.width;
+	xwin->height = ewin->area.wh.height;
 	/* FIXME: allocate this ? */
 	xwin->gc = XDefaultGC(be->display, be->screen);
 	/* FIXME: configurable */
 	xwin->pm = XCreatePixmap(be->display,
 				 win,  /* used to specify screen */
-				 ewin->width,
-				 ewin->height,
+				 ewin->area.wh.width,
+				 ewin->area.wh.height,
 				 DefaultDepth(be->display, be->screen));
 	if (!xwin->pm)
 	    fprintf(stderr, "epx_x11: Failed create of Pixmap\n");
@@ -891,28 +891,46 @@ next:
 	e->type = EPX_EVENT_CLOSE;
 	goto got_event;
 
-    case ConfigureNotify:
+    case ConfigureNotify: {
+	epx_window_t* w;
 	EPX_DBGFMT("Event: ConfigureNotity x=%d, y=%d, w=%d, h=%d",
 		ev.xconfigure.x,ev.xconfigure.y,
 		ev.xconfigure.width, ev.xconfigure.height);
-	e->window = find_event_window(x11, ev.xconfigure.window);
-	e->type = EPX_EVENT_CONFIGURE;
-	e->area.x = ev.xconfigure.x;
-	e->area.y = ev.xconfigure.y;
-	e->area.w = ev.xconfigure.width;
-	e->area.h = ev.xconfigure.height;
-	goto got_event;
+	if ((w = find_event_window(x11, ev.xconfigure.window)) != NULL) {
+	    e->window = w;
+	    e->type = EPX_EVENT_CONFIGURE;
+	    e->area.x = ev.xconfigure.x;
+	    e->area.y = ev.xconfigure.y;
+	    e->area.w = ev.xconfigure.width;
+	    e->area.h = ev.xconfigure.height;
+	    // update reported values
+	    w->rarea.xy.y = e->area.x;
+	    w->rarea.xy.y = e->area.y;
+	    w->rarea.wh.width = e->area.w;
+	    w->rarea.wh.width = e->area.h;
+	    goto got_event;
+	}
+	break;
+    }
 
-    case ResizeRequest:
+    case ResizeRequest: {
+	epx_window_t* w;
 	EPX_DBGFMT("Event: ResizeRequest w=%d, h=%d",
 		ev.xresizerequest.width,ev.xresizerequest.height);
-	e->window = find_event_window(x11, ev.xresizerequest.window);
-	e->type = EPX_EVENT_RESIZE;
-	e->dimension.w = ev.xresizerequest.width;
-	e->dimension.h = ev.xresizerequest.height;
-	e->dimension.d = 0;
-	goto got_event;
+	w = find_event_window(x11, ev.xresizerequest.window);
+	if (w != NULL) {
+	    e->window = w;
+	    e->type = EPX_EVENT_RESIZE;
+	    e->dimension.w = ev.xresizerequest.width;
+	    e->dimension.h = ev.xresizerequest.height;
+	    e->dimension.d = 0;
+	    // update reported values
+	    w->rarea.wh.width = e->dimension.w;
+	    w->rarea.wh.width = e->dimension.h;
+	    goto got_event;
+	}
 	break;
+    }
 
     case KeymapNotify:
 	EPX_DBGFMT("Event: KeymapNotify");
@@ -1385,11 +1403,11 @@ int x11_win_adjust(epx_window_t *win, epx_dict_t*param)
     if (mask) {
 	XConfigureWindow(b->display, w->window, mask, &value);
 	// fixme capture error
-	if (mask & CWX)      w->x = win->x = value.x;
-	if (mask & CWY)      w->y = win->y = value.y;
-	if (mask & CWWidth)  w->width  = win->width = value.width;
-	if (mask & CWHeight) w->height = win->height = value.height;
-	XFlush(b->display);	
+	if (mask & CWX)      win->area.xy.x = w->x = value.x;
+	if (mask & CWY)      win->area.xy.y = w->y = value.y;
+	if (mask & CWWidth)  win->area.wh.width  = w->width = value.width;
+	if (mask & CWHeight) win->area.wh.height = w->height = value.height;
+	XFlush(b->display);
     }
     if (epx_dict_lookup_boolean(param, "show", &bool_val) >= 0) {
 	EPX_DBGFMT("x11: show=%d", bool_val);
