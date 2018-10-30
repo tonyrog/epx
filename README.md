@@ -16,8 +16,63 @@ Now you can read the pixels:
     {A,R,G,B} = epx:pixmap_get_pixel(Pixmap, 3, 3).
     <<R,G,B>> = epx:pixmap_get_pixels(Pixmap, 3, 3, 1, 1).
 
+# Available backend parameters for backend_open / backend_adjust / window_adjust 
 
+## x11 backend
 
+    x11_display             string
+    use_opengl              int            0|1
+
+## x11 window
+
+    x                       int
+    y                       int
+    width                   int
+    height                  int
+    border_width            int
+    show                    int            0|1
+    select                  int            0|1
+
+%% macos backend (cocoa)
+
+    use_opengl              int
+    
+## macos window
+
+    width                   int
+    height                  int
+    show                    int            0|1
+    select                  int            0|1
+
+## fb backend
+
+    framebuffer_device      string  ( default to /dev/fb0 )
+    direct_pixmap_draw	    int		   0|1
+    double_buffer	    int		   0|1
+    lcd_pi32		    int		   0|1
+    input_mouse_device      string
+    input_keyboard_device   string
+    input_absolute_device   string
+    input_relative_device   string
+    
+    width 	    	    int
+    virt_width		    int
+    height		    int
+    virt_height		    int
+    pixel_format	    string
+    pixel_type		    int
+    pixclock		    int
+    xoffset		    int
+    yoffset		    int
+    left_margin		    int
+    right_margin            int
+    upper_margin            int    
+    lower_margin	    int
+    hsync_len		    int
+    vsync_len		    int
+    sync		    uint
+    vmode		    uint
+    
 # epx on frame buffer device (linux)
 
     epx:debug(debug).
@@ -43,5 +98,3 @@ Then the fb driver may be probed:
 ## Packages needed to build epx using top-level Makefile on Raspberry pi and Ubuntu
 
 	sudo apt-get install libx11-dev autoconf libgif-dev
-
-
