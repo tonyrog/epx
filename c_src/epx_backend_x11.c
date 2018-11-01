@@ -974,7 +974,6 @@ next:
 	    w->rarea.xy.y = e->area.y;
 	    w->rarea.wh.width = e->area.w;
 	    w->rarea.wh.height = e->area.h;
-	    XClearWindow(b->display, win->window);
 	    goto got_event;
 	}
 	break;
