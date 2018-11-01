@@ -3,11 +3,10 @@
 #
 OSNAME := $(shell uname -s)
 MACHINE := $(shell uname -m)
+RELEASE := $(shell uname -r)
 CC = gcc
 RANLIB = ranlib
 
-ERLDIR	:= $(shell erl -noshell -eval "io:format([126,115,126,110],[code:root_dir()])" -s erlang halt)
-ERL_C_INCLUDE_DIR := $(ERLDIR)/usr/include
 EPX_DIR := $(shell cd ..; pwd)
 
 include ../vsn.mk
@@ -34,15 +33,15 @@ LIBDIR=../lib
 ifeq ($(TYPE), debug)
 override OBJDIR=../obj/debug
 override LIBDIR=../lib/debug
-CFG_LIB=$(EPX_DIR)/lib/debug/epx.a -lm
-DFLAGS += -Ddebug -DDEBUG -D_THREAD_SAFE -D_REENTRANT
+CFG_LIB=$(EPX_DIR)/lib/debug/epx.a -lm 
+DFLAGS += -DDEBUG -D_THREAD_SAFE -D_REENTRANT
 CFLAGS += -g -Wall -Wextra -Wswitch-default -Wswitch-enum -fno-common 
 endif
 
 ifeq ($(TYPE), release)
 override OBJDIR=../obj/release
 override LIBDIR=../lib/release
-CFG_LIB=$(EPX_DIR)/lib/release/epx.a -lm
+CFG_LIB=$(EPX_DIR)/lib/release/epx.a -lm 
 DFLAGS += -D_THREAD_SAFE -D_REENTRANT
 CFLAGS += -O3 -Wall -Wextra -Wswitch-default -Wswitch-enum -fno-common
 endif
@@ -95,13 +94,6 @@ SSE2      = Yes
 SSE3      = No
 endif
 
-ifeq ($(MACHINE), x86_64)
-MMX       = Yes
-SSE       = No
-SSE2      = Yes
-SSE3      = Yes
-endif
-
 ifeq ($(MACHINE), i686)
 MMX       = Yes
 SSE       = No
@@ -109,7 +101,12 @@ SSE2      = Yes
 SSE3      = No
 endif
 
-
+ifeq ($(MACHINE), x86_64)
+MMX       = Yes
+SSE       = No
+SSE2      = Yes
+SSE3      = No
+endif
 
 endif
 
@@ -142,7 +139,7 @@ endif
 ifeq ($(MAC_OS_X),Yes)
 	DFLAGS += -DMAC_OS_X
 	CFLAGS += -ObjC
-#	BE_OBJS += epx_backend_cocoa.o
+	# BE_OBJS += epx_backend_cocoa.o
 	BE_OBJS += epx_backend_macos.o
 	BE_LD_FLAGS += -framework Carbon -framework CoreFoundation -framework Foundation -framework AppKit
 	CFG_LDFLAGS += -framework Carbon -framework CoreFoundation -framework Foundation -framework AppKit
@@ -155,11 +152,17 @@ ifeq ($(AGL),Yes)
 endif
 
 ifeq ($(X11), Yes)
+ifeq ($(RELEASE), 16.7.0)
+	DFLAGS += -DX11 -I/usr/X11/include
+	BE_LD_FLAGS += -L/usr/X11/lib -lX11
+	CFG_LDFLAGS += -L/usr/X11/lib -lX11
+else
 	DFLAGS += -DX11 -I/usr/X11R6/include
-	CFLAGS +=
-	BE_OBJS += epx_backend_x11.o
 	BE_LD_FLAGS += -L/usr/X11R6/lib -lX11
 	CFG_LDFLAGS += -L/usr/X11R6/lib -lX11
+endif
+	CFLAGS +=
+	BE_OBJS += epx_backend_x11.o
 ifeq ($(GLX),Yes)
 	DFLAGS += -DX11_GLX -DHAVE_OPENGL
 	CFLAGS += 
@@ -226,6 +229,7 @@ LIB_OBJS = \
 	epx_line.o \
 	epx_ellipse.o \
 	epx_draw.o \
+	epx_lock.o \
 	epx_backend.o \
 	epx_window.o \
 	epx_font.o \
@@ -245,31 +249,31 @@ SRC = $(LIB_OBJS:%.o=%.c) $(SIMD_OBJS:%.o=%.c) $(BE_OBJS:%.o=%.c)
 
 WARN = -Wall -Wextra -Wswitch-default -Wswitch-enum 
 
-DFLAGS += -I ../include -I$(ERL_C_INCLUDE_DIR)
+DFLAGS += -I ../include 
 CFLAGS += $(WARN) -g -fPIC
 
 nif:
-	$(MAKE) nif_target TYPE=release
-	$(MAKE) epx-config TYPE=release
-	$(MAKE) nif_target TYPE=debug
-	$(MAKE) epx-config TYPE=debug
+	$(MAKE) -f Makefile.clib nif_target TYPE=release
+	$(MAKE) -f Makefile.clib epx-config TYPE=release
+	$(MAKE) -f Makefile.clib nif_target TYPE=debug
+	$(MAKE) -f Makefile.clib epx-config TYPE=debug
 
 clean:
-	$(MAKE) clean_target TYPE=release
-	$(MAKE) clean_target TYPE=debug
+	$(MAKE) -f Makefile.clib clean_target TYPE=release
+	$(MAKE) -f Makefile.clib clean_target TYPE=debug
 
 # Make epx library
 debug:
-	$(MAKE) lib_target TYPE=debug
-	$(MAKE) epx-config TYPE=debug
+	$(MAKE) -f Makefile.clib lib_target TYPE=debug
+	$(MAKE) -f Makefile.clib epx-config TYPE=debug
 
 release:
-	$(MAKE) lib_target TYPE=release
-	$(MAKE) epx-config TYPE=release
+	$(MAKE) -f Makefile.clib lib_target TYPE=release
+	$(MAKE) -f Makefile.clib epx-config TYPE=release
 
 depend:
-	$(MAKE) depend_target TYPE=release
-	$(MAKE) depend_target TYPE=debug
+	$(MAKE) -f Makefile.clib depend_target TYPE=release
+	$(MAKE) -f Makefile.clib depend_target TYPE=debug
 
 lib_target: $(EPX_LIB)
 
@@ -284,7 +288,7 @@ depend_target:
 		sed 's|^\([^:]*:\)|$$(OBJDIR)/\1|g' > $(OBJDIR)/depend.mk
 
 clean_target:
-	-rm -f $(EPX_LIB) $(OBJDIR)/*.o
+	-rm -f $(EPX_LIB) $(OBJDIR)/*.o $(EPX_NIF)
 
 $(EPX_LIB): $(EPX_LIB_OBJS) $(EPX_SIMD_OBJS) $(EPX_BE_OBJS)
 	rm -f $@
@@ -294,14 +298,14 @@ ifdef RANLIB
 endif
 
 $(EPX_NIF): $(EPX_LIB) $(OBJDIR)/epx_nif.o
-	$(LD_SHARED) -o $@ $(OBJDIR)/epx_nif.o $(DLL_LIBS) $(BE_LD_FLAGS) $(EPX_LIB) $(LD_FLAGS) $(ARCH_FLAGS)
+	$(LD_SHARED) -o $@ $(OBJDIR)/epx_nif.o $(DLL_LIBS)  $(EPX_LIB) $(LD_FLAGS) $(ARCH_FLAGS) $(BE_LD_FLAGS)
 
 -include $(OBJDIR)/depend.mk
 
 $(OBJDIR)/epx_nif.o: epx_nif.c
 	$(CC) -c -o $@ $(DFLAGS) $(CFLAGS) $(ARCH_FLAGS) epx_nif.c
 
-$(OBJDIR)/epx-config: epx-config.src ../vsn.mk Makefile
+$(OBJDIR)/epx-config: epx-config.src ../vsn.mk Makefile.clib
 	sed -e 's;%EPX_VSN%;$(EPX_VSN);' -e 's;%CFLAGS%;$(CFG_CFLAGS);' -e 's;%LDFLAGS%;$(CFG_LDFLAGS);' $< > $@
 
 $(OBJDIR)/%.o:	%.c
