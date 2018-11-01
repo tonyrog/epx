@@ -80,6 +80,7 @@
 	 disabled = false :: disabled(),
 	 edit = false :: boolean(),  %% allow edit of text fields
 	 relative = true :: boolean(), %% childrens are relative to parent
+	 manual = false :: boolean(),  %% manual control over state (release)
 	 user,               %% mfa when type=user
 	 filter,             %% mfa for event filter
 	 children_first = true :: boolean(), %% draw/select children first
@@ -109,7 +110,9 @@
 	 frame2 :: number(),
 	 color,    %% = 16#ff000000,
 	 color2,
+	 active_color,
 	 font_color = 16#00000000,
+	 active_font_color,
 	 fill   = none :: epx:epx_fill_style(),
 	 events  :: epx:epx_window_event_flags(),
 	 halign  = center :: top|bottom|center,  %% text alignment
@@ -1094,7 +1097,11 @@ widget_event_(Event={button_release,_Button,Where},W,XY,Window,State) ->
 	button ->
 	    callback_all(W#widget.id, State#state.subs,
 			 #{event=>button_release,value=>0,xy=>XY}),
-	    W#widget{state=normal, value=0};
+	    if W#widget.manual ->
+		    W;
+	       true ->
+		    W#widget{state=normal, value=0}
+	    end;
 	switch ->
 	    W;
 	slider ->
@@ -1122,13 +1129,21 @@ widget_event_(Event={button_release,_Button,Where},W,XY,Window,State) ->
 	    {X,Y,_} = Where,
 	    callback_all(W#widget.id,State#state.subs,
 			 #{event=>button_release,x=>X-Xi,y=>Y-Yi,xy=>XY}),
-	    W#widget{state=normal};
+	    if W#widget.manual ->
+		    W;
+	       true ->
+		    W#widget{state=normal}
+	    end;
 	_ ->
 	    {Xi,Yi} = XY,
 	    {X,Y,_} = Where,
 	    callback_all(W#widget.id,State#state.subs,
 			 #{event=>button_release,x=>X-Xi,y=>Y-Yi,xy=>XY}),
-	    W#widget { state=normal }
+	    if W#widget.manual ->
+		    W;
+	       true ->
+		    W#widget{state=normal}
+	    end
     end;
 widget_event_(Event={motion,_Button,Where},W,XY,Window,State) ->
     case W#widget.type of
@@ -1344,6 +1359,7 @@ keypos(Key) ->
 	hidden -> #widget.hidden;
 	disabled -> #widget.disabled;
 	relative -> #widget.relative;
+	manual -> #widget.manual;
 	user -> #widget.user;
 	filter -> #widget.filter;
 	children_first -> #widget.children_first;
@@ -1373,7 +1389,9 @@ keypos(Key) ->
 	frame2 -> #widget.frame2;
 	color -> #widget.color;
 	color2 -> #widget.color2;
+	active_color -> #widget.active_color;
 	font_color -> #widget.font_color;
+	active_font_color -> #widget.active_font_color;
 	fill     -> #widget.fill;
 	events   -> #widget.events;
 	halign   -> #widget.halign;
@@ -1417,6 +1435,7 @@ validate(#widget.round_h,Arg) -> is_integer(Arg);
 validate(#widget.children_first,Arg) -> ?MEMBER(Arg,true,false);
 validate(#widget.last,Arg) -> ?MEMBER(Arg,true,false);
 validate(#widget.relative,Arg) ->  ?MEMBER(Arg,true,false);
+validate(#widget.manual,Arg) ->  ?MEMBER(Arg,true,false);
 validate(#widget.width,Arg) -> is_integer(Arg) andalso (Arg >= 0);
 validate(#widget.height,Arg) -> is_integer(Arg) andalso (Arg >= 0);
 validate(#widget.max_length,Arg) -> is_integer(Arg) andalso (Arg >= 0);
@@ -1438,7 +1457,9 @@ validate(#widget.animate2,Arg) -> ?MEMBER(Arg,continuous,sequence,undefined);
 validate(#widget.font,Arg) -> validate_font(Arg);
 validate(#widget.color,Arg) -> validate_color(Arg);
 validate(#widget.color2,Arg) -> validate_color(Arg);
+validate(#widget.active_color,Arg) -> validate_color(Arg);
 validate(#widget.font_color,Arg) -> validate_color(Arg);
+validate(#widget.active_font_color,Arg) -> validate_color(Arg);
 validate(#widget.fill,Arg) -> ?MEMBER(Arg,solid,blend,sum,aalias,textured,none);
 validate(#widget.events,Arg) ->
     ?MEMBER(Arg,key_press,key_release,motion,button_press,button_release,
@@ -1783,7 +1804,7 @@ widget_draw(W, Win, XY={X,Y}, _State) ->
 	    epx_gc:draw(
 	      fun() ->
 		      set_color(W, W#widget.color),
-		      epx:draw_line(Win#widget.image, 
+		      epx:draw_line(Win#widget.image,
 				    X, Y,
 				    X+W#widget.width-1,
 				    Y+W#widget.height-1)
@@ -1815,7 +1836,9 @@ draw_text_box(Win, X, Y, W, Text) ->
 			true -> W#widget.height
 		     end,
 	    draw_background(Win,X,Y,Width,Height,W),
-	    set_font_color(W#widget.font_color),
+	    FontColor = get_font_color(W, W#widget.state =:= active),
+
+	    set_font_color(FontColor),
 	    draw_text(Win,Ascent,Text,TxW,TxH, 
 		      X1,Y1,Width,Height,W#widget.halign,W#widget.valign);
        true ->
@@ -2366,7 +2389,13 @@ set_color(W, Color0) ->
 		active ->
 		    if is_integer(W#widget.shadow_x),
 		       is_integer(W#widget.shadow_y) ->
-			    Color0;
+			    if is_integer(W#widget.active_color) ->
+				    W#widget.active_color;
+			       true ->
+				    Color0
+			    end;
+		       is_integer(W#widget.active_color) ->
+			    W#widget.active_color;
 		       true ->
 			    %% darken color when active
 			    color_sub(Color0, 16#00333333)
@@ -2376,6 +2405,16 @@ set_color(W, Color0) ->
 	    end,
     epx_gc:set_foreground_color(Color),
     epx_gc:set_fill_color(Color).
+
+%% get normal or active font color
+get_font_color(W, true) ->
+    if W#widget.active_font_color =:= undefined ->
+	    W#widget.font_color;
+       true ->
+	    W#widget.active_font_color
+    end;
+get_font_color(W, false) ->
+    W#widget.font_color.
 
 color_add(C1, C2) ->
     <<C3:32>> = color_add_argb(<<C1:32>>, <<C2:32>>),
