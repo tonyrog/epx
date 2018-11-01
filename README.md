@@ -21,8 +21,10 @@ Now you can read the pixels:
 ## x11 backend
 
     x11_display             string
-    use_opengl              int            0|1
-
+    use_opengl              int            0|1    (0)
+    use_off_screen          int            0|1    (1)
+    use_expsure             int            0|1    (0)
+    
 ## x11 window
 
     x                       int
@@ -32,10 +34,15 @@ Now you can read the pixels:
     border_width            int
     show                    int            0|1
     select                  int            0|1
-
+    min_width               int
+    minheight               int
+    max_width               int
+    max_height              int
+    name                    string
+    
 %% macos backend (cocoa)
 
-    use_opengl              int
+    use_opengl              int            0|1  (0)
     
 ## macos window
 
@@ -46,7 +53,7 @@ Now you can read the pixels:
 
 ## fb backend
 
-    framebuffer_device      string  ( default to /dev/fb0 )
+    framebuffer_device      string         (/dev/fb0)
     direct_pixmap_draw	    int		   0|1
     double_buffer	    int		   0|1
     lcd_pi32		    int		   0|1

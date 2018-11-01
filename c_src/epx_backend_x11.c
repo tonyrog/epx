@@ -45,15 +45,18 @@ extern int epx_gl_load_texture(epx_pixmap_t* pic, GLuint* textureName,
 typedef struct {
     Window window;
     Pixmap pm;     /* off-screen pixmap */
+    int pm_height;
+    int pm_width;
     GC gc;
     int x;
-    int y;    
+    int y;
     int height;
     int width;
     int grabbed;
     int accel_num;
     int accel_den;
     int thres;
+    epx_rect_t dirty;
 #ifdef HAVE_OPENGL
     GLXContext context;
     GLuint textureName;
@@ -68,6 +71,10 @@ typedef struct {
     Atom     wm_delete_window; /* atom WM_DELETE_WINDOW */
     unsigned short modstate;   /* modifier state */
     unsigned short grab_key;   /* grab key */
+    int      use_off_screen;   /* use off screen pixmap */
+    int      use_exposure;     /* use backing store or not */
+    unsigned long black_pixel;    
+    unsigned long white_pixel;    
 #ifdef HAVE_OPENGL
     GLXFBConfig* fbconfigs;    // Fixme XFree!
     int          fbnumconfigs;
@@ -81,12 +88,12 @@ int x11_upgrade(epx_backend_t* be);
 static int x11_finish(epx_backend_t*);
 static int x11_pix_attach(epx_backend_t*, epx_pixmap_t*);
 static int x11_pix_detach(epx_backend_t*, epx_pixmap_t*);
-static int x11_begin(epx_window_t*);
-static int x11_end(epx_window_t*,int off_screen);
-static int x11_pix_draw(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
-			int src_x, int src_y, int dst_x, int dst_y,
-			unsigned int width,
-			unsigned int height);
+static int x11_draw_begin(epx_window_t*);
+static int x11_draw_end(epx_window_t*,int off_screen);
+static int x11_draw(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
+		    int src_x, int src_y, int dst_x, int dst_y,
+		    unsigned int width,
+		    unsigned int height);
 static int x11_pix_sync(epx_backend_t*, epx_pixmap_t*, epx_window_t*);
 static int x11_win_attach(epx_backend_t*, epx_window_t*);
 static int x11_win_detach(epx_backend_t*, epx_window_t*);
@@ -107,7 +114,7 @@ static epx_callbacks_t x11_callbacks =
     .finish     = x11_finish,
     .pix_attach = x11_pix_attach,
     .pix_detach = x11_pix_detach,
-    .pix_draw   = x11_pix_draw,
+    .pix_draw   = x11_draw,
     .pix_sync   = x11_pix_sync,
     .win_attach = x11_win_attach,
     .win_detach = x11_win_detach,
@@ -116,8 +123,8 @@ static epx_callbacks_t x11_callbacks =
     .evt_read   = x11_evt_read,
     .adjust     = x11_adjust,
     .win_swap   = x11_win_swap,
-    .begin      = x11_begin,
-    .end        = x11_end,
+    .begin      = x11_draw_begin,
+    .end        = x11_draw_end,
     .win_adjust = x11_win_adjust,
     .info       = x11_info
 };
@@ -163,6 +170,17 @@ static epx_window_t* find_event_window(X11Backend* x11, Window w)
     }
     epx_lock_unlock(x11->b.window_list.lock);
     return NULL;
+}
+
+static void clip_window(X11Backend* b, X11Window* w,
+			int x, int y, unsigned int width, unsigned int height)
+{
+    XRectangle clip;
+    clip.x = x;
+    clip.y = y;
+    clip.width = width;
+    clip.height = height;
+    XSetClipRectangles(b->display, w->gc, 0, 0, &clip, 1, Unsorted);
 }
 
 // number of bits set in mask
@@ -277,16 +295,60 @@ int make_screen_formats(Screen* screen, epx_format_t* efmt, size_t efmt_size)
 }
 // #endif
 
+static void init_off_screen(X11Window* w)
+{
+    w->pm = 0;
+    w->pm_width  = 0;
+    w->pm_height = 0;
+}
 
+static int create_off_screen(X11Backend* b, X11Window* w)
+{
+    if (b->use_off_screen) {
+	w->pm = XCreatePixmap(b->display, w->window,
+			      w->width, w->height,
+			      DefaultDepth(b->display, b->screen));
+	if (w->pm == 0) return -1;
+	w->pm_width  = w->width;
+	w->pm_height = w->height;
+    }
+    return 0;
+}
 
+static int destroy_off_screen(X11Backend* b, X11Window* w)
+{
+    if (w->pm == 0) return -1;
+    XFreePixmap(b->display, w->pm);
+    init_off_screen(w);
+    return 0;
+}
 
+static int resize_off_screen(X11Backend* b, X11Window* w)
+{
+    Pixmap pm;
+    int ww, hh;
+    
+    if (w->pm == 0) return -1;
+    if ((w->pm_width >= w->width) && (w->pm_height >= w->height))
+	return 0; // ok do never shrink (maybe later)
+    ww = (w->width > w->pm_width) ? w->width : w->pm_width;
+    hh = (w->height > w->pm_height) ? w->height : w->pm_height;
+    pm = XCreatePixmap(b->display, w->window, ww, hh, 
+		       DefaultDepth(b->display, b->screen));
+    XCopyArea(b->display, w->pm, pm, w->gc, 0, 0, w->pm_width, w->pm_height,
+	      0, 0);
+    XFreePixmap(b->display, w->pm);
+    w->pm = pm;
+    w->pm_width  = ww;
+    w->pm_height = hh;
+    return 0;
+}
 
 epx_backend_t* x11_init(epx_dict_t* param)
 {
     X11Backend* be;
     unsigned int state;
     // Screen* screen;
-    int int_param;
     char* display_name = NULL;
     size_t len;
 
@@ -302,13 +364,15 @@ epx_backend_t* x11_init(epx_dict_t* param)
     be->b.cb = &x11_callbacks;
     be->b.pending = 0;
     be->b.opengl = 0;
-    be->b.use_opengl = 0;
     be->b.width = 0;
     be->b.height = 0;
     epx_object_list_init(&be->b.pixmap_list);
     epx_object_list_init(&be->b.window_list);
     be->b.nformats = 0;
     be->b.event = EPX_INVALID_HANDLE;
+#ifdef HAVE_OPENGL
+    be->fbconfigs = NULL;
+#endif
 
     epx_dict_lookup_string(param, "x11_display", &display_name, &len);
 
@@ -317,35 +381,21 @@ epx_backend_t* x11_init(epx_dict_t* param)
 	return NULL;
     }
 
-    if (epx_dict_lookup_integer(param, "use_opengl", &int_param) != -1)
-	be->b.use_opengl = int_param;
-    
-    be->screen = DefaultScreen(be->display);
+    be->b.use_opengl = 0;
+    be->use_off_screen = 1;
+    be->use_exposure = 0;
+
+    be->screen   = DefaultScreen(be->display);
     be->b.width  = DisplayWidth(be->display, be->screen);
     be->b.height = DisplayHeight(be->display, be->screen);
-
+    be->white_pixel = XWhitePixel(be->display,be->screen);
+    be->black_pixel = XBlackPixel(be->display,be->screen);
     be->b.nformats = 
 	make_screen_formats(ScreenOfDisplay(be->display,be->screen),
 			    be->b.formats, EPX_BACKEND_MAX_FORMATS);
 
-    if (be->b.use_opengl) {
-#ifdef HAVE_OPENGL
-	int   nscreens;
-	int   i;
+    x11_adjust((epx_backend_t*)be, param);
 
-	nscreens = XScreenCount(be->display);
-	for (i = 0; i < nscreens; i++) {
-	    be->fbconfigs = glXChooseFBConfig(be->display, i,
-					      glxAttributes,
-					      &be->fbnumconfigs);
-	    if (be->fbconfigs && (be->fbnumconfigs > 0)) {
-		be->b.opengl = 1;
-		be->screen = i;
-		break;
-	    }
-	}
-#endif
-    }
     XSetErrorHandler(x11_error);
     // screen = ScreenOfDisplay(be->display, be->screen);
 
@@ -380,8 +430,8 @@ int x11_upgrade(epx_backend_t* backend)
 /* return the backend event handle */
 static EPX_HANDLE_T x11_evt_attach(epx_backend_t* backend)
 {
-    X11Backend* x11 = (X11Backend*) backend;
-    int fd = ConnectionNumber(x11->display);
+    X11Backend* b = (X11Backend*) backend;
+    int fd = ConnectionNumber(b->display);
 
     return (EPX_HANDLE_T)((long)fd);
 }
@@ -394,16 +444,16 @@ static int x11_evt_detach(epx_backend_t* backend)
 
 static int x11_finish(epx_backend_t* backend)
 {
-    X11Backend* x11 = (X11Backend*) backend;
+    X11Backend* b = (X11Backend*) backend;
     // FIXME: close all windows & detach all pixmaps
-    XCloseDisplay(x11->display);
-    free(x11);
+    XCloseDisplay(b->display);
+    free(b);
     return 0;
 }
 
 static int x11_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
-    X11Backend* x11 = (X11Backend*) backend;
+    X11Backend* b = (X11Backend*) backend;
     XImage* ximg;
     unsigned int bytes_per_row   = pixmap->bytes_per_row;
     unsigned int bits_per_pixel  = pixmap->bits_per_pixel;
@@ -504,7 +554,7 @@ static int x11_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 
     epx_object_link(&backend->pixmap_list, pixmap);
     pixmap->opaque = (void*) ximg;
-    pixmap->backend = (epx_backend_t*) x11;
+    pixmap->backend = (epx_backend_t*) b;
     return 0;
 }
 
@@ -521,57 +571,58 @@ static int x11_pix_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
     return 0;
 }
 
-static int x11_begin(epx_window_t* ewin)
+static int x11_draw_begin(epx_window_t* ewin)
 {
     if (ewin->opengl) {
 #ifdef HAVE_OPENGL
-	X11Backend* be  = (X11Backend*) ewin->backend;
-	X11Window*  w11 = (X11Window*) ewin->opaque;
-	glXMakeCurrent(be->display, w11->window, w11->context);
+	X11Backend* b  = (X11Backend*) ewin->backend;
+	X11Window*  w  = (X11Window*) ewin->opaque;
+	
+	glXMakeCurrent(b->display, w->window, w->context);
 #endif
     }
     return 0;
 }
 
-static int x11_end(epx_window_t* ewin, int off_screen)
+static int x11_draw_end(epx_window_t* ewin, int off_screen)
 {
-    X11Window*  w11 = (X11Window*) ewin->opaque;
-    X11Backend* be  = (X11Backend*) ewin->backend;
+    // X11Window*  w = (X11Window*) ewin->opaque;
+    X11Backend* b  = (X11Backend*) ewin->backend;
 
     if (ewin->opengl) {
 #ifdef HAVE_OPENGL
 	glFlush();
 	if (!off_screen)
-	    glXSwapBuffers(be->display, w11->window);
+	    glXSwapBuffers(b->display, w11->window);
 #endif
     }
-    else {
-	if (!(off_screen && w11->pm)) {
-	    XSync(be->display, False);
-	    be->b.pending = XEventsQueued(be->display, QueuedAlready);
-	}
+    else if (off_screen)
+	return 0;
+    else if (!b->use_off_screen) {
+	XSync(b->display, False);
+	b->b.pending = XEventsQueued(b->display, QueuedAlready);
     }
     return 0;
 }
 
-static int x11_pix_draw(epx_backend_t* backend, epx_pixmap_t* pic, epx_window_t* ewin,
+static int x11_draw(epx_backend_t* backend, epx_pixmap_t* pic, epx_window_t* ewin,
 			int src_x, int src_y, int dst_x, int dst_y,
 			unsigned int width,
 			unsigned int height)
 {
-    X11Backend* x11 = (X11Backend*) backend;
-    X11Window*  w11 = (X11Window*) ewin->opaque;
+    X11Backend* b = (X11Backend*) backend;
+    X11Window*  w = (X11Window*) ewin->opaque;
     XImage* ximg = (XImage*) pic->opaque;
 
-    if (w11 == NULL)
+    if (w == NULL)
 	return -1;
     if (ewin->opengl) {
 #ifdef HAVE_OPENGL
 	// Fixme check for errors
-	epx_gl_load_texture(pic, &w11->textureName, 0, 1, GL_REPEAT,
+	epx_gl_load_texture(pic, &w->textureName, 0, 1, GL_REPEAT,
 			    src_x, src_y, width, height);
 	glEnable(GL_TEXTURE_RECTANGLE_ARB); // _EXT enable texturing
-	glBindTexture (GL_TEXTURE_RECTANGLE_ARB, w11->textureName);
+	glBindTexture (GL_TEXTURE_RECTANGLE_ARB, w->textureName);
 	glBegin(GL_QUADS); {
 	    float x0 = 0.0f;
 	    float y0 = 0.0f;
@@ -587,9 +638,9 @@ static int x11_pix_draw(epx_backend_t* backend, epx_pixmap_t* pic, epx_window_t*
 #endif
     }
     else {
-	Drawable d = w11->pm ? w11->pm : w11->window;
-	XPutImage(x11->display, d,
-		  w11->gc, ximg, src_x, src_y, dst_x, dst_y,
+	Drawable d = (b->use_off_screen && w->pm) ? w->pm : w->window;
+	XPutImage(b->display, d, 
+		  w->gc, ximg, src_x, src_y, dst_x, dst_y,
 		  width, height);
     }
     return 0;
@@ -608,22 +659,24 @@ static int x11_pix_sync(epx_backend_t* backend, epx_pixmap_t* pixmap,
 
 static int x11_win_swap(epx_backend_t* backend, epx_window_t* ewin)
 {
-    X11Backend* be = (X11Backend*) backend;
-    X11Window*  w11 = (X11Window*) ewin->opaque;
+    X11Backend* b = (X11Backend*) backend;
+    X11Window*  w = (X11Window*) ewin->opaque;
 
     if (ewin->opengl) {
 #ifdef HAVE_OPENGL
-	glXMakeCurrent(be->display, w11->window, w11->context);
-	glXSwapBuffers(be->display, w11->window);
-	backend->pending = XEventsQueued(be->display, QueuedAlready);
+	glXMakeCurrent(be->display, w->window, w->context);
+	glXSwapBuffers(be->display, w->window);
 #endif
     }
-    else if (w11 && w11->pm) {
-	XCopyArea(be->display, w11->pm, w11->window, w11->gc,
-		  0, 0, w11->width, w11->height, 0, 0);
-	XSync(be->display, False);
-	backend->pending = XEventsQueued(be->display, QueuedAlready);
+    else if (w && w->pm && b->use_off_screen) {
+	XCopyArea(b->display, w->pm, w->window, w->gc,
+		  0, 0, w->width, w->height, 0, 0);
+	XSync(b->display, False);
     }
+    else {
+	XSync(b->display, False);
+    }
+    backend->pending = XEventsQueued(b->display, QueuedAlready);
     return 0;
 }
 
@@ -643,20 +696,12 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 
     attr.backing_store = Always;        /* auto expose */
     attr.save_under = True;		/* popups ... */
-    attr.event_mask = 
-	KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask |
-	EnterWindowMask | LeaveWindowMask |
-	PointerMotionMask |
-	// The following may be used to optimize button motions ...!
-	// PointerMotionHintMask | Button1MotionMask |
-	// Button2MotionMask | Button3MotionMask | Button4MotionMask |
-	// Button5MotionMask | ButtonMotionMask	|
-	KeymapStateMask | ExposureMask | VisibilityChangeMask |
-	StructureNotifyMask | ResizeRedirectMask | SubstructureNotifyMask |
-	SubstructureRedirectMask | FocusChangeMask | PropertyChangeMask	|
-	ColormapChangeMask | OwnerGrabButtonMask;
+    attr.background_pixel = be->white_pixel;
+    attr.border_pixel = be->black_pixel;
 
-    valuemask = CWSaveUnder | CWEventMask | CWBackingStore;
+    valuemask = CWBackPixel | CWBorderPixel | CWSaveUnder;
+    if (be->use_exposure)
+	valuemask |= CWBackingStore;
 
     if (be->b.opengl && be->b.use_opengl) {
 #ifdef HAVE_OPENGL
@@ -668,7 +713,7 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	attr.colormap = XCreateColormap(be->display,
 					RootWindow(be->display, vinfo->screen),
 					vinfo->visual, AllocNone);
-	valuemask |= (CWBorderPixel | CWColormap);
+	valuemask |= CWColormap;
 	win = XCreateWindow(be->display, 
 			    RootWindow(be->display, vinfo->screen),
 			    ewin->area.xy.x, /* x */
@@ -679,7 +724,7 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 			    vinfo->depth,	/* depth */
 			    InputOutput,	/* class */
 			    vinfo->visual,	/* Visual */
-			    valuemask,	/* valuemask */
+			    valuemask,	        /* valuemask */
 			    &attr		/* attributes */
 	    );
 	if (win) {
@@ -694,23 +739,25 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 #endif
     }
 
-    if (!win)
+    if (!win) {
 	win = XCreateWindow(be->display, 
 			    XDefaultRootWindow(be->display), 
-			    ewin->area.xy.x, /* x */
-			    ewin->area.xy.y,	/* y */
-			    ewin->area.wh.width,	/* width */
-			    ewin->area.wh.height,	/* height */
-			    2,		/* border */
-			    CopyFromParent,	/* depth */
-			    InputOutput,	/* class */
-			    be->visual,	/* Visual */
-			    valuemask,	/* valuemask */
-			    &attr		/* attributes */
-	    );
+			    ewin->area.xy.x,
+			    ewin->area.xy.y,
+			    ewin->area.wh.width,
+			    ewin->area.wh.height,
+			    0,
+			    CopyFromParent,
+			    InputOutput,
+			    be->visual,
+			    valuemask,
+			    &attr);
+    }
 
     if (win) {
 	XEvent event;
+	// XGCValues values;
+	
 	xwin->grabbed = 0;
 	xwin->accel_num = 0;
 	xwin->accel_den = 0;
@@ -720,17 +767,41 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	xwin->y = ewin->area.xy.y;	
 	xwin->width = ewin->area.wh.width;
 	xwin->height = ewin->area.wh.height;
-	/* FIXME: allocate this ? */
-	xwin->gc = XDefaultGC(be->display, be->screen);
-	/* FIXME: configurable */
-	xwin->pm = XCreatePixmap(be->display,
-				 win,  /* used to specify screen */
-				 ewin->area.wh.width,
-				 ewin->area.wh.height,
-				 DefaultDepth(be->display, be->screen));
-	if (!xwin->pm)
-	    fprintf(stderr, "epx_x11: Failed create of Pixmap\n");
+	// Create a copy of the default screen GC set clip=None
+	xwin->gc = XCreateGC(be->display, win, 0, NULL);
+	// XCopyGC(be->display, XDefaultGC(be->display, be->screen),
+	//	(unsigned long)-1, xwin->gc);
+	XSetBackground(be->display, xwin->gc, be->white_pixel);
+	XSetForeground(be->display, xwin->gc, be->black_pixel);
+	// values.clip_mask = None;
+	// XChangeGC(be->display, xwin->gc, GCClipMask, &values);
 
+	XSelectInput(be->display, win,
+		     KeyPressMask
+		     | KeyReleaseMask
+		     | ButtonPressMask
+		     | ButtonReleaseMask
+		     | EnterWindowMask
+		     | LeaveWindowMask
+		     | PointerMotionMask
+		     // | PointerMotionHintMask | Button1MotionMask
+		     // | Button2MotionMask | Button3MotionMask
+		     // | Button4MotionMask | Button5MotionMask
+		     // | ButtonMotionMask
+		     | KeymapStateMask | VisibilityChangeMask
+		     | StructureNotifyMask | ResizeRedirectMask
+		     | SubstructureNotifyMask
+		     | SubstructureRedirectMask
+		     | FocusChangeMask
+		     | PropertyChangeMask
+		     | ColormapChangeMask
+		     | OwnerGrabButtonMask
+		     | ExposureMask
+	    );
+
+	init_off_screen(xwin);
+	create_off_screen(be, xwin);
+	
 	XSetWMProtocols(be->display, win, &be->wm_delete_window, 1);
 
 	XMapWindow(be->display, win);
@@ -754,13 +825,15 @@ static int x11_win_detach(epx_backend_t* backend, epx_window_t* ewin)
 	EPX_DBGFMT("XUnmapWindow");
 	XUnmapWindow(be->display, xwin->window);
 	EPX_DBGFMT("XDestroyWindow");
-	if (xwin->pm)
-	    XFreePixmap(be->display, xwin->pm);
+	destroy_off_screen(be, xwin);
 	if (ewin->opengl) {
 #ifdef HAVE_OPENGL
 	    glXDestroyContext(be->display, xwin->context);
+	    if (be->fbconfigs != NULL)
+		XFree(be->fbconfigs);
 #endif
 	}
+	XFreeGC(be->display, xwin->gc);
 	XDestroyWindow(be->display, xwin->window);
 	XFlush(be->display);
 	/* Ungrabb? */
@@ -808,22 +881,14 @@ static Bool CheckEvent (Display* dpy, XEvent* ev, XPointer arg)
 u_int32_t Buttons(unsigned int state)
 {
     u_int32_t button = 0;
-
-    if (state & Button1Mask)
-	button |= EPX_BUTTON_LEFT;
-    if (state & Button2Mask)
-	button |= EPX_BUTTON_MIDDLE;
-    if (state & Button3Mask)
-	button |= EPX_BUTTON_RIGHT;
-    if (state & WheelUpMask)
-	button |= EPX_WHEEL_UP;
-    if (state & WheelDownMask)
-	button |= EPX_WHEEL_DOWN;
-    if (state & WheelLeftMask)
-	button |= EPX_WHEEL_LEFT;
-    if (state & WheelRightMask)
-	button |= EPX_WHEEL_RIGHT;
-    return button;    
+    if (state & Button1Mask) button |= EPX_BUTTON_LEFT;
+    if (state & Button2Mask) button |= EPX_BUTTON_MIDDLE;
+    if (state & Button3Mask) button |= EPX_BUTTON_RIGHT;
+    if (state & WheelUpMask) button |= EPX_WHEEL_UP;
+    if (state & WheelDownMask) button |= EPX_WHEEL_DOWN;
+    if (state & WheelLeftMask) button |= EPX_WHEEL_LEFT;
+    if (state & WheelRightMask) button |= EPX_WHEEL_RIGHT;
+    return button;
 }
 
 static int FilterEvent(epx_event_t* e)
@@ -864,13 +929,13 @@ static int FilterEvent(epx_event_t* e)
 
 static int x11_evt_read(epx_backend_t* backend, epx_event_t* e)
 {
-    X11Backend* x11 = (X11Backend*) backend;
+    X11Backend* b = (X11Backend*) backend;
     XEvent ev;
 
     backend->pending = 0;
 
 next:
-    if (!XCheckIfEvent(x11->display, &ev, CheckEvent, (XPointer)0))
+    if (!XCheckIfEvent(b->display, &ev, CheckEvent, (XPointer)0))
 	return -1;
     switch (ev.type) {
     case CreateNotify:
@@ -878,14 +943,14 @@ next:
 	break;
     case DestroyNotify:
 	EPX_DBGFMT("Event: DestroyNotify");
-	e->window = find_event_window(x11, ev.xdestroywindow.window);
+	e->window = find_event_window(b, ev.xdestroywindow.window);
 	e->type = EPX_EVENT_DESTROYED;
 	goto got_event;
 
     case ClientMessage:
 	EPX_DBGFMT("Event: ClientMessage");
-	e->window = find_event_window(x11, ev.xclient.window);
-	if ((ev.xclient.data.l[0] != (int) x11->wm_delete_window))
+	e->window = find_event_window(b, ev.xclient.window);
+	if ((ev.xclient.data.l[0] != (int) b->wm_delete_window))
 	    break;
 	EPX_DBGFMT("Event: WM_DELETE_WINDOW");
 	e->type = EPX_EVENT_CLOSE;
@@ -896,7 +961,8 @@ next:
 	EPX_DBGFMT("Event: ConfigureNotity x=%d, y=%d, w=%d, h=%d",
 		ev.xconfigure.x,ev.xconfigure.y,
 		ev.xconfigure.width, ev.xconfigure.height);
-	if ((w = find_event_window(x11, ev.xconfigure.window)) != NULL) {
+	if ((w = find_event_window(b, ev.xconfigure.window)) != NULL) {
+	    X11Window* win  = (X11Window*) w->opaque;	    
 	    e->window = w;
 	    e->type = EPX_EVENT_CONFIGURE;
 	    e->area.x = ev.xconfigure.x;
@@ -907,7 +973,8 @@ next:
 	    w->rarea.xy.y = e->area.x;
 	    w->rarea.xy.y = e->area.y;
 	    w->rarea.wh.width = e->area.w;
-	    w->rarea.wh.width = e->area.h;
+	    w->rarea.wh.height = e->area.h;
+	    XClearWindow(b->display, win->window);
 	    goto got_event;
 	}
 	break;
@@ -917,7 +984,7 @@ next:
 	epx_window_t* w;
 	EPX_DBGFMT("Event: ResizeRequest w=%d, h=%d",
 		ev.xresizerequest.width,ev.xresizerequest.height);
-	w = find_event_window(x11, ev.xresizerequest.window);
+	w = find_event_window(b, ev.xresizerequest.window);
 	if (w != NULL) {
 	    e->window = w;
 	    e->type = EPX_EVENT_RESIZE;
@@ -926,7 +993,7 @@ next:
 	    e->dimension.d = 0;
 	    // update reported values
 	    w->rarea.wh.width = e->dimension.w;
-	    w->rarea.wh.width = e->dimension.h;
+	    w->rarea.wh.height = e->dimension.h;
 	    goto got_event;
 	}
 	break;
@@ -935,9 +1002,39 @@ next:
     case KeymapNotify:
 	EPX_DBGFMT("Event: KeymapNotify");
 	break;
-    case Expose:
-	EPX_DBGFMT("Event: Expose");
+	
+    case Expose:  {
+	epx_window_t* w;
+	EPX_DBGFMT("Event: Expose x=%d, y=%d, w=%d, h=%d cnt=%d",
+		   ev.xexpose.x,ev.xexpose.y,
+		   ev.xexpose.width, ev.xexpose.height,
+		   ev.xexpose.count);
+	if ((w = find_event_window(b, ev.xexpose.window)) != NULL) {
+	    X11Window* win  = (X11Window*) w->opaque;
+	    epx_rect_t dirty;
+	    epx_rect_set(&dirty,ev.xexpose.x, ev.xexpose.y,
+			 ev.xexpose.width, ev.xexpose.height);
+	    epx_rect_union(&win->dirty, &dirty, &win->dirty);
+	    if (ev.xexpose.count > 0)
+		break;
+	    if (b->use_off_screen && win->pm && !b->use_exposure) {
+		XCopyArea(b->display, win->pm, win->window, win->gc,
+			  win->dirty.xy.x, win->dirty.xy.y,
+			  win->dirty.wh.width, win->dirty.wh.height,
+			  win->dirty.xy.x, win->dirty.xy.y);
+	    }
+	    e->window = w;
+	    e->type = EPX_EVENT_EXPOSE;
+	    e->area.x = win->dirty.xy.x;
+	    e->area.y = win->dirty.xy.y;
+	    e->area.w = win->dirty.wh.width;
+	    e->area.h = win->dirty.wh.height;
+	    epx_rect_empty(&win->dirty);
+	    goto got_event;
+	}
 	break;
+    }
+
     case GraphicsExpose:
 	EPX_DBGFMT("Event: GraphicsExpose");
 	break;
@@ -974,7 +1071,7 @@ next:
 	break;
     case PropertyNotify:
 	EPX_DBGFMT("Event: PropertyNotify %s",
-		XGetAtomName(x11->display, ev.xproperty.atom));
+		XGetAtomName(b->display, ev.xproperty.atom));
 	break;
     case SelectionClear:
 	EPX_DBGFMT("Event: SelectionClear");
@@ -997,7 +1094,7 @@ next:
 
     case EnterNotify:
 	EPX_DBGFMT("Event: EnterNotity");
-	e->window = find_event_window(x11, ev.xcrossing.window);
+	e->window = find_event_window(b, ev.xcrossing.window);
 	e->type = EPX_EVENT_ENTER;
 	e->pointer.x = ev.xcrossing.x;
 	e->pointer.y = ev.xcrossing.y;
@@ -1006,7 +1103,7 @@ next:
 	
     case LeaveNotify:
 	EPX_DBGFMT("Event: LeaveNotity");
-	e->window = find_event_window(x11, ev.xcrossing.window);
+	e->window = find_event_window(b, ev.xcrossing.window);
 	e->type = EPX_EVENT_LEAVE;
 	e->pointer.x = ev.xcrossing.x;
 	e->pointer.y = ev.xcrossing.y;
@@ -1015,19 +1112,19 @@ next:
 
     case FocusIn:
 	EPX_DBGFMT("Event: FocusIn");
-	e->window = find_event_window(x11, ev.xfocus.window);
+	e->window = find_event_window(b, ev.xfocus.window);
 	e->type = EPX_EVENT_FOCUS_IN;
 	goto got_event;
 
     case FocusOut:
 	EPX_DBGFMT("Event: FocusOut");
-	e->window = find_event_window(x11, ev.xfocus.window);
+	e->window = find_event_window(b, ev.xfocus.window);
 	e->type = EPX_EVENT_FOCUS_OUT;
 	goto got_event;
 
     case MotionNotify:
 	EPX_DBGFMT("Event: MotionNotify");
-	e->window = find_event_window(x11, ev.xmotion.window);
+	e->window = find_event_window(b, ev.xmotion.window);
 	e->pointer.button = Buttons(ev.xmotion.state);
 	e->type = EPX_EVENT_POINTER_MOTION;
 	e->pointer.x = ev.xmotion.x;
@@ -1036,7 +1133,7 @@ next:
 	goto got_event;
 
     case ButtonPress:
-	e->window = find_event_window(x11, ev.xbutton.window);
+	e->window = find_event_window(b, ev.xbutton.window);
 	e->pointer.button = Buttons(1 << (ev.xbutton.button + 7));
 	e->type = EPX_EVENT_BUTTON_PRESS;
 	e->pointer.x = ev.xbutton.x;
@@ -1045,7 +1142,7 @@ next:
 	goto got_event;
 	
     case ButtonRelease:
-	e->window = find_event_window(x11, ev.xbutton.window);
+	e->window = find_event_window(b, ev.xbutton.window);
 	e->pointer.button = Buttons(1 << (ev.xbutton.button + 7));
 	e->type = EPX_EVENT_BUTTON_RELEASE;
 	e->pointer.x = ev.xbutton.x;
@@ -1056,26 +1153,26 @@ next:
     case KeyPress:
     case KeyRelease: {
 	char ignored_char;
-	//KeySym sym = XKeycodeToKeysym(x11->display, ev.xkey.keycode, 0);
-	KeySym sym = XkbKeycodeToKeysym(x11->display, ev.xkey.keycode, 0, 0);
+	//KeySym sym = XKeycodeToKeysym(b->display, ev.xkey.keycode, 0);
+	KeySym sym = XkbKeycodeToKeysym(b->display, ev.xkey.keycode, 0, 0);
 	
 	if (sym == NoSymbol) {
 	    EPX_DBGFMT("event sym=NoSymbol");
 	    goto ignore_event;
 	}
-	e->window = find_event_window(x11, ev.xkey.window);
+	e->window = find_event_window(b, ev.xkey.window);
 
 	// remove retriggered events
 	if ((ev.type == KeyRelease) && e->window &&
 	    (e->window->mask & EPX_EVENT_NO_AUTO_REPEAT)) {
-	    if (XEventsQueued(x11->display, QueuedAfterReading)) {
+	    if (XEventsQueued(b->display, QueuedAfterReading)) {
 		XEvent nev;
-		XPeekEvent(x11->display, &nev);
+		XPeekEvent(b->display, &nev);
 		if ((nev.type == KeyPress) &&
 		    (nev.xkey.time == ev.xkey.time) &&
 		    (nev.xkey.keycode == ev.xkey.keycode)) {
 		    // delete retriggered KeyPress event
-		    XNextEvent (x11->display, &ev);
+		    XNextEvent (b->display, &ev);
 		    goto ignore_event;
 		}
 	    }
@@ -1089,32 +1186,32 @@ next:
 	    break;
 
 	/* calculate kbd modifiers*/
-	if (x11->modstate) {
-	    EPX_DBGFMT("1:modstate=%x", x11->modstate);
+	if (b->modstate) {
+	    EPX_DBGFMT("1:modstate=%x", b->modstate);
 	}
-	x11->modstate &= (EPX_KBD_MOD_NUM|EPX_KBD_MOD_CAPS|EPX_KBD_MOD_SCR);
+	b->modstate &= (EPX_KBD_MOD_NUM|EPX_KBD_MOD_CAPS|EPX_KBD_MOD_SCR);
 	if (ev.xkey.state) {
 	    EPX_DBGFMT("key.state=%x", ev.xkey.state);
 	}
 //	if (ev.xkey.state & ShiftMask) {
 //	    EPX_DBGFMT("shiftmask");
-//	    x11->modstate |= EPX_KBD_MOD_SHIFT;
+//	    b->modstate |= EPX_KBD_MOD_SHIFT;
 //	}
 	if (ev.xkey.state & LockMask) {
 	    EPX_DBGFMT("lockmask (caps)");
-	    x11->modstate |= EPX_KBD_MOD_CAPS;
+	    b->modstate |= EPX_KBD_MOD_CAPS;
 	}
 //	if (ev.xkey.state & ControlMask) {
 //	    EPX_DBGFMT("controlmask");
-//	    x11->modstate |= EPX_KBD_MOD_CTRL;
+//	    b->modstate |= EPX_KBD_MOD_CTRL;
 //	}
 //	if (ev.xkey.state & Mod1Mask) {
 //	    EPX_DBGFMT("mod1mask (alt)");
-//	    x11->modstate |= EPX_KBD_MOD_ALT;
+//	    b->modstate |= EPX_KBD_MOD_ALT;
 //	}
 	if (ev.xkey.state & Mod2Mask) {
 	    EPX_DBGFMT("mod2mask (num)");
-	    x11->modstate |= EPX_KBD_MOD_NUM;
+	    b->modstate |= EPX_KBD_MOD_NUM;
 	}
 	if (ev.xkey.state & Mod3Mask) {
 	    EPX_DBGFMT("mod3mask");
@@ -1124,10 +1221,10 @@ next:
 	}
 	if (ev.xkey.state & Mod5Mask) {
 	    EPX_DBGFMT("mod5mask (scr)");
-	    x11->modstate |= EPX_KBD_MOD_SCR;
+	    b->modstate |= EPX_KBD_MOD_SCR;
 	}
-	if (x11->modstate) {
-	    EPX_DBGFMT("2:modstate=%x", x11->modstate);
+	if (b->modstate) {
+	    EPX_DBGFMT("2:modstate=%x", b->modstate);
 	}
 	switch (sym) {
 	case XK_Escape: e->key.sym = EPX_KBD_KEY_ESCAPE; break;
@@ -1182,46 +1279,46 @@ next:
 	case XK_Num_Lock:
 	    /* not sent, used only for state*/
 	    if (ev.xkey.type == KeyRelease)
-		x11->modstate ^= EPX_KBD_MOD_NUM;
+		b->modstate ^= EPX_KBD_MOD_NUM;
 	    goto no_key;
 	case XK_Shift_Lock:
 	case XK_Caps_Lock:
 	    /* not sent, used only for state*/
 	    if (ev.xkey.type == KeyRelease)
-		x11->modstate ^= EPX_KBD_MOD_CAPS;
+		b->modstate ^= EPX_KBD_MOD_CAPS;
 	    goto no_key;
 	case XK_Scroll_Lock:
 	    /* not sent, used only for state*/
 	    if (ev.xkey.type == KeyRelease)
-		x11->modstate ^= EPX_KBD_MOD_SCR;
+		b->modstate ^= EPX_KBD_MOD_SCR;
 	    goto no_key;
 	case XK_Shift_L:
 	    EPX_DBGFMT("shift left");
 	    e->key.sym = EPX_KBD_KEY_LSHIFT;
-	    x11->modstate |= EPX_KBD_MOD_LSHIFT;
+	    b->modstate |= EPX_KBD_MOD_LSHIFT;
 	    break;
 	case XK_Shift_R: 
 	    EPX_DBGFMT("shift right");
 	    e->key.sym = EPX_KBD_KEY_RSHIFT;
-	    x11->modstate |= EPX_KBD_MOD_RSHIFT;
+	    b->modstate |= EPX_KBD_MOD_RSHIFT;
 	    break;
 	case XK_Control_L: 
 	    EPX_DBGFMT("control left");
 	    e->key.sym = EPX_KBD_KEY_LCTRL;
-	    x11->modstate |= EPX_KBD_MOD_LCTRL;
+	    b->modstate |= EPX_KBD_MOD_LCTRL;
 	    break;
 	case XK_Control_R: 
 	    EPX_DBGFMT("control right");
 	    e->key.sym = EPX_KBD_KEY_RCTRL;
-	    x11->modstate |= EPX_KBD_MOD_RCTRL;
+	    b->modstate |= EPX_KBD_MOD_RCTRL;
 	    break;
 	case XK_Alt_L:
 	    e->key.sym = EPX_KBD_KEY_LALT;
-	    x11->modstate |= EPX_KBD_MOD_LALT;
+	    b->modstate |= EPX_KBD_MOD_LALT;
 	    break;
 	case XK_Alt_R:
 	    e->key.sym = EPX_KBD_KEY_RALT;
-	    x11->modstate |= EPX_KBD_MOD_RALT;
+	    b->modstate |= EPX_KBD_MOD_RALT;
 	    break;
 	case XK_Meta_L:
 	case XK_Super_L:
@@ -1241,14 +1338,14 @@ next:
 		}
 	    }
 	    XLookupString(&ev.xkey, &ignored_char, 1, &sym, NULL );
-	    if (x11->modstate & EPX_KBD_MOD_CTRL)
+	    if (b->modstate & EPX_KBD_MOD_CTRL)
 		e->key.sym = sym & 0x1f;	/* Control code */ 
 	    else
 		e->key.sym = sym & 0xff;	/* ASCII*/
 	    break;
 	}
 
-	if (x11->modstate & EPX_KBD_MOD_NUM) {
+	if (b->modstate & EPX_KBD_MOD_NUM) {
 	    switch (e->key.sym) {
 	    case EPX_KBD_KEY_KP0:
 	    case EPX_KBD_KEY_KP1:
@@ -1275,13 +1372,13 @@ next:
 
 	    }
 	}
-	if (x11->grab_key && (x11->grab_key == e->key.sym))
+	if (b->grab_key && (b->grab_key == e->key.sym))
 	    x11_grab(backend, e->window, (ev.xkey.state & ControlMask));
 	e->key.code = ev.xkey.keycode;
-	e->key.mod  = x11->modstate;
+	e->key.mod  = b->modstate;
 	goto got_event;
     no_key:
-	EPX_DBGFMT("3:modstate=%x", x11->modstate);
+	EPX_DBGFMT("3:modstate=%x", b->modstate);
 	goto ignore_event;
     }
 
@@ -1291,14 +1388,14 @@ next:
     }
 
 ignore_event:
-    if (XEventsQueued(x11->display, QueuedAlready))
+    if (XEventsQueued(b->display, QueuedAlready))
 	goto next;
     return 0;
 
 got_event:
     if (FilterEvent(e))
 	goto ignore_event;
-    backend->pending = XEventsQueued(x11->display, QueuedAlready);
+    backend->pending = XEventsQueued(b->display, QueuedAlready);
     return 1+backend->pending;
 }
 
@@ -1357,8 +1454,40 @@ static int x11_error(Display * dpy, XErrorEvent * ev)
 
 int x11_adjust(epx_backend_t* backend, epx_dict_t* param)
 {
-    (void) backend;
-    (void) param;
+    X11Backend* b = (X11Backend*) backend;    
+    int int_param;
+
+    if (epx_dict_lookup_integer(param, "use_opengl", &int_param) != -1) {
+	b->b.use_opengl = int_param;
+#ifdef HAVE_OPENGL
+	if ((b->b.use_opengl = int_param) && (b->fbconfigs == NULL)) {
+	    int   i;
+	    int   nscreens = XScreenCount(b->display);
+	    for (i = 0; i < nscreens; i++) {
+		GLXFBConfig* config;
+		config = glXChooseFBConfig(be->display, i,
+					   glxAttributes,
+					   &be->fbnumconfigs);
+		if (config) {
+		    if (be->fbnumconfigs > 0) {
+			be->fbconfigs = config;
+			be->b.opengl = 1;
+			be->screen = i;
+			break;
+		    }
+		    XFree(config);
+		}
+	    }
+	}
+#endif
+    }
+
+    if (epx_dict_lookup_integer(param, "use_off_screen", &int_param) != -1) {
+	b->use_off_screen = int_param;
+    }
+    if (epx_dict_lookup_integer(param, "use_exposure", &int_param) != -1) {
+	b->use_exposure = int_param;
+    }
     return 1;
 }
 
@@ -1372,12 +1501,52 @@ int x11_info(epx_backend_t* backend, epx_dict_t*param)
 int x11_win_adjust(epx_window_t *win, epx_dict_t*param)
 {
     int bool_val;
+    char* window_name = NULL;
+    size_t name_len;
     X11Window*  w  = (X11Window*) win->opaque;
     X11Backend* b  = (X11Backend*) win->backend;
     XWindowChanges value;
     unsigned int mask = 0;
+    unsigned int sz_hint = 0;
+    int min_h = -1, min_w = -1;
+    int max_h = -1, max_w = -1;
 
     EPX_DBGFMT("x11: Window adjust\n");
+
+    if (epx_dict_lookup_string(param, "name", &window_name, &name_len) >= 0) {
+	XStoreName(b->display, w->window, window_name);
+    }
+
+    if (epx_dict_lookup_integer(param, "min_width", &min_w) >= 0) {
+	EPX_DBGFMT("x11: min_width=%d", min_w);
+	sz_hint |= PMinSize;
+    }
+    if (epx_dict_lookup_integer(param, "min_height", &min_h) >= 0) {
+	EPX_DBGFMT("x11: min_height=%d", min_h);
+	sz_hint |= PMinSize;
+    }
+    if (epx_dict_lookup_integer(param, "max_width", &max_w) >= 0) {
+	EPX_DBGFMT("x11: max_width=%d", max_w);
+	sz_hint |= PMaxSize;
+    }
+    if (epx_dict_lookup_integer(param, "max_height", &max_h) >= 0) {
+	EPX_DBGFMT("x11: max_height=%d", max_h);
+	sz_hint |= PMaxSize;
+    }
+
+    if (sz_hint) {
+	XSizeHints *sizehints;
+	sizehints = XAllocSizeHints();
+	if (sizehints != NULL) {
+	    sizehints->flags = sz_hint;
+	    sizehints->min_width  = (min_w < 0) ? win->area.wh.width : (unsigned int) min_w;
+	    sizehints->min_height = (min_h < 0) ? win->area.wh.height :  (unsigned int) min_h;
+	    sizehints->max_width  = (max_w < 0) ? win->area.wh.width :  (unsigned int) max_w;
+	    sizehints->max_height = (max_h < 0) ? win->area.wh.height :  (unsigned int) max_h;
+	    XSetWMNormalHints(b->display, w->window, sizehints);
+	    XFree(sizehints);
+	}
+    }    
 
     if (epx_dict_lookup_integer(param, "x", &value.x) >= 0) {
 	EPX_DBGFMT("x11: x=%d", value.x);
@@ -1401,14 +1570,28 @@ int x11_win_adjust(epx_window_t *win, epx_dict_t*param)
 	mask |= CWBorderWidth;
     }
     if (mask) {
+	unsigned int mask0 = mask;
+	// check if values already are set/reported
+	if (value.x == win->rarea.xy.x) mask &= ~CWX;
+	if (value.y == win->rarea.xy.y) mask &= ~CWY;
+	if (value.width == (int)win->rarea.wh.width) mask &= ~CWWidth;
+	if (value.height == (int)win->rarea.wh.height) mask &= ~CWHeight;
+
+	if (mask0 & CWX)      win->area.xy.x = w->x = value.x;
+	if (mask0 & CWY)      win->area.xy.y = w->y = value.y;
+	if (mask0 & CWWidth)  win->area.wh.width  = w->width = value.width;
+	if (mask0 & CWHeight) win->area.wh.height = w->height = value.height;
+
+	resize_off_screen(b, w);
+
 	XConfigureWindow(b->display, w->window, mask, &value);
-	// fixme capture error
-	if (mask & CWX)      win->area.xy.x = w->x = value.x;
-	if (mask & CWY)      win->area.xy.y = w->y = value.y;
-	if (mask & CWWidth)  win->area.wh.width  = w->width = value.width;
-	if (mask & CWHeight) win->area.wh.height = w->height = value.height;
-	XFlush(b->display);
     }
+
+#if 0
+    clip_window(b, w, 0, 0, value.width, value.height);
+#endif	
+    XFlush(b->display);
+
     if (epx_dict_lookup_boolean(param, "show", &bool_val) >= 0) {
 	EPX_DBGFMT("x11: show=%d", bool_val);
 	if (bool_val)

@@ -157,7 +157,7 @@
 #define EPX_EVENT_CONFIGURE        0x00000200
 #define EPX_EVENT_RESIZE           0x00000400
 #define EPX_EVENT_NO_AUTO_REPEAT   0x00000800  // only in mask
-
+#define EPX_EVENT_EXPOSE           0x00001000
 // Button mask is used to filter events, only containing the buttons
 #define EPX_EVENT_BUTTON_MASK      0x007F0000
 #define EPX_EVENT_BUTTON_ANY       0x00000000

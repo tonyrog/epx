@@ -217,7 +217,7 @@ typedef enum {
     EPX_MESSAGE_PIXMAP_DRAW,    // backend main - draw pixmap (on window)
     EPX_MESSAGE_WINDOW_SWAP,    // backend main - swap window
     EPX_MESSAGE_WINDOW_ADJUST,  // backend main - set window parameters
-    EPX_MESSAGE_ADJUST,         // backend main - set backend parameters
+    EPX_MESSAGE_BACKEND_ADJUST, // backend main - set backend parameters
     EPX_MESSAGE_WINDOW_SYNC,    // backend main - sync window
 } epx_message_type_t;
 
@@ -720,6 +720,7 @@ DECL_ATOM(focus);
 DECL_ATOM(enter);
 DECL_ATOM(leave);
 DECL_ATOM(configure);
+DECL_ATOM(expose);
 DECL_ATOM(resize);
 DECL_ATOM(crossing);
 DECL_ATOM(synced);  // special sync operation
@@ -957,7 +958,7 @@ static char* format_message(epx_message_t* m)
     case EPX_MESSAGE_WINDOW_DETACH: return "window_detach";
     case EPX_MESSAGE_WINDOW_ADJUST: return "window_adjust";
     case EPX_MESSAGE_WINDOW_SWAP: return "window_swap";
-    case EPX_MESSAGE_ADJUST: return "adjust";
+    case EPX_MESSAGE_BACKEND_ADJUST: return "backend_adjust";
     case EPX_MESSAGE_PIXMAP_ATTACH: return "pixmap_attach";
     case EPX_MESSAGE_PIXMAP_DETACH: return "pixmap_detach";
     case EPX_MESSAGE_PIXMAP_DRAW: return "pixmap_draw";
@@ -1446,6 +1447,7 @@ static int get_event_flag(ErlNifEnv* env, const ERL_NIF_TERM term,
     else if (term == ATOM(enter))          *e = EPX_EVENT_ENTER;
     else if (term == ATOM(leave))          *e = EPX_EVENT_LEAVE;
     else if (term == ATOM(configure))      *e = EPX_EVENT_CONFIGURE;
+    else if (term == ATOM(expose))         *e = EPX_EVENT_EXPOSE;
     else if (term == ATOM(resize))         *e = EPX_EVENT_RESIZE;
     else if (term == ATOM(crossing))       *e = EPX_EVENT_ENTER|EPX_EVENT_LEAVE;
     else if (term == ATOM(button))         *e = EPX_EVENT_BUTTON_MASK;
@@ -1543,6 +1545,8 @@ static ERL_NIF_TERM make_event_flags(ErlNifEnv* env, uint32_t mask)
 	list = enif_make_list_cell(env, ATOM(configure), list);
     if (mask & EPX_EVENT_RESIZE)
 	list = enif_make_list_cell(env, ATOM(resize), list);
+    if (mask & EPX_EVENT_EXPOSE)
+	list = enif_make_list_cell(env, ATOM(expose), list);    
     if (mask & EPX_EVENT_BUTTON_LEFT)
 	list = enif_make_list_cell(env, ATOM(left), list);
     if (mask & EPX_EVENT_BUTTON_MIDDLE)
@@ -2226,6 +2230,8 @@ static ERL_NIF_TERM make_event(ErlNifEnv* env, epx_event_t* e)
 	data = make_crossing_event(env, ATOM(leave), e); break;
     case EPX_EVENT_CONFIGURE:
 	data = make_area_event(env, ATOM(configure), e); break;
+    case EPX_EVENT_EXPOSE:
+	data = make_area_event(env, ATOM(expose), e); break;	
     case EPX_EVENT_RESIZE:
 	data = make_dimension_event(env, ATOM(resize), e); break;
     default:
@@ -4583,7 +4589,7 @@ static void* reaper_main(void* arg)
 	case EPX_MESSAGE_WINDOW_DETACH:
 	case EPX_MESSAGE_WINDOW_ADJUST:
 	case EPX_MESSAGE_WINDOW_SWAP:
-	case EPX_MESSAGE_ADJUST:
+	case EPX_MESSAGE_BACKEND_ADJUST:
 	case EPX_MESSAGE_PIXMAP_ATTACH:
 	case EPX_MESSAGE_PIXMAP_DETACH:
 	case EPX_MESSAGE_PIXMAP_DRAW:
@@ -4629,7 +4635,7 @@ static int backend_poll_dispatch(epx_thread_t* self, epx_message_t* mp)
     case EPX_MESSAGE_WINDOW_DETACH:
     case EPX_MESSAGE_WINDOW_ADJUST:
     case EPX_MESSAGE_WINDOW_SWAP:
-    case EPX_MESSAGE_ADJUST:
+    case EPX_MESSAGE_BACKEND_ADJUST:
     case EPX_MESSAGE_PIXMAP_ATTACH:
     case EPX_MESSAGE_PIXMAP_DETACH:
     case EPX_MESSAGE_PIXMAP_DRAW:
@@ -4860,8 +4866,8 @@ static void* backend_main(void* arg)
 	    epx_window_swap(m.window);
 	    break;
 
-	case EPX_MESSAGE_ADJUST:
-	    DEBUGF("backend_main: EPX_MESSAGE_ADJUST");
+	case EPX_MESSAGE_BACKEND_ADJUST:
+	    DEBUGF("backend_main: EPX_MESSAGE_BACKEND_ADJUST");
 	    epx_backend_adjust(backend, m.param);
 	    enif_release_resource(m.param);    // thread safe?	    
 	    break;
@@ -5099,7 +5105,7 @@ static ERL_NIF_TERM backend_adjust(ErlNifEnv* env, int argc,
     if (!get_object(env, argv[1], &dict_res, (void**) &param))
 	return enif_make_badarg(env);
     enif_keep_resource(param);
-    m.type = EPX_MESSAGE_ADJUST;
+    m.type = EPX_MESSAGE_BACKEND_ADJUST;
     m.param = param;
     epx_message_send(backend->main, 0, &m);
     return ATOM(ok);    
@@ -5555,6 +5561,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(enter);
     LOAD_ATOM(leave);
     LOAD_ATOM(configure);
+    LOAD_ATOM(expose);
     LOAD_ATOM(resize);
     LOAD_ATOM(crossing);
     LOAD_ATOM(synced);
