@@ -172,6 +172,7 @@ static epx_window_t* find_event_window(X11Backend* x11, Window w)
     return NULL;
 }
 
+#if 0
 static void clip_window(X11Backend* b, X11Window* w,
 			int x, int y, unsigned int width, unsigned int height)
 {
@@ -182,6 +183,7 @@ static void clip_window(X11Backend* b, X11Window* w,
     clip.height = height;
     XSetClipRectangles(b->display, w->gc, 0, 0, &clip, 1, Unsorted);
 }
+#endif
 
 // number of bits set in mask
 static int bit_count(unsigned long mask)
@@ -326,13 +328,16 @@ static int destroy_off_screen(X11Backend* b, X11Window* w)
 static int resize_off_screen(X11Backend* b, X11Window* w)
 {
     Pixmap pm;
+    int width = w->width;
+    int height = w->height;
     int ww, hh;
-    
+
     if (w->pm == 0) return -1;
-    if ((w->pm_width >= w->width) && (w->pm_height >= w->height))
+    if ((w->pm_width >= width) && (w->pm_height >= height))
 	return 0; // ok do never shrink (maybe later)
-    ww = (w->width > w->pm_width) ? w->width : w->pm_width;
-    hh = (w->height > w->pm_height) ? w->height : w->pm_height;
+    ww = (width > w->pm_width) ? width+(width/2) : w->pm_width;
+    hh = (height > w->pm_height) ? height+(height/2) : w->pm_height;
+    // printf("pm: w=%d,h=%d\r\n", ww, hh);
     pm = XCreatePixmap(b->display, w->window, ww, hh, 
 		       DefaultDepth(b->display, b->screen));
     XCopyArea(b->display, w->pm, pm, w->gc, 0, 0, w->pm_width, w->pm_height,
@@ -669,6 +674,7 @@ static int x11_win_swap(epx_backend_t* backend, epx_window_t* ewin)
 #endif
     }
     else if (w && w->pm && b->use_off_screen) {
+	// printf("win: w=%d,h=%d\r\n", w->width, w->height);
 	XCopyArea(b->display, w->pm, w->window, w->gc,
 		  0, 0, w->width, w->height, 0, 0);
 	XSync(b->display, False);
@@ -698,8 +704,8 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     attr.save_under = True;		/* popups ... */
     attr.background_pixel = be->white_pixel;
     attr.border_pixel = be->black_pixel;
-
-    valuemask = CWBackPixel | CWBorderPixel | CWSaveUnder;
+    attr.override_redirect = False;
+    valuemask = CWBackPixel | CWBorderPixel | CWSaveUnder | CWOverrideRedirect;
     if (be->use_exposure)
 	valuemask |= CWBackingStore;
 
@@ -788,8 +794,10 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 		     // | Button2MotionMask | Button3MotionMask
 		     // | Button4MotionMask | Button5MotionMask
 		     // | ButtonMotionMask
-		     | KeymapStateMask | VisibilityChangeMask
-		     | StructureNotifyMask | ResizeRedirectMask
+		     | KeymapStateMask
+		     | VisibilityChangeMask
+		     | StructureNotifyMask
+		     | ResizeRedirectMask
 		     | SubstructureNotifyMask
 		     | SubstructureRedirectMask
 		     | FocusChangeMask
@@ -962,7 +970,7 @@ next:
 		ev.xconfigure.x,ev.xconfigure.y,
 		ev.xconfigure.width, ev.xconfigure.height);
 	if ((w = find_event_window(b, ev.xconfigure.window)) != NULL) {
-	    X11Window* win  = (X11Window*) w->opaque;	    
+	    X11Window*  win  = (X11Window*) w->opaque;	    
 	    e->window = w;
 	    e->type = EPX_EVENT_CONFIGURE;
 	    e->area.x = ev.xconfigure.x;
@@ -974,6 +982,11 @@ next:
 	    w->rarea.xy.y = e->area.y;
 	    w->rarea.wh.width = e->area.w;
 	    w->rarea.wh.height = e->area.h;
+
+	    // update using
+	    win->width  = ev.xconfigure.width;
+	    win->height = ev.xconfigure.height;
+	    resize_off_screen(b, win);
 	    goto got_event;
 	}
 	break;
@@ -985,6 +998,7 @@ next:
 		ev.xresizerequest.width,ev.xresizerequest.height);
 	w = find_event_window(b, ev.xresizerequest.window);
 	if (w != NULL) {
+	    X11Window*  win  = (X11Window*) w->opaque;
 	    e->window = w;
 	    e->type = EPX_EVENT_RESIZE;
 	    e->dimension.w = ev.xresizerequest.width;
@@ -993,6 +1007,10 @@ next:
 	    // update reported values
 	    w->rarea.wh.width = e->dimension.w;
 	    w->rarea.wh.height = e->dimension.h;
+	    // update using
+	    win->width  = ev.xresizerequest.width;
+	    win->height = ev.xresizerequest.height;
+	    resize_off_screen(b, win);
 	    goto got_event;
 	}
 	break;
@@ -1581,14 +1599,9 @@ int x11_win_adjust(epx_window_t *win, epx_dict_t*param)
 	if (mask0 & CWWidth)  win->area.wh.width  = w->width = value.width;
 	if (mask0 & CWHeight) win->area.wh.height = w->height = value.height;
 
-	resize_off_screen(b, w);
-
 	XConfigureWindow(b->display, w->window, mask, &value);
     }
 
-#if 0
-    clip_window(b, w, 0, 0, value.width, value.height);
-#endif	
     XFlush(b->display);
 
     if (epx_dict_lookup_boolean(param, "show", &bool_val) >= 0) {
