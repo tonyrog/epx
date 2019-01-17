@@ -35,6 +35,14 @@
 -export([set_position/2, get_position/1]).
 -export([x/3, y/3, height/2, width/2, point/2, rectangle/2]).
 
+-ifdef(OTP_RELEASE). %% this implies 21 or higher
+-define(EXCEPTION(Class, Reason, Stacktrace), Class:Reason:Stacktrace).
+-define(GET_STACK(Stacktrace), Stacktrace).
+-else.
+-define(EXCEPTION(Class, Reason, _), Class:Reason).
+-define(GET_STACK(_), erlang:get_stacktrace()).
+-endif.
+
 identity(Pixmap) ->
     set_vm(Pixmap, epx_t2d:identity()).
 
@@ -78,7 +86,7 @@ set_orientation(Pixmap, Deg) when is_number(Deg) ->
 set_clip(Pixmap,X,Y,W,H) ->
     Vm = get_vm(Pixmap),
     {X1,Y1,W1,H1} = epx_t2d:rectangle(Vm,X,Y,W,H),
-    epx:pixmap_set_clip(Pixmap,trunc(X1),trunc(Y1),trunc(W1),trunc(H1)).
+    epx:pixmap_set_clip(Pixmap,X1,Y1,W1,H1).
 
 push(Pixmap) ->
     Vm    = get_vm(Pixmap),
@@ -112,11 +120,11 @@ draw(Pixmap,Fun) ->
     try Fun() of
 	Res -> Res
     catch
-	error:Reason ->
-	    io:format("draw: crashed, ~p\n", [erlang:get_stacktrace()]),
+	?EXCEPTION(error,Reason,Stacktrace) ->
+	    io:format("draw: crashed, ~p\n", [?GET_STACK(Stacktrace)]),
 	    {error,Reason};
-	exit:Reason ->
-	    io:format("draw: exit, reason = ~p\n", [erlang:get_stacktrace()]),
+	?EXCEPTION(exit,Reason,Stacktrace) ->
+	    io:format("draw: exit, reason = ~p\n", [?GET_STACK(Stacktrace)]),
 	    {error,Reason};
 	thrown:Value ->
 	    Value
@@ -166,7 +174,7 @@ lineto(Pixmap,X,Y) when is_number(X), is_number(Y) ->
     Vm = get_vm(Pixmap),
     {X0,Y0} = get_position(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
-    epx:draw_line(Pixmap, trunc(X0), trunc(Y0), trunc(X1), trunc(Y1)),
+    epx:draw_line(Pixmap, X0, Y0, X1, Y1),
     set_position(Pixmap, {X1,Y1}).
 
 turnto(Pixmap,Deg) when is_number(Deg) ->
@@ -184,7 +192,7 @@ line(Pixmap,Dx0,Dy0) when is_number(Dx0), is_number(Dy0) ->
     {X1,Y1} = epx_t2d:delta(Vm,Dx0,Dy0),
     X = X0 + X1,
     Y = Y0 + Y1,
-    epx:draw_line(Pixmap,trunc(X0),trunc(Y0),trunc(X),trunc(Y)),
+    epx:draw_line(Pixmap,X0,Y0,X,Y),
     set_position(Pixmap, {X,Y}).
 
 move(Pixmap,Len) when is_number(Len) ->
@@ -195,7 +203,7 @@ line(Pixmap,Len) when is_number(Len) ->
     A = epx_t2d:deg_to_rad(get_orientation(Pixmap)),
     line(Pixmap, math:cos(A)*Len, math:sin(A)*Len).
 
- turn(Pixmap,Deg) when is_number(Deg) ->
+turn(Pixmap,Deg) when is_number(Deg) ->
     set_orientation(Pixmap, get_orientation(Pixmap) + Deg).
 
 %%
@@ -204,32 +212,32 @@ line(Pixmap,Len) when is_number(Len) ->
 draw_point(Pixmap, X, Y) ->
     Vm = get_vm(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
-    epx:draw_point(Pixmap, trunc(X1), trunc(Y1)).
+    epx:draw_point(Pixmap,X1,Y1).
 
 draw_line(Pixmap, X0, Y0, X1, Y1) ->
     Vm = get_vm(Pixmap),
     {X2,Y2} = epx_t2d:point(Vm,X0,Y0),
     {X3,Y3} = epx_t2d:point(Vm,X1,Y1),
-    epx:draw_line(Pixmap, trunc(X2), trunc(Y2), trunc(X3), trunc(Y3)).
+    epx:draw_line(Pixmap,X2,Y2,X3,Y3).
 
 draw_rectangle(Pixmap, X, Y, W, H) ->    
     Vm = get_vm(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
     %% should really draw polygon!
     {W1,H1} = epx_t2d:dimension(Vm,W,H),
-    epx:draw_rectangle(Pixmap,trunc(X1),trunc(Y1),trunc(W1),trunc(H1)).
+    epx:draw_rectangle(Pixmap,X1,Y1,W1,H1).
 
 draw_ellipse(Pixmap, X, Y, A, B) ->
     Vm = get_vm(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
     %% should really draw rotated ellipse!
     {A1,B1} = epx_t2d:dimension(Vm,A,B),
-    epx:draw_ellipse(Pixmap,trunc(X1),trunc(Y1),trunc(A1),trunc(B1)).
+    epx:draw_ellipse(Pixmap,X1,Y1,A1,B1).
 
 put_pixel(Pixmap,X,Y,Pixel) ->
     Vm = get_vm(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
-    epx:pixmap_put_pixel(Pixmap,trunc(X1),trunc(Y1),Pixel).
+    epx:pixmap_put_pixel(Pixmap,X1,Y1,Pixel).
 
 put_pixels(Pixmap, X, Y, W, H, Ps) ->
     Vm = get_vm(Pixmap),
@@ -240,4 +248,4 @@ put_pixels(Pixmap, X, Y, W, H, Ps) ->
 get_pixel(Pixmap,X,Y) ->
     Vm = get_vm(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
-    epx:pixmap_get_pixel(Pixmap,trunc(X1),trunc(Y1)).
+    epx:pixmap_get_pixel(Pixmap,X1,Y1).
