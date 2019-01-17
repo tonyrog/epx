@@ -790,7 +790,7 @@ static int get_coord(ErlNifEnv* env, const ERL_NIF_TERM term, int* coord)
 	double fcoord;
 	if (!enif_get_double(env, term, &fcoord))
 	    return 0;
-	*coord = (int) floor(fcoord);
+	*coord = (int) round(fcoord);
     }
     return 1;
 }
@@ -819,7 +819,7 @@ static int get_dim(ErlNifEnv* env, const ERL_NIF_TERM term, unsigned int* dim)
 	    return 0;
 	if (fdim < 0)
 	    return 0;
-	*dim = (unsigned int) fdim;
+	*dim = (unsigned int) round(fdim);
     }
     return 1;
 }
