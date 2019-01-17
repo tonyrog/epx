@@ -228,7 +228,10 @@ hsl_to_rgbw01(H,S,L) when
     end.
        
 rgb_to_hsl(Color) when is_atom(Color); is_list(Color) ->
-    rgb_to_hsl(from_name(Color));       
+    case from_name(Color) of
+	false -> false;
+	RGB -> rgb_to_hsl(RGB)
+    end;
 rgb_to_hsl({R,G,B}) ->
     rgb01_to_hsl(R/255,G/255,B/255).
 
@@ -303,7 +306,10 @@ rgb01_to_hsv(R,G,B) ->
     end.
 
 rgb_to_hsv(Color) when is_atom(Color); is_list(Color) ->
-    rgb_to_hsv(from_name(Color));
+    case from_name(Color) of
+	false -> false;
+	RGB -> rgb_to_hsv(RGB)
+    end;
 rgb_to_hsv({R,G,B}) ->
     rgb01_to_hsv(R/255.0,G/255.0,B/255.0).
 
