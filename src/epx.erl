@@ -139,9 +139,11 @@
 -export([draw_point/3, draw_point/2]).
 -export([draw_line/3, draw_line/5]).
 -export([draw_triangle/2, draw_triangle/4]).
--export([draw_rectangle/5, draw_rectangle/2, draw_rectangle/3]).
+-export([draw_rectangle/2, draw_rectangle/3,
+	 draw_rectangle/5, draw_rectangle/6]).
 -export([draw_roundrect/7, draw_roundrect/4, draw_roundrect/5]).
--export([draw_ellipse/5]).
+-export([draw_ellipse/2, draw_ellipse/3, 
+	 draw_ellipse/5, draw_ellipse/6]).
 -export([draw_char/4]).
 -export([draw_string/4]).
 -export([draw_utf8/4]).
@@ -1290,23 +1292,34 @@ draw_rectangle(Pixmap, Gc, {X, Y, Width, Height}) ->
     pixmap_draw_rectangle(Pixmap, Gc, X, Y, Width, Height).
 
 draw_rectangle(Pixmap, {X,Y,Width,Height}) ->
-    draw_rectangle(Pixmap, X, Y, Width, Height).
+    pixmap_draw_rectangle(Pixmap, epx_gc:current(), X, Y, Width, Height).
 
 draw_rectangle(Pixmap, X, Y, Width, Height) ->
-    pixmap_draw_rectangle(Pixmap,epx_gc:current(), X, Y, Width, Height).
+    pixmap_draw_rectangle(Pixmap, epx_gc:current(), X, Y, Width, Height).
+
+draw_rectangle(Pixmap, GC, X, Y, Width, Height) ->
+    pixmap_draw_rectangle(Pixmap, GC, X, Y, Width, Height).
 
 draw_roundrect(Pixmap, Gc, {X, Y, Width, Height}, Rw, Rh) ->
     pixmap_draw_roundrect(Pixmap, Gc, X, Y, Width, Height, Rw, Rh).
 
 draw_roundrect(Pixmap, {X,Y,Width,Height}, Rw, Rh) ->
-    draw_roundrect(Pixmap, X, Y, Width, Height, Rw, Rh).
+    pixmap_draw_roundrect(Pixmap,epx_gc:current(), X, Y, Width, Height, Rw, Rh).
 
 draw_roundrect(Pixmap, X, Y, Width, Height, Rw, Rh) ->
     pixmap_draw_roundrect(Pixmap,epx_gc:current(), X, Y, Width, Height, Rw, Rh).
 
+draw_ellipse(Pixmap, {X, Y, Width, Height}) ->
+    pixmap_draw_ellipse(Pixmap, epx_gc:current(), X, Y, Width, Height).
+
+draw_ellipse(Pixmap, GC, {X, Y, Width, Height}) ->
+    pixmap_draw_ellipse(Pixmap, GC, X, Y, Width, Height).
 
 draw_ellipse(Pixmap, X, Y, Width, Height) ->
-    pixmap_draw_ellipse(Pixmap,epx_gc:current(), X, Y, Width, Height).
+    draw_ellipse(Pixmap, epx_gc:current(), X, Y, Width, Height).
+
+draw_ellipse(Pixmap, GC, X, Y, Width, Height) ->
+    pixmap_draw_ellipse(Pixmap, GC, X, Y, Width, Height).
 
 draw_char(Pixmap, X, Y, C) ->
     font_draw_glyph(Pixmap,epx_gc:current(), X, Y, C).
