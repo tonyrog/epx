@@ -63,7 +63,7 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
     unsigned int b = height >> 1;
     int xc = x + a;
     int yc = y + b;
-    unsigned int border_width = gc->border_width;
+    unsigned int bw    = gc->border_width;
     epx_pixel_t bc     = gc->border_color;
     epx_pixel_t fill   = gc->fill_color;
     epx_flags_t ff     = gc->fill_style;
@@ -81,12 +81,12 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
     long fx_i, fxy_i, fy_i;
     int do_yi = 1;
     // Outer circle
-    int xo  = a+border_width;
+    int xo  = a+bw-1;
     int yo  = 0;
-    unsigned long a2_o = (a+border_width)*(a+border_width);
-    unsigned long b2_o = (b+border_width)*(b+border_width);
+    unsigned long a2_o = (a+bw-1)*(a+bw-1);
+    unsigned long b2_o = (b+bw-1)*(b+bw-1);
     long pya_o = a2_o;
-    long pxb_o = (2*(a+border_width)-1)*b2_o;
+    long pxb_o = (2*(a+bw-1)-1)*b2_o;
     long f_o = 0;
     long fx_o, fxy_o, fy_o;
     int do_yo = 1;
@@ -113,13 +113,13 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 	    }
 	}
 	else if (yi == 0) {
-	    if (border_width > 1) {
+	    if (bw > 1) {
 		if (do_yi) {
 		    epx_draw_line_horizontal(pixmap,xc-xo,xc-xi,yc,bf,bc);
 		    epx_draw_line_horizontal(pixmap,xc+xi,xc+xo,yc,bf,bc);
 		}
 	    }
-	    else {
+	    else if (bw == 1) {
 		epx_pixmap_put_pixel(pixmap,xc-xo,yc,bf,bc);
 		epx_pixmap_put_pixel(pixmap,xc+xo,yc,bf,bc);
 	    }
@@ -129,7 +129,7 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 	    }
 	}
 	else {
-	    if (border_width > 1) {
+	    if (bw > 1) {
 		if (do_yi) {
 		    epx_draw_line_horizontal(pixmap,xc-xo,xc-xi,yc+yi,bf,bc);
 		    epx_draw_line_horizontal(pixmap,xc+xi,xc+xo,yc+yi,bf,bc);
@@ -137,7 +137,7 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 		    epx_draw_line_horizontal(pixmap,xc+xi,xc+xo,yc-yi,bf,bc);
 		}
 	    }
-	    else {
+	    else if (bw == 1) {
 		plot_ellipse4(pixmap, xc, yc, xo, yi, bf, bc, ww, hh);
 	    }
 	    if (do_fill) {
@@ -195,23 +195,23 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 	    epx_pixmap_put_pixel(pixmap,xc,yc-yo, bf, bc);
 	}
 	else if (yo == 0) {
-	    if (border_width > 1) {
+	    if (bw > 1) {
 		if (do_yo) {
 		    epx_draw_line_horizontal(pixmap,xc-xo,xc+xo,yc,bf,bc);
 		}
 	    }
-	    else {
+	    else if (bw == 1) {
 		epx_pixmap_put_pixel(pixmap,xc-xo,yc,bf,bc);
 		epx_pixmap_put_pixel(pixmap,xc+xo,yc,bf,bc);
 	    }
 	}
 	else {
-	    if (border_width > 1) {
+	    if (bw > 1) {
 		if (do_yo) {
 		    line_ellipse2(pixmap, xc, yc, xo, yo, bf, bc, ww, hh);
 		}
 	    }
-	    else {
+	    else if (bw == 1) {
 		plot_ellipse4(pixmap, xc, yc, xo, yo, bf, bc, ww, hh);
 	    }
 	}

@@ -37,6 +37,21 @@ static inline void put_apixel(uint8_t* addr,
     }
 }
 
+static inline void fill_rect(epx_pixmap_t* pixmap,
+			     int x, int y,
+			     unsigned int width, unsigned int height,
+			     epx_flags_t ff, epx_pixel_t fc)
+{
+    uint8_t* ptr = EPX_PIXEL_ADDR(pixmap,x,y);
+    if (((ff & EPX_FLAG_BLEND)==0) || (fc.a == EPX_ALPHA_OPAQUE))
+	epx_fill_area(ptr,pixmap->bytes_per_row,pixmap->pixel_format,fc,
+		      width,height);
+    else if (fc.a != EPX_ALPHA_TRANSPARENT)
+	epx_fill_area_blend(ptr,pixmap->bytes_per_row,
+			    pixmap->pixel_format,fc,
+			    width,height);
+}
+
 //
 // draw a point at (x,y) in foreground color (using line style)
 //
@@ -58,50 +73,68 @@ void epx_draw_rectangle(epx_pixmap_t* pixmap,
 			epx_flags_t ff, epx_pixel_t fc,
 			unsigned int bw, epx_flags_t bf, epx_pixel_t bc)
 {
-    epx_rect_t r = {{x, y}, {width, height}};
-    int x1, y1;
+    epx_rect_t r;
+    unsigned int w, h;
+
+    if ((ff == EPX_FILL_STYLE_NONE) && (bw <= 1))
+	epx_rect_set(&r, x, y, width, height);
+    else if (bw > 0) {
+	switch(bf & EPX_BORDER_LOCATION_MASK) {
+	case EPX_BORDER_LOCATION_INSIDE:
+	    epx_rect_set(&r,x,y,width,height);
+	    break;
+	case EPX_BORDER_LOCATION_CENTER:
+	    epx_rect_set(&r,x-bw/2-1,y-bw/2-1,width+bw,height+bw);
+	    break;
+	case EPX_BORDER_LOCATION_OUTSIDE:
+	default:
+	    epx_rect_set(&r,x-bw-1,y-bw-1,width+2*bw,height+2*bw);
+	    break;
+	}
+    }
+    else
+	epx_rect_set(&r, x, y, width, height);
+	
     if (!epx_rect_intersect(&r, &pixmap->clip, &r))
 	return;
+    
     x = epx_rect_left(&r);
     y = epx_rect_top(&r);
-    x1 = epx_rect_right(&r);
-    y1 = epx_rect_bottom(&r);
-    if (ff == EPX_FILL_STYLE_NONE) {
+    w  = epx_rect_width(&r);
+    h = epx_rect_height(&r);
 
+    // FIXME: check center/inside bw 
+    
+    if ((ff == EPX_FILL_STYLE_NONE) && (bw <= 1)) {
+	int x1 = epx_rect_right(&r);
+	int y1 = epx_rect_bottom(&r);
 	bf |= EPX_LINE_STYLE_NFIRST;
-	epx_draw_line(pixmap,x,y,x1,y,bw,bf,bc);
-	epx_draw_line(pixmap,x1,y,x1,y1,bw,bf,bc);
-	epx_draw_line(pixmap,x1,y1,x,y1,bw,bf,bc);
-	epx_draw_line(pixmap,x,y1,x,y,bw,bf,bc);
+	if (!(bf & EPX_BORDER_STYLE_NTOP))
+	    epx_draw_line(pixmap,x,y,x1,y,1,bf,bc);
+	if (!(bf & EPX_BORDER_STYLE_NBOTTOM))
+	    epx_draw_line(pixmap,x1,y1,x,y1,1,bf,bc);	
+	if (!(bf & EPX_BORDER_STYLE_NLEFT))
+	    epx_draw_line(pixmap,x,y1,x,y,1,bf,bc);
+	if (!(bf & EPX_BORDER_STYLE_NRIGHT))
+	    epx_draw_line(pixmap,x1,y,x1,y1,1,bf,bc);
     }
-    else {
-	uint8_t* ptr;
-	if ((bw > 0) &&
-	    ((bf & EPX_BORDER_STYLE_NBORDER) != EPX_BORDER_STYLE_NBORDER)) {
-	    if (!(bf & EPX_BORDER_STYLE_NBOTTOM))
-		epx_draw_line(pixmap,x,y-1,x1,y-1,bw,bf,bc);
-	    if (!(bf & EPX_BORDER_STYLE_NLEFT))
-		epx_draw_line(pixmap,x1+1,y,x1+1,y1,bw,bf,bc);
-	    if (!(bf & EPX_BORDER_STYLE_NTOP))
-		epx_draw_line(pixmap,x1,y1+1,x,y1+1,bw,bf,bc);
-	    if (!(bf & EPX_BORDER_STYLE_NRIGHT))
-		epx_draw_line(pixmap,x-1,y1,x-1,y,bw,bf,bc);
-	}
-	ptr = EPX_PIXEL_ADDR(pixmap,x,y);
-	width  = epx_rect_width(&r);
-	height = epx_rect_height(&r);
-
-	if (((ff & EPX_FLAG_BLEND)==0) || (fc.a == EPX_ALPHA_OPAQUE))
-	    epx_fill_area(ptr,pixmap->bytes_per_row,pixmap->pixel_format,fc,
-			  width,height);
-	else if (fc.a != EPX_ALPHA_TRANSPARENT) {
-	    epx_fill_area_blend(ptr,pixmap->bytes_per_row,
-				pixmap->pixel_format,fc,
-				width,height);
-	}
+    else if (bw > 0) {
+	if (!(bf & EPX_BORDER_STYLE_NTOP))
+	    fill_rect(pixmap, x, y,         w,  bw, bf, bc);
+	if (!(bf & EPX_BORDER_STYLE_NBOTTOM))
+	    fill_rect(pixmap, x, y+h-bw,    w,  bw, bf, bc);	
+	if (!(bf & EPX_BORDER_STYLE_NLEFT))
+	    fill_rect(pixmap, x,      y+bw, bw, h-2*bw, bf, bc);
+	if (!(bf & EPX_BORDER_STYLE_NRIGHT))
+	    fill_rect(pixmap, x+w-bw, y+bw, bw, h-2*bw, bf, bc);
+    }
+    if (ff != EPX_FILL_STYLE_NONE) {
+	if (bw > 0)
+	    fill_rect(pixmap, x+bw, y+bw, w-2*bw, h-2*bw, ff, fc);
+	else
+	    fill_rect(pixmap, x, y, w, h, ff, fc);
     }
 }
-
 
 // Draw rectangle (x,y,w,h)
 void epx_pixmap_draw_rectangle(epx_pixmap_t* pixmap, epx_gc_t* gc,
@@ -162,20 +195,25 @@ void epx_pixmap_draw_roundrect(epx_pixmap_t* pixmap, epx_gc_t* gc,
 			       unsigned int width, unsigned int height,
 			       unsigned int rw, unsigned int rh)
 {
-    if (gc == NULL) gc = &epx_default_gc;
     unsigned int ww;
     unsigned int hh;
+    epx_flags_t bf;
+    epx_pixel_t bc;
+    unsigned int bw;
+    
+    if (gc == NULL)
+	gc = &epx_default_gc;
 
     ww = (width < 2*rw) ? 0  : width - 2*rw;
     hh = (height < 2*rh) ? 0 : height - 2*rh;
+    bf = gc->border_style | EPX_LINE_STYLE_NFIRST;
+    bc = gc->border_color;
+    bw = gc->border_width;
 
     if (((gc->border_style & EPX_BORDER_STYLE_NBORDER) ==
-	 EPX_BORDER_STYLE_NBORDER) || (gc->border_width == 0)) {
+	 EPX_BORDER_STYLE_NBORDER) || (bw == 0)) {
 	epx_draw_ellipse(pixmap, gc, x, y, width-ww, height-hh, ww, hh);
 	if (gc->fill_style == EPX_FILL_STYLE_NONE) {
-	    epx_flags_t bf = gc->border_style | EPX_LINE_STYLE_NFIRST;
-	    epx_pixel_t bc = gc->border_color;
-	    unsigned int bw = gc->border_width;
 	    int x0 = x+rw;
 	    int y0 = y+rh;
 	    int x1 = x+width-rh;
@@ -190,9 +228,6 @@ void epx_pixmap_draw_roundrect(epx_pixmap_t* pixmap, epx_gc_t* gc,
 	}
     }
     else {
-	epx_flags_t bf = gc->border_style | EPX_LINE_STYLE_NFIRST;
-	epx_pixel_t bc = gc->border_color;
-	unsigned int bw = gc->border_width;
 	int x0 = x+rw;
 	int y0 = y+rh;
 	int x1 = x+width-rh;

@@ -43,7 +43,8 @@ epx_gc_t epx_default_gc =
     1,                     // line_width
     0,                     // line_texture
 
-    EPX_BORDER_STYLE_SOLID, // border_style
+    EPX_BORDER_STYLE_SOLID |
+    EPX_BORDER_LOCATION_OUTSIDE, // border_style
     EPX_JOIN_STYLE_MITER,   // border_join_style
     EPX_CAP_STYLE_NONE,     // border_cap_style
     EPX_PIXEL_BLACK,        // border_color

@@ -555,6 +555,9 @@ DECL_ATOM(nright);
 DECL_ATOM(nbottom);
 DECL_ATOM(nleft);
 DECL_ATOM(nborder);
+DECL_ATOM(outside);
+DECL_ATOM(inside);
+DECL_ATOM(center);
 
 // DECL_ATOM(none);
 DECL_ATOM(butt);
@@ -1292,17 +1295,20 @@ static int get_border_flag(ErlNifEnv* env, const ERL_NIF_TERM term,
 			   epx_flags_t* flags)
 {
     (void) env;
-    if (term == ATOM(solid)) *flags = EPX_BORDER_STYLE_SOLID;
+    if (term == ATOM(solid))        *flags = EPX_BORDER_STYLE_SOLID;
     else if (term == ATOM(blend))   *flags = EPX_BORDER_STYLE_BLEND;
-    else if (term == ATOM(sum))   *flags = EPX_BORDER_STYLE_SUM;
-    else if (term == ATOM(aalias)) *flags = EPX_BORDER_STYLE_AALIAS;
+    else if (term == ATOM(sum))     *flags = EPX_BORDER_STYLE_SUM;
+    else if (term == ATOM(aalias))  *flags = EPX_BORDER_STYLE_AALIAS;
     else if (term == ATOM(textured)) *flags = EPX_BORDER_STYLE_TEXTURED;
-    else if (term == ATOM(dashed)) *flags = EPX_BORDER_STYLE_DASHED;
-    else if (term == ATOM(ntop)) *flags = EPX_BORDER_STYLE_NTOP;
-    else if (term == ATOM(nright)) *flags = EPX_BORDER_STYLE_NRIGHT;
+    else if (term == ATOM(dashed))  *flags = EPX_BORDER_STYLE_DASHED;
+    else if (term == ATOM(ntop))    *flags = EPX_BORDER_STYLE_NTOP;
+    else if (term == ATOM(nright))  *flags = EPX_BORDER_STYLE_NRIGHT;
     else if (term == ATOM(nbottom)) *flags = EPX_BORDER_STYLE_NBOTTOM;
-    else if (term == ATOM(nleft)) *flags = EPX_BORDER_STYLE_NLEFT;
+    else if (term == ATOM(nleft))   *flags = EPX_BORDER_STYLE_NLEFT;
     else if (term == ATOM(nborder)) *flags = EPX_BORDER_STYLE_NBORDER;
+    else if (term == ATOM(outside)) *flags = EPX_BORDER_LOCATION_OUTSIDE;
+    else if (term == ATOM(inside))  *flags = EPX_BORDER_LOCATION_INSIDE;
+    else if (term == ATOM(center))  *flags = EPX_BORDER_LOCATION_CENTER;
     else return 0;
     return 1;
 }
@@ -1375,7 +1381,10 @@ static int get_border_flags(ErlNifEnv* env, const ERL_NIF_TERM term,
 	while(enif_get_list_cell(env, list, &head, &tail)) {
 	    if (!get_border_flag(env, head, &f))
 		return 0;
-	    fs |= f;
+	    if (f & EPX_BORDER_LOCATION_MASK)
+		fs = (fs & ~EPX_BORDER_LOCATION_MASK) | f;
+	    else
+		fs |= f;
 	    list = tail;
 	}
 	if (!enif_is_empty_list(env, list))
@@ -1403,6 +1412,9 @@ static ERL_NIF_TERM make_flags(ErlNifEnv* env, epx_flags_t flags)
     if (flags & EPX_BORDER_STYLE_NRIGHT) fv[i++] = ATOM(nright);
     if (flags & EPX_BORDER_STYLE_NBOTTOM) fv[i++] = ATOM(nbottom);
     if (flags & EPX_BORDER_STYLE_NLEFT) fv[i++] = ATOM(nleft);
+    if (flags & EPX_BORDER_LOCATION_OUTSIDE) fv[i++] = ATOM(outside);
+    if (flags & EPX_BORDER_LOCATION_INSIDE) fv[i++] = ATOM(inside);
+    if (flags & EPX_BORDER_LOCATION_CENTER) fv[i++] = ATOM(center);
     return enif_make_list_from_array(env, fv, i);
 }
 
@@ -5356,6 +5368,9 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(nbottom);
     LOAD_ATOM(nleft);
     LOAD_ATOM(nborder);
+    LOAD_ATOM(outside);
+    LOAD_ATOM(inside);
+    LOAD_ATOM(center);    
 
     // simd_info
     LOAD_ATOM(emu);
