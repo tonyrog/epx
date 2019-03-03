@@ -236,11 +236,13 @@ static inline int epx_rect_intersect(const epx_rect_t* a, const epx_rect_t* b,
     bottom = epx_min_int(epx_rect_bottom(a), epx_rect_bottom(b));
     if (top > bottom) goto empty;
 
-    epx_point_set(&r->xy, left, top);
-    epx_dimension_set(&r->wh, (right-left)+1, (bottom-top)+1);
+    if (r) {
+	epx_point_set(&r->xy, left, top);
+	epx_dimension_set(&r->wh, (right-left)+1, (bottom-top)+1);
+    }
     return 1;
 empty:
-    epx_rect_empty(r);
+    if (r) epx_rect_empty(r);
     return 0;
 }
 

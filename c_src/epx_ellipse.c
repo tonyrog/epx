@@ -18,9 +18,9 @@
  * Ellipse drawing algorithms
  *
  */
+#include <math.h>
 
 #include "../include/epx.h"
-#include <math.h>
 
 /* plot 4 pixels - one in each quadrant */
 static inline void plot_ellipse4(epx_pixmap_t* pixmap,
@@ -59,34 +59,36 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 			     unsigned int width, unsigned int height,
 			     unsigned int ww, unsigned int hh)
 {
-    unsigned int a = width  >> 1;
-    unsigned int b = height >> 1;
+    unsigned int bw   = gc->border_width;
+    unsigned int a    = width >> 1;
+    unsigned int b    = height >> 1;
     int xc = x + a;
     int yc = y + b;
-    unsigned int bw    = gc->border_width;
     epx_pixel_t bc     = gc->border_color;
     epx_pixel_t fill   = gc->fill_color;
     epx_flags_t ff     = gc->fill_style;
     epx_flags_t bf     = gc->border_style;
     int do_fill = (ff != EPX_FILL_STYLE_NONE);
+    unsigned int a0    = (a > bw) ? a-bw : 1;
+    unsigned int b0    = (b > bw) ? b-bw : 1;
     // Inner circle
-    int xi  = a;
+    int xi  = a0;
     int yi  = 0;
     // FIXME: only allow a,b to be in 16 bit range to avoid overflow...
-    unsigned long a2_i = a*a;
-    unsigned long b2_i = b*b;
+    unsigned long a2_i = (a0)*(a0);
+    unsigned long b2_i = (b0)*(b0);
     long pya_i = a2_i;
-    long pxb_i = (2*a-1)*b2_i;
+    long pxb_i = (2*(a0)-1)*b2_i;
     long f_i = 0;
     long fx_i, fxy_i, fy_i;
     int do_yi = 1;
     // Outer circle
-    int xo  = a+bw-1;
+    int xo  = a;
     int yo  = 0;
-    unsigned long a2_o = (a+bw-1)*(a+bw-1);
-    unsigned long b2_o = (b+bw-1)*(b+bw-1);
+    unsigned long a2_o = (a)*(a);
+    unsigned long b2_o = (b)*(b);
     long pya_o = a2_o;
-    long pxb_o = (2*(a+bw-1)-1)*b2_o;
+    long pxb_o = (2*(a)-1)*b2_o;
     long f_o = 0;
     long fx_o, fxy_o, fy_o;
     int do_yo = 1;
@@ -113,10 +115,10 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 	    }
 	}
 	else if (yi == 0) {
-	    if (bw > 1) {
+	    if (bw >= 1) {
 		if (do_yi) {
 		    epx_draw_line_horizontal(pixmap,xc-xo,xc-xi,yc,bf,bc);
-		    epx_draw_line_horizontal(pixmap,xc+xi,xc+xo,yc,bf,bc);
+		    epx_draw_line_horizontal(pixmap,ww+xc+xi,ww+xc+xo,yc,bf,bc);
 		}
 	    }
 	    else if (bw == 1) {
@@ -124,17 +126,22 @@ void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 		epx_pixmap_put_pixel(pixmap,xc+xo,yc,bf,bc);
 	    }
 	    if (do_fill) {
-		if (do_yi)
+		if (do_yi) {
 		    epx_draw_line_horizontal(pixmap,xc-xi+1,xc+xi-1,yc,ff,fill);
+		}
 	    }
 	}
 	else {
-	    if (bw > 1) {
+	    if (bw >= 1) {
 		if (do_yi) {
-		    epx_draw_line_horizontal(pixmap,xc-xo,xc-xi,yc+yi,bf,bc);
-		    epx_draw_line_horizontal(pixmap,xc+xi,xc+xo,yc+yi,bf,bc);
+		    // top left
 		    epx_draw_line_horizontal(pixmap,xc-xo,xc-xi,yc-yi,bf,bc);
-		    epx_draw_line_horizontal(pixmap,xc+xi,xc+xo,yc-yi,bf,bc);
+		    // bot left
+		    epx_draw_line_horizontal(pixmap,xc-xo,xc-xi,hh+yc+yi,bf,bc);
+		    // top right
+		    epx_draw_line_horizontal(pixmap,ww+xc+xi,ww+xc+xo,yc-yi,bf,bc);
+		    // bot right
+		    epx_draw_line_horizontal(pixmap,ww+xc+xi,ww+xc+xo,hh+yc+yi,bf,bc);		    
 		}
 	    }
 	    else if (bw == 1) {
@@ -273,7 +280,7 @@ void epx_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
     epx_pixel_t fc = gc->fill_color;
     epx_flags_t lf = gc->border_style;   // gc->line_style;
     epx_pixel_t lc = gc->border_color; // foreground_color;
-    int xo  = a;
+    int xo = a;
     int yo = 0;
 
     if ((a==0) || (b==0))
@@ -281,7 +288,6 @@ void epx_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
 
     do_fill = (ff != EPX_FILL_STYLE_NONE);
     do_aalias = (ff & EPX_FILL_STYLE_AALIAS);  // FILL
-
 
     while((xo >= 0) && (yo <= (int)b)) {
 	if ((xo == 0) && (yo == 0)) {
