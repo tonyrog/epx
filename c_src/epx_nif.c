@@ -1725,13 +1725,15 @@ static ERL_NIF_TERM make_epx_pixel_format(ErlNifEnv* env, epx_format_t fmt)
 			enif_make_int(env, EPX_PIXEL_BIT_SIZE(fmt)));
 }
 
-
 // Parse color argument
 // Input styles:  16#AARRGGBB  (integer)
 //             :  color-name   (atom)  FIXME (prepare)
 //             :  {A,R,G,B}    (ARGB tuple)
 //             :  {R,G,B}      (RGB triple)
 //
+
+#define clampu8(x) (((x) < 0) ? 0 : ((x)>255) ? 255 : (x))
+
 static int get_color(ErlNifEnv* env, const ERL_NIF_TERM term,
 		     epx_pixel_t* pixel)
 {
@@ -1739,7 +1741,7 @@ static int get_color(ErlNifEnv* env, const ERL_NIF_TERM term,
     char namebuf[256];
     const ERL_NIF_TERM* elem;
     int arity;
-    unsigned int a, r, g, b;
+    int a, r, g, b;
 
     if (enif_get_uint(env, term, &value)) {
 	pixel->px = U32BE(value);
@@ -1755,18 +1757,22 @@ static int get_color(ErlNifEnv* env, const ERL_NIF_TERM term,
 	return 0;
     if (arity == 3) {
 	a = EPX_ALPHA_OPAQUE;
-	if (!enif_get_uint(env, elem[0], &r)) return 0;
-	if (!enif_get_uint(env, elem[1], &g)) return 0;
-	if (!enif_get_uint(env, elem[2], &b)) return 0;
+	if (!enif_get_int(env, elem[0], &r)) return 0;
+	if (!enif_get_int(env, elem[1], &g)) return 0;
+	if (!enif_get_int(env, elem[2], &b)) return 0;
     }
     else if (arity == 4) {
-	if (!enif_get_uint(env, elem[0], &a)) return 0;
-	if (!enif_get_uint(env, elem[1], &r)) return 0;
-	if (!enif_get_uint(env, elem[2], &g)) return 0;
-	if (!enif_get_uint(env, elem[3], &b)) return 0;
+	if (!enif_get_int(env, elem[0], &a)) return 0;
+	if (!enif_get_int(env, elem[1], &r)) return 0;
+	if (!enif_get_int(env, elem[2], &g)) return 0;
+	if (!enif_get_int(env, elem[3], &b)) return 0;
     }
     else
 	return 0;
+    a = clampu8(a);
+    r = clampu8(r);
+    g = clampu8(g);
+    b = clampu8(b);
     *pixel = epx_pixel_argb(a,r,g,b);
     return 1;
 }
