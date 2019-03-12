@@ -1425,25 +1425,25 @@ validate(#widget.hidden,Arg) ->  ?MEMBER(Arg,true,false,none,all);
 validate(#widget.disabled,Arg) -> ?MEMBER(Arg,true,false,none,all,rest);
 validate(#widget.edit,Arg)     ->  ?MEMBER(Arg,true,false);
 validate(#widget.focus,Arg)     ->  ?MEMBER(Arg,true,false);
-validate(#widget.x,Arg) -> is_integer(Arg);
-validate(#widget.y,Arg) -> is_integer(Arg);
-validate(#widget.z,Arg) -> is_integer(Arg);
-validate(#widget.shadow_x,Arg) -> is_integer(Arg);
-validate(#widget.shadow_y,Arg) -> is_integer(Arg);
-validate(#widget.round_w,Arg) -> is_integer(Arg);
-validate(#widget.round_h,Arg) -> is_integer(Arg);
+validate(#widget.x,Arg) -> is_number(Arg);
+validate(#widget.y,Arg) -> is_number(Arg);
+validate(#widget.z,Arg) -> is_number(Arg);
+validate(#widget.shadow_x,Arg) -> is_number(Arg);
+validate(#widget.shadow_y,Arg) -> is_number(Arg);
+validate(#widget.round_w,Arg) -> is_number(Arg);
+validate(#widget.round_h,Arg) -> is_number(Arg);
 validate(#widget.children_first,Arg) -> ?MEMBER(Arg,true,false);
 validate(#widget.last,Arg) -> ?MEMBER(Arg,true,false);
 validate(#widget.relative,Arg) ->  ?MEMBER(Arg,true,false);
 validate(#widget.manual,Arg) ->  ?MEMBER(Arg,true,false);
-validate(#widget.width,Arg) -> is_integer(Arg) andalso (Arg >= 0);
-validate(#widget.height,Arg) -> is_integer(Arg) andalso (Arg >= 0);
+validate(#widget.width,Arg) -> is_number(Arg) andalso (Arg >= 0);
+validate(#widget.height,Arg) -> is_number(Arg) andalso (Arg >= 0);
 validate(#widget.max_length,Arg) -> is_integer(Arg) andalso (Arg >= 0);
 validate(#widget.text,Arg) when is_list(Arg) -> true;
 validate(#widget.text,Arg) when is_atom(Arg) -> {true,atom_to_list(Arg)};
 validate(#widget.tabs,Arg) -> is_list(Arg);
 validate(#widget.items,Arg) -> is_list(Arg);
-validate(#widget.border,Arg) -> is_integer(Arg);
+validate(#widget.border,Arg) -> is_number(Arg);
 validate(#widget.border_color,Arg) -> validate_color(Arg);
 validate(#widget.orientation,Arg) -> ?MEMBER(Arg,horizontal,vertical);
 validate(#widget.image,Arg) -> validate_image(Arg);
@@ -1850,10 +1850,10 @@ get_coord_xy(W,X0,Y0) ->
 	normal ->
 	    {X0,Y0};
 	active ->
-	    if is_integer(W#widget.shadow_x),
-	       is_integer(W#widget.shadow_y) ->
-		    {X0+(W#widget.shadow_x bsr 1),
-		     Y0+(W#widget.shadow_y bsr 1)};
+	    if is_number(W#widget.shadow_x),
+	       is_number(W#widget.shadow_y) ->
+		    {X0+(W#widget.shadow_x*2),
+		     Y0+(W#widget.shadow_y*2)};
 	       true ->
 		    {X0, Y0}
 	    end;
@@ -2041,8 +2041,8 @@ draw_background(Win, X, Y, Width, Height,
        true ->
 	    #widget {color = Color, image = Image, animation = Anim,
 		     frame = Frame } = W,
-	    if is_integer(W#widget.shadow_x),
-	       is_integer(W#widget.shadow_y) ->
+	    if is_number(W#widget.shadow_x),
+	       is_number(W#widget.shadow_y) ->
 		    State = if W#widget.type =:= menu -> normal; 
 			       true -> W#widget.state end,
 		    Xs = W#widget.shadow_x,
@@ -2358,10 +2358,12 @@ user(undefined,_Type,_Event,_Widget,_Window,_XY) ->
 parse_color(Color) when is_integer(Color) ->
     Color band 16#ffffffff;
 parse_color({R,G,B}) when is_integer(R), is_integer(G), is_integer(B) ->
+    %% fixme clamp R,G,B instead of band?
     (16#ff bsl 24) bor ((R band 16#ff) bsl 16)
 	bor ((G band 16#ff) bsl 8) bor (B band 16#ff);
 parse_color({A,R,G,B}) when is_integer(A),is_integer(R),
 			    is_integer(G), is_integer(B) ->
+    %% fixme clamp A,R,G,B instead of band?
     ((A band 16#ff) bsl 24) bor ((R band 16#ff) bsl 16)
 	bor ((G band 16#ff) bsl 8) bor (B band 16#ff);
 parse_color(Name) when is_list(Name); is_atom(Name) ->
@@ -2387,8 +2389,8 @@ set_color(W, Color0) ->
     State = if W#widget.type =:= menu -> normal; true -> W#widget.state end,
     Color = case State of 
 		active ->
-		    if is_integer(W#widget.shadow_x),
-		       is_integer(W#widget.shadow_y) ->
+		    if is_number(W#widget.shadow_x),
+		       is_number(W#widget.shadow_y) ->
 			    if is_integer(W#widget.active_color) ->
 				    W#widget.active_color;
 			       true ->
