@@ -3532,9 +3532,9 @@ static ERL_NIF_TERM pixmap_draw_roundrect(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_dim(env, argv[5], &height))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[6], &rw))
+    if (!get_dim(env, argv[6], &rw))
 	return enif_make_badarg(env);
-    if (!enif_get_uint(env, argv[7], &rh))
+    if (!get_dim(env, argv[7], &rh))
 	return enif_make_badarg(env);
     epx_pixmap_draw_roundrect(pixmap, gc, x, y, width, height, rw, rh);
     return ATOM(ok);
