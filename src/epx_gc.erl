@@ -72,6 +72,15 @@
 	 get_font/1,              get_font/0
 	]).
 
+-ifdef(OTP_RELEASE). %% this implies 21 or higher
+-define(EXCEPTION(Class, Reason, Stacktrace), Class:Reason:Stacktrace).
+-define(GET_STACK(Stacktrace), Stacktrace).
+-else.
+-define(EXCEPTION(Class, Reason, _), Class:Reason).
+-define(GET_STACK(_), erlang:get_stacktrace()).
+-endif.
+
+
 -define(CURRENT, '_EPX_GC_CURRENT').
 -define(STACK,   '_EPX_GC_STACK').
 
@@ -88,11 +97,11 @@ draw(Fun) ->
     try Fun() of
 	Res -> Res
     catch
-	error:Reason ->
-	    io:format("draw: crashed, ~p\n", [erlang:get_stacktrace()]),
+	?EXCEPTION(error,Reason,Trace) ->
+	    io:format("draw: crashed, ~p\n", [?GET_STACK(Trace)]),
 	    {error,Reason};
-	exit:Reason ->
-	    io:format("draw: exit, reason = ~p\n", [erlang:get_stacktrace()]),
+	?EXCEPTION(exit,Reason,Trace) ->
+	    io:format("draw: exit, reason = ~p\n", [?GET_STACK(Trace)]),
 	    {error,Reason};
 	thrown:Value ->
 	    Value
@@ -161,7 +170,7 @@ set_border_color(Color) -> set_border_color(current(),Color).
 set_border_color(Gc,Color) -> set_item(Gc, border_color, Color).
 
 set_border_width(Width) -> set_border_width(current(), Width).
-set_border_width(Gc,Width) when is_integer(Width), Width >= 0  ->
+set_border_width(Gc,Width) when is_number(Width), Width >= 0  ->
     set_item(Gc, border_width, Width).
 
 set_border_join_style(Style) -> set_border_join_style(current(),Style).
@@ -180,7 +189,7 @@ set_line_style(Style) ->  set_line_style(current(), Style).
 set_line_style(Gc,Style) -> set_item(Gc, line_style, Style).
 
 set_line_width(Width) -> set_line_width(current(), Width).
-set_line_width(Gc,Width) when is_integer(Width), Width >= 0 ->
+set_line_width(Gc,Width) when is_number(Width), Width >= 0 ->
     set_item(Gc, line_width, Width).
 
 set_line_join_style(Style) -> set_line_join_style(current(),Style).
