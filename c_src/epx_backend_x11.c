@@ -699,13 +699,44 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     if ((xwin = (X11Window*) malloc(sizeof(X11Window))) == NULL)
 	return -1;
     memset(xwin, 0, sizeof(X11Window));
-
+	
+    attr.event_mask =
+	  KeyPressMask
+	| KeyReleaseMask
+	| ButtonPressMask
+	| ButtonReleaseMask
+	| EnterWindowMask
+	| LeaveWindowMask
+	| PointerMotionMask
+	// | PointerMotionHintMask | Button1MotionMask
+	// | Button2MotionMask | Button3MotionMaskCWEventMask
+	// | Button4MotionMask | Button5MotionMask
+	// | ButtonMotionMask
+	| KeymapStateMask
+	| VisibilityChangeMask
+	| StructureNotifyMask
+	// | ResizeRedirectMask
+	| SubstructureNotifyMask
+	| SubstructureRedirectMask
+	| FocusChangeMask
+	| PropertyChangeMask
+	| ColormapChangeMask
+	| OwnerGrabButtonMask
+	| ExposureMask
+	;
     attr.backing_store = Always;        /* auto expose */
     attr.save_under = True;		/* popups ... */
     attr.background_pixel = be->white_pixel;
     attr.border_pixel = be->black_pixel;
     attr.override_redirect = False;
-    valuemask = CWBackPixel | CWBorderPixel | CWSaveUnder | CWOverrideRedirect;
+
+    valuemask =
+	CWBackPixel |
+	CWBorderPixel |
+	CWSaveUnder | 
+	CWOverrideRedirect |
+	CWEventMask;
+
     if (be->use_exposure)
 	valuemask |= CWBackingStore;
 
@@ -726,7 +757,7 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 			    ewin->area.xy.y,	/* y */
 			    ewin->area.wh.width,	/* width */
 			    ewin->area.wh.height,	/* height */
-			    0,		/* border */
+			    2,		/* border */
 			    vinfo->depth,	/* depth */
 			    InputOutput,	/* class */
 			    vinfo->visual,	/* Visual */
@@ -752,7 +783,7 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 			    ewin->area.xy.y,
 			    ewin->area.wh.width,
 			    ewin->area.wh.height,
-			    0,
+			    2,
 			    CopyFromParent,
 			    InputOutput,
 			    be->visual,
@@ -781,7 +812,7 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	XSetForeground(be->display, xwin->gc, be->black_pixel);
 	// values.clip_mask = None;
 	// XChangeGC(be->display, xwin->gc, GCClipMask, &values);
-
+#if 0
 	XSelectInput(be->display, win,
 		     KeyPressMask
 		     | KeyReleaseMask
@@ -797,7 +828,7 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 		     | KeymapStateMask
 		     | VisibilityChangeMask
 		     | StructureNotifyMask
-		     | ResizeRedirectMask
+		     // | ResizeRedirectMask
 		     | SubstructureNotifyMask
 		     | SubstructureRedirectMask
 		     | FocusChangeMask
@@ -806,7 +837,7 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 		     | OwnerGrabButtonMask
 		     | ExposureMask
 	    );
-
+#endif
 	init_off_screen(xwin);
 	create_off_screen(be, xwin);
 	
@@ -1029,9 +1060,12 @@ next:
 	if ((w = find_event_window(b, ev.xexpose.window)) != NULL) {
 	    X11Window* win  = (X11Window*) w->opaque;
 	    epx_rect_t dirty;
-	    epx_rect_set(&dirty,ev.xexpose.x, ev.xexpose.y,
+	    
+	    epx_rect_set(&dirty,
+			 ev.xexpose.x, ev.xexpose.y,
 			 ev.xexpose.width, ev.xexpose.height);
 	    epx_rect_union(&win->dirty, &dirty, &win->dirty);
+
 	    if (ev.xexpose.count > 0)
 		break;
 	    if (b->use_off_screen && win->pm && !b->use_exposure) {
@@ -1074,7 +1108,7 @@ next:
 	EPX_DBGFMT("Event: ReparentNotify");
 	break;
     case ConfigureRequest:
-	EPX_DBGFMT("Event: GravityRequest");
+	EPX_DBGFMT("Event: ConfigureRequest");
 	break;
     case GravityNotify:
 	EPX_DBGFMT("Event: GravityNotify");
@@ -1602,7 +1636,7 @@ int x11_win_adjust(epx_window_t *win, epx_dict_t*param)
 	XConfigureWindow(b->display, w->window, mask, &value);
     }
 
-    XFlush(b->display);
+    // XFlush(b->display);
 
     if (epx_dict_lookup_boolean(param, "show", &bool_val) >= 0) {
 	EPX_DBGFMT("x11: show=%d", bool_val);
