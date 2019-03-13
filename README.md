@@ -21,9 +21,9 @@ Now you can read the pixels:
 ## x11 backend
 
     x11_display             string
-    use_opengl              int            0|1    (0)
-    use_off_screen          int            0|1    (1)
-    use_expsure             int            0|1    (0)
+    use_opengl              bool|int       0|1    (0)
+    use_off_screen          bool|int       0|1    (1)
+    use_expsure             bool|int       0|1    (0)
     
 ## x11 window
 
@@ -48,15 +48,15 @@ Now you can read the pixels:
 
     width                   int
     height                  int
-    show                    int            0|1
-    select                  int            0|1
+    show                    bool|int       0|1
+    select                  bool|int       0|1
 
 ## fb backend
 
-    framebuffer_device      string         (/dev/fb0)
-    direct_pixmap_draw	    int		   0|1
-    double_buffer	    int		   0|1
-    lcd_pi32		    int		   0|1
+    framebuffer_device      string    (/dev/fb0)
+    direct_pixmap_draw	    bool|int   0|1  (0)
+    double_buffer	        bool|int   0|1  (1)
+    lcd_pi32		        bool|int   0|1  (0)
     input_mouse_device      string
     input_keyboard_device   string
     input_absolute_device   string
@@ -64,21 +64,21 @@ Now you can read the pixels:
     
     width 	    	    int
     virt_width		    int
-    height		    int
+    height		        int
     virt_height		    int
     pixel_format	    string
     pixel_type		    int
     pixclock		    int
-    xoffset		    int
-    yoffset		    int
+    xoffset		        int
+    yoffset		        int
     left_margin		    int
-    right_margin            int
-    upper_margin            int    
+    right_margin        int
+    upper_margin        int
     lower_margin	    int
     hsync_len		    int
     vsync_len		    int
-    sync		    uint
-    vmode		    uint
+    sync		        uint
+    vmode		        uint
     
 # epx on frame buffer device (linux)
 
