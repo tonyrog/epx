@@ -1106,7 +1106,7 @@ epx_backend_t* cocoa_init(epx_dict_t* param)
     be->b.nformats = 0;
     be->b.event = EPX_INVALID_HANDLE;
 
-    if (epx_dict_lookup_integer(param, "use_opengl", &int_param) != -1)
+    if (epx_dict_lookup_boolean(param, "use_opengl", &int_param) != -1)
 	be->b.use_opengl = int_param;
 #ifdef HAVE_OPENGL
     be->b.opengl = 1;

@@ -70,7 +70,7 @@ typedef struct {
     int cbuf;                         /* Current buffer displayed */
     int lcd_pi32;                     /* poll lcd_pi32 keys */
     epx_pixmap_t screen[2];           /* The screen/off-screen as a pixmap */
-    char direct_pixmap_draw;   /* Shall we map fb directly into pixmap? */
+    int direct_pixmap_draw;   /* Shall we map fb directly into pixmap? */
 
     unsigned char *org_pixmap_data; /* Place holder for pixmap->data if direct draw */
 
@@ -689,16 +689,16 @@ epx_backend_t* fb_init(epx_dict_t* param)
 
     /* Check if we should draw directly in pixmap */
     be->direct_pixmap_draw = 0;
-    if (epx_dict_lookup_integer(param, "direct_pixmap_draw", &int_param) != -1)
+    if (epx_dict_lookup_boolean(param, "direct_pixmap_draw", &int_param) != -1)
       be->direct_pixmap_draw = int_param;
 
     be->cbuf = 0;
     be->dbuf = 1;
-    if (epx_dict_lookup_integer(param, "double_buffer", &int_param) != -1)
+    if (epx_dict_lookup_boolean(param, "double_buffer", &int_param) != -1)
 	be->dbuf = int_param;
 
     be->lcd_pi32 = 0;
-    if (epx_dict_lookup_integer(param, "lcd_pi32", &int_param) != -1)
+    if (epx_dict_lookup_boolean(param, "lcd_pi32", &int_param) != -1)
 	be->lcd_pi32 = int_param;
 
     return (epx_backend_t*) &(be->b);
