@@ -674,7 +674,7 @@ static int x11_win_swap(epx_backend_t* backend, epx_window_t* ewin)
 #endif
     }
     else if (w && w->pm && b->use_off_screen) {
-	// printf("win: w=%d,h=%d\r\n", w->width, w->height);
+	// printf("XCopyArea: w=%d,h=%d\r\n", w->width, w->height);
 	XCopyArea(b->display, w->pm, w->window, w->gc,
 		  0, 0, w->width, w->height, 0, 0);
 	XSync(b->display, False);
@@ -737,7 +737,7 @@ static int x11_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	CWOverrideRedirect |
 	CWEventMask;
 
-    if (be->use_exposure)
+    if (!be->use_exposure)
 	valuemask |= CWBackingStore;
 
     if (be->b.opengl && be->b.use_opengl) {
@@ -1508,7 +1508,7 @@ int x11_adjust(epx_backend_t* backend, epx_dict_t* param)
     X11Backend* b = (X11Backend*) backend;    
     int int_param;
 
-    if (epx_dict_lookup_integer(param, "use_opengl", &int_param) != -1) {
+    if (epx_dict_lookup_boolean(param, "use_opengl", &int_param) != -1) {
 	b->b.use_opengl = int_param;
 #ifdef HAVE_OPENGL
 	if ((b->b.use_opengl = int_param) && (b->fbconfigs == NULL)) {
@@ -1533,10 +1533,10 @@ int x11_adjust(epx_backend_t* backend, epx_dict_t* param)
 #endif
     }
 
-    if (epx_dict_lookup_integer(param, "use_off_screen", &int_param) != -1) {
+    if (epx_dict_lookup_boolean(param, "use_off_screen", &int_param) != -1) {
 	b->use_off_screen = int_param;
     }
-    if (epx_dict_lookup_integer(param, "use_exposure", &int_param) != -1) {
+    if (epx_dict_lookup_boolean(param, "use_exposure", &int_param) != -1) {
 	b->use_exposure = int_param;
     }
     return 1;
