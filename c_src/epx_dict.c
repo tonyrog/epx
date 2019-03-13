@@ -540,10 +540,15 @@ int epx_dict_lookup_integer(epx_dict_t* dict, char* key, int* value)
     edata_set_string(&k, key);
     if ((ix = epx_dict_lookup_ix(dict, &k)) < 0)
 	return -1;
-    if (dict->entry[ix]->data.type != EPX_DICT_INTEGER)
-	return -1;
-    *value = dict->entry[ix]->data.u.v_integer;
-    return 0;
+    else if (dict->entry[ix]->data.type == EPX_DICT_INTEGER) {
+	*value = dict->entry[ix]->data.u.v_integer;
+	return 0;
+    }
+    else if (dict->entry[ix]->data.type == EPX_DICT_BOOLEAN) {
+	*value = dict->entry[ix]->data.u.v_boolean;
+	return 0;
+    }
+    return -1;
 }
 
 
