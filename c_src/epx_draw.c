@@ -425,7 +425,6 @@ static void draw_bary_triangle_0(epx_pixmap_t* px,
     int c;
     epx_flags_t flags = gc->fill_style;
     epx_pixel_t color = gc->fill_color;
-    
 
     // clip triangle
     if (xl < (c=epx_rect_left(&px->clip))) xl = c;
@@ -502,7 +501,7 @@ static void draw_bary_triangles_0(epx_pixmap_t* px, epx_gc_t* gc,
     int c;
     int i, j;
     epx_flags_t flags = gc->fill_style;
-    epx_pixel_t color = gc->fill_color;    
+    epx_pixel_t color = gc->fill_color;
 
     // clip triangle
     if (xl < (c=epx_rect_left(&px->clip))) xl = c;
@@ -529,8 +528,8 @@ static void draw_bary_triangles_0(epx_pixmap_t* px, epx_gc_t* gc,
     }
     
     for (ypos = yu; ypos <= yd; ypos++) {
-	int sx[n];
-	int tx[n];
+	int sx[nt];
+	int tx[nt];
 	int xpos = xl;	
 
 	for (j = 0; j <(int)nt; j++) {
@@ -561,7 +560,7 @@ static void draw_bary_triangles_0(epx_pixmap_t* px, epx_gc_t* gc,
 	    }
 	    xpos++;
 	}
-	for (j = 1; j < (int)nt; j++) {
+	for (j = 0; j < (int)nt; j++) {
 	    s[j] -= v2x[j];
 	    t[j] += v1x[j];
 	}
