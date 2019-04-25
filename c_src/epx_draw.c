@@ -316,3 +316,360 @@ void epx_pixmap_draw_triangle(epx_pixmap_t* pixmap, epx_gc_t* gc,
     }
 }
 
+static inline int min3(int a, int b, int c)
+{
+    int t = (a<b) ? a : b;
+    return (t<c) ? t : c;
+}
+
+static inline int minv(int* vec, size_t n)
+{
+    if (n>0) {
+	int* end = vec+n;
+	int m = *vec++;
+	while(vec < end) {
+	    int e = *vec++;
+	    m = (e < m) ? e : m;
+	}
+	return m;
+    }
+    return 0;
+}
+
+static inline int max3(int a, int b, int c)
+{
+    int t = (a>b) ? a : b;
+    return (t>c) ? t : c;
+}
+
+static inline int maxv(int* vec, size_t n)
+{
+    if (n>0) {
+	int* end = vec+n;
+	int m = *vec++;
+	while(vec < end) {
+	    int e = *vec++;
+	    m = (e > m) ? e : m;
+	}
+	return m;
+    }
+    return 0;    
+}
+
+static inline int cross(int x0,int y0, int x1, int y1)
+{
+    return x0*y1 - y0*x1;
+}
+
+
+
+static void draw_hline(epx_pixmap_t* pixmap, int x1, int x2, int y,
+		       epx_flags_t flags, epx_pixel_t fg)
+{
+    uint8_t* ptr;
+
+    ptr = EPX_PIXEL_ADDR(pixmap,x1,y);
+    if (((flags&EPX_FLAG_BLEND)==0) || (fg.a == EPX_ALPHA_OPAQUE))
+	epx_fill_row(ptr,pixmap->pixel_format,fg,(x2-x1)+1);
+    else if (fg.a != EPX_ALPHA_TRANSPARENT)
+	epx_fill_row_blend(ptr,pixmap->pixel_format,fg,(x2-x1)+1);
+}
+
+static void blend_pixel(uint8_t* addr,
+			epx_pixel_unpack_t unpack,
+			epx_pixel_pack_t pack,
+			epx_pixel_t s)
+{
+    epx_pixel_t d = unpack(addr);
+    d = epx_pixel_blend(s.a, s, d);
+    pack(d, addr);
+}
+
+static void plot_pixel(uint8_t* addr,
+		       epx_pixel_unpack_t unpack,
+		       epx_pixel_pack_t pack,
+		       epx_pixel_t s)
+{
+    (void) unpack;
+    pack(s, addr);
+}
+
+static void plot(epx_pixmap_t* px, int x, int y,
+		 epx_flags_t flags, epx_pixel_t fg)
+{
+    uint8_t* ptr = EPX_PIXEL_ADDR(px,x,y);
+    if (((flags & EPX_FLAG_BLEND)==0) || (fg.a == EPX_ALPHA_OPAQUE))
+	plot_pixel(ptr, px->func.unpack, px->func.pack, fg);
+    else if (fg.a != EPX_ALPHA_TRANSPARENT)
+	blend_pixel(ptr, px->func.unpack, px->func.pack, fg);
+}
+
+static void draw_bary_triangle_0(epx_pixmap_t* px,
+				 epx_gc_t* gc,
+				 int x0, int y0,
+				 int x1, int y1,
+				 int x2, int y2)
+{
+    int xl = min3(x0,x1,x2);
+    int xr = max3(x0,x1,x2);
+    int yu = min3(y0,y1,y2);
+    int yd = max3(y0,y1,y2);
+    int v1x = x1-x0;
+    int v1y = y1-y0;
+    int v2x = x2-x0;
+    int v2y = y2-y0;    
+    int qx, qy;
+    int k = cross(v1x, v1y, v2x, v2y);    
+    int y;
+    int s, t;
+    int c;
+    epx_flags_t flags = gc->fill_style;
+    epx_pixel_t color = gc->fill_color;
+    
+
+    // clip triangle
+    if (xl < (c=epx_rect_left(&px->clip))) xl = c;
+    if (xr > (c=epx_rect_right(&px->clip))) xr = c;
+    if (yu < (c=epx_rect_top(&px->clip))) yu = c;
+    if (yd > (c=epx_rect_bottom(&px->clip))) yd = c;
+    
+    qx = xl - x0;
+    qy = yu - y0;
+
+    s = cross(qx,qy, v2x,v2y);
+    t = cross(v1x,v1y, qx,qy);    
+
+    for (y = yu; y <= yd; y++) {
+	int sx = s;
+	int tx = t;
+	int x = xl;
+	int xa, xb;
+	
+	if (k > 0) {
+	    while((x <= xr) && !((sx>=0) && (tx>=0) && (sx+tx<=k))) {
+		sx += v2y;
+		tx -= v1y;
+		x++;
+	    }
+	    xa = x;
+	    while((x <= xr) && ((sx>=0) && (tx>=0) && (sx+tx<=k))) {
+		sx += v2y;
+		tx -= v1y;
+		x++;
+	    }
+	    xb = (x <= xr) ? x-1 : xr;
+	    draw_hline(px, xa, xb, y, flags, color);
+	}
+	else {
+	    while((x <= xr) && !((sx<0) && (tx<0) && (sx+tx>k))) {
+		sx += v2y;
+		tx -= v1y;
+		x++;
+	    }
+	    xa = x;
+	    while((x <= xr) && ((sx<0) && (tx<0) && (sx+tx>k))) {
+		sx += v2y;
+		tx -= v1y;
+		x++;
+	    }
+	    xb = (x <= xr) ? x-1 : xr;
+	    draw_hline(px, xa, xb, y, flags, color);
+	}
+	s = s - v2x;
+	t = t + v1x;
+    }
+}
+
+// draw triangles P0,P1,P2  P3,P4,P5  .... n = number of points
+// n=3*t (must be multiple of 3)
+//
+static void draw_bary_triangles_0(epx_pixmap_t* px, epx_gc_t* gc,
+				  int* x, int* y, size_t n)
+{
+    int xl = minv(x, n);
+    int xr = maxv(x, n);
+    int yu = minv(y, n);
+    int yd = maxv(y, n);
+    size_t nt = n / 3;
+    int v1x[nt];
+    int v1y[nt];
+    int v2x[nt];
+    int v2y[nt];
+    int k[nt];
+    int s[nt];
+    int t[nt];
+    int ypos;
+    int c;
+    int i, j;
+    epx_flags_t flags = gc->fill_style;
+    epx_pixel_t color = gc->fill_color;    
+
+    // clip triangle
+    if (xl < (c=epx_rect_left(&px->clip))) xl = c;
+    if (xr > (c=epx_rect_right(&px->clip))) xr = c;
+    if (yu < (c=epx_rect_top(&px->clip))) yu = c;
+    if (yd > (c=epx_rect_bottom(&px->clip))) yd = c;
+
+    for (j=0, i=0; j<(int)nt; j++, i += 3) {
+	int qx;
+	int qy;
+	
+	v1x[j] = x[i+1] - x[i];
+	v1y[j] = y[i+1] - y[i];
+	v2x[j] = x[i+2] - x[i];
+	v2y[j] = y[i+2] - y[i];
+
+	k[j] = cross(v1x[j], v1y[j], v2x[j], v2y[j]);
+	
+	qx = xl - x[i];
+	qy = yu - y[i];
+
+	s[j] = cross(qx,qy, v2x[j], v2y[j]);
+	t[j] = cross(v1x[j], v1y[j], qx, qy);
+    }
+    
+    for (ypos = yu; ypos <= yd; ypos++) {
+	int sx[n];
+	int tx[n];
+	int xpos = xl;	
+
+	for (j = 0; j <(int)nt; j++) {
+	    sx[j] = s[j];
+	    tx[j] = t[j];
+	}
+
+	while(xpos < xr) {
+	    int in = 0;
+	    
+	    j = 0;
+	    while((j < (int)nt) && !in) {
+		if (k[j] > 0) {
+		    if ((sx[j]>=0) && (tx[j]>=0) && (sx[j]+tx[j]<=k[j]))
+			in = 1;
+		}
+		else {
+		    if ((sx[j]<0) && (tx[j]<0) && (sx[j]+tx[j]>k[j]))
+			in = 1;
+		}
+		j++;
+	    }
+	    if (in)
+		plot(px, xpos, ypos, flags, color);
+	    for (j = 0; j < (int)nt; j++) {
+		sx[j] += v2y[j];
+		tx[j] -= v1y[j];
+	    }
+	    xpos++;
+	}
+	for (j = 1; j < (int)nt; j++) {
+	    s[j] -= v2x[j];
+	    t[j] += v1x[j];
+	}
+    }
+}
+
+void draw_bary_triangles(epx_pixmap_t* px, epx_gc_t* gc,
+			 int* x, int* y, size_t n)
+{
+    if (n == 3) {
+	draw_bary_triangle_0(px, gc, x[0], y[0], x[1], y[1], x[2], y[2]);
+    }
+    else {
+	draw_bary_triangles_0(px, gc, x, y, n);
+    }
+}
+
+
+void draw_bary_poly_0(epx_pixmap_t* px, epx_gc_t* gc,
+		      int* x, int* y, size_t n)
+{
+    int xl = minv(x, n);
+    int xr = maxv(x, n);
+    int yu = minv(y, n);
+    int yd = maxv(y, n);
+    int vx[n];
+    int vy[n];
+    int qx, qy;
+    int ypos;
+    int s[n];
+    int t[n];
+    int k[n];
+    int c;
+    int i;
+    epx_flags_t flags = gc->fill_style;
+    epx_pixel_t color = gc->fill_color;
+    
+    for (i = 1; i <(int)n; i++) {
+	vx[i] = x[i] - x[0];
+	vy[i] = y[i] - y[0];
+    }
+    for (i = 1; i <(int)n-1;  i++) {
+	k[i] = cross(vx[i], vy[i], vx[i+1], vy[i+1]);
+    }
+
+    // clip triangle
+    if (xl < (c=epx_rect_left(&px->clip))) xl = c;
+    if (xr > (c=epx_rect_right(&px->clip))) xr = c;
+    if (yu < (c=epx_rect_top(&px->clip))) yu = c;
+    if (yd > (c=epx_rect_bottom(&px->clip))) yd = c;
+    
+    qx = xl - x[0];
+    qy = yu - y[0];
+
+    for (i = 1; i < (int)n-1; i++) {
+	s[i] = cross(qx, qy, vx[i+1], vy[i+1]);
+	t[i] = cross(vx[i], vy[i], qx, qy);
+    }
+
+    for (ypos = yu; ypos <= yd; ypos++) {
+	int sx[n];
+	int tx[n];
+	int xpos = xl;
+
+	for (i = 0; i < (int)n; i++) {
+	    sx[i] = s[i];
+	    tx[i] = t[i];
+	}
+
+	while(xpos < xr) {
+	    int in = 0;
+	    
+	    i = 1;
+	    while((i < (int)(n-1)) && !in) {
+		if (k[i] > 0) {
+		    if ((sx[i]>=0) && (tx[i]>=0) && (sx[i]+tx[i]<=k[i]))
+			in = 1;
+		}
+		else {
+		    if ((sx[i]<0) && (tx[i]<0) && (sx[i]+tx[i]>k[i]))
+			in = 1;
+		}
+		i++;
+	    }
+
+	    for (i = 1; i < (int)n-1; i++) {
+		sx[i] += vy[i+1];
+		tx[i] -= vy[i];
+	    }
+	    if (in)
+		plot(px, xpos, ypos, flags, color);
+	    xpos++;
+	}
+	for (i = 1; i < (int)n-1; i++) {
+	    s[i] -= vx[i+1];
+	    t[i] += vx[i];
+	}
+    }
+}
+
+void draw_bary_poly(epx_pixmap_t* px, epx_gc_t* gc,
+		    int* x, int* y, size_t n)
+
+{
+    if (n == 3) {
+	draw_bary_triangle_0(px, gc, x[0], y[0], x[1], y[1], x[2], y[2]);
+    }
+    else {
+	draw_bary_poly_0(px, gc, x, y, n);
+    }
+}

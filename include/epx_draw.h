@@ -100,25 +100,14 @@ extern void epx_pixmap_draw_triangle(epx_pixmap_t* pixmap, epx_gc_t* gc,
 				     int x1, int y1,
 				     int x2, int y2);
 
-extern void epx_pixmap_draw_ellipse(epx_pixmap_t* pic, epx_gc_t* gc,
+extern void epx_pixmap_draw_ellipse(epx_pixmap_t* px, epx_gc_t* gc,
 				    int x0, int y0,
 				    unsigned int width, unsigned int height);
 
-// NOT YET - SOON
-#if 0
-extern void epx_pixmap_draw_twin_line(epx_pixmap_t* pixmap, epx_gc_t* gc,
-				      int x0, int y0,
-				      int x1, int y1,
-				      int x2, int y2,
-				      int x3, int y3);
+extern void draw_bary_triangles(epx_pixmap_t* px, epx_gc_t* gc,
+				int* x, int* y, size_t n);
 
-extern void epx_pixmap_tex_line(epx_pixmap_t* pic, epx_gc_t* gc,
-				int x0, int y0,
-				int x1, int y1,
-				epx_pixmap_t* tex,
-				int tx0, int tx1, float ty);
-
-
-#endif
+extern void draw_bary_poly(epx_pixmap_t* px, epx_gc_t* gc,
+			   int* x, int* y, size_t n);
 
 #endif
