@@ -68,7 +68,8 @@
 -export([pixmap_draw_triangles/3]).
 -export([pixmap_draw_triangle/8]).
 -export([pixmap_draw_rectangle/6]).
--export([pixmap_draw_poly/3]).
+-export([pixmap_draw_fan/4]).
+-export([pixmap_draw_strip/3]).
 -export([pixmap_draw_ellipse/6]).
 -export([pixmap_draw_roundrect/8]).
 
@@ -144,7 +145,8 @@
 -export([draw_triangles/2]).
 -export([draw_rectangle/2, draw_rectangle/3,
 	 draw_rectangle/5, draw_rectangle/6]).
--export([draw_poly/2]).
+-export([draw_fan/2, draw_fan/3]).
+-export([draw_strip/2]).
 -export([draw_roundrect/7, draw_roundrect/4, draw_roundrect/5]).
 -export([draw_ellipse/2, draw_ellipse/3, 
 	 draw_ellipse/5, draw_ellipse/6]).
@@ -875,9 +877,14 @@ pixmap_draw_ellipse(_Pixmap, _Gc, _X, _Y, _Width, _Height) ->
 pixmap_draw_roundrect(_Pixmap, _Gc, _X, _Y, _Width, _Height, _Rw, _Rh) ->
     erlang:error(nif_not_loaded).
 
--spec pixmap_draw_poly(Pixmap::epx_pixmap(), Gc::epx_gc(), [{X::coord(),Y::coord()}]) -> void().
+-spec pixmap_draw_fan(Pixmap::epx_pixmap(), Gc::epx_gc(), [{X::coord(),Y::coord()}], Closed::boolean()) -> void().
 			   
-pixmap_draw_poly(_Pixmap, _Gc, _Points) ->
+pixmap_draw_fan(_Pixmap, _Gc, _Points, _Closed) ->
+    erlang:error(nif_not_loaded).
+
+-spec pixmap_draw_strip(Pixmap::epx_pixmap(), Gc::epx_gc(), [{X::coord(),Y::coord()}]) -> void().
+			   
+pixmap_draw_strip(_Pixmap, _Gc, _Points) ->
     erlang:error(nif_not_loaded).
 
 %%
@@ -1311,8 +1318,14 @@ draw_triangle(Pixmap, [{X0,Y0},{X1,Y1},{X2,Y2}|_]) ->
 draw_triangles(Pixmap, Triangles) ->
     pixmap_draw_triangles(Pixmap, epx_gc:current(), Triangles).
 
-draw_poly(Pixmap, Points) ->
-    pixmap_draw_poly(Pixmap, epx_gc:current(), Points).
+draw_fan(Pixmap, Points) ->
+    draw_fan(Pixmap, Points, false).
+
+draw_fan(Pixmap, Points, Closed) ->
+    pixmap_draw_fan(Pixmap, epx_gc:current(), Points, Closed).
+
+draw_strip(Pixmap, Points) ->
+    pixmap_draw_strip(Pixmap, epx_gc:current(), Points).
 
 draw_rectangle(Pixmap, Gc, {X, Y, Width, Height}) ->
     pixmap_draw_rectangle(Pixmap, Gc, X, Y, Width, Height).

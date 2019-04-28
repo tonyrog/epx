@@ -404,6 +404,11 @@ static void plot(epx_pixmap_t* px, int x, int y,
 	blend_pixel(ptr, px->func.unpack, px->func.pack, fg);
 }
 
+// k >= 0
+#define PTINTRI_1(s,t,k) (((s)>=0) && ((t)>=0) && ((s)+(t)<=(k)))
+// k < 0
+#define PTINTRI_2(s,t,k) (((s)<0) && ((t)<0) && ((s)+(t)>(k)))
+
 static void draw_bary_triangle_0(epx_pixmap_t* px,
 				 epx_gc_t* gc,
 				 int x0, int y0,
@@ -444,14 +449,14 @@ static void draw_bary_triangle_0(epx_pixmap_t* px,
 	int x = xl;
 	int xa, xb;
 	
-	if (k > 0) {
-	    while((x <= xr) && !((sx>=0) && (tx>=0) && (sx+tx<=k))) {
+	if (k >= 0) {
+	    while((x <= xr) && !PTINTRI_1(sx,tx,k)) {
 		sx += v2y;
 		tx -= v1y;
 		x++;
 	    }
 	    xa = x;
-	    while((x <= xr) && ((sx>=0) && (tx>=0) && (sx+tx<=k))) {
+	    while((x <= xr) && PTINTRI_1(sx,tx,k)) {
 		sx += v2y;
 		tx -= v1y;
 		x++;
@@ -460,13 +465,13 @@ static void draw_bary_triangle_0(epx_pixmap_t* px,
 	    draw_hline(px, xa, xb, y, flags, color);
 	}
 	else {
-	    while((x <= xr) && !((sx<0) && (tx<0) && (sx+tx>k))) {
+	    while((x <= xr) && !PTINTRI_2(sx,tx,k)) {
 		sx += v2y;
 		tx -= v1y;
 		x++;
 	    }
 	    xa = x;
-	    while((x <= xr) && ((sx<0) && (tx<0) && (sx+tx>k))) {
+	    while((x <= xr) && PTINTRI_2(sx,tx,k)) {
 		sx += v2y;
 		tx -= v1y;
 		x++;
@@ -489,7 +494,7 @@ static void draw_bary_triangles_0(epx_pixmap_t* px, epx_gc_t* gc,
     int xr = maxv(x, n);
     int yu = minv(y, n);
     int yd = maxv(y, n);
-    size_t nt = n / 3;
+    size_t nt = n / 3;     // number of triangles
     int v1x[nt];
     int v1y[nt];
     int v2x[nt];
@@ -510,8 +515,7 @@ static void draw_bary_triangles_0(epx_pixmap_t* px, epx_gc_t* gc,
     if (yd > (c=epx_rect_bottom(&px->clip))) yd = c;
 
     for (j=0, i=0; j<(int)nt; j++, i += 3) {
-	int qx;
-	int qy;
+	int qx, qy;
 	
 	v1x[j] = x[i+1] - x[i];
 	v1y[j] = y[i+1] - y[i];
@@ -539,25 +543,26 @@ static void draw_bary_triangles_0(epx_pixmap_t* px, epx_gc_t* gc,
 
 	while(xpos < xr) {
 	    int in = 0;
-	    
+
 	    j = 0;
 	    while((j < (int)nt) && !in) {
-		if (k[j] > 0) {
-		    if ((sx[j]>=0) && (tx[j]>=0) && (sx[j]+tx[j]<=k[j]))
-			in = 1;
+		if (k[j] >= 0) {
+		    in = PTINTRI_1(sx[j],tx[j],k[j]);
 		}
 		else {
-		    if ((sx[j]<0) && (tx[j]<0) && (sx[j]+tx[j]>k[j]))
-			in = 1;
+		    in = PTINTRI_2(sx[j],tx[j],k[j]);
 		}
+		sx[j] += v2y[j];
+		tx[j] -= v1y[j];		
 		j++;
 	    }
 	    if (in)
 		plot(px, xpos, ypos, flags, color);
-	    for (j = 0; j < (int)nt; j++) {
+	    while(j < (int)nt) {
 		sx[j] += v2y[j];
 		tx[j] -= v1y[j];
-	    }
+		j++;
+	    }	    
 	    xpos++;
 	}
 	for (j = 0; j < (int)nt; j++) {
@@ -578,97 +583,231 @@ void draw_bary_triangles(epx_pixmap_t* px, epx_gc_t* gc,
     }
 }
 
-
-void draw_bary_poly_0(epx_pixmap_t* px, epx_gc_t* gc,
-		      int* x, int* y, size_t n)
+//
+// fan then x[0],y[0] is center point with:
+// x[1],y[1] and x[2],y[2]  is first triangle
+// x[2],y[2] and x[3],y[3]  is next triangle
+// ...
+// x[n-2],y[n-2] and x[n-1],y[n-1] is last triangle
+// closed
+// x[n-1],y[n-1] and x[1],y[1] is the last triangle
+//
+// 
+void draw_bary_fan_0(epx_pixmap_t* px, epx_gc_t* gc,
+		     int* x, int* y, size_t n, int closed)
 {
     int xl = minv(x, n);
     int xr = maxv(x, n);
     int yu = minv(y, n);
     int yd = maxv(y, n);
+    size_t nt = closed ? n-1 : n-2; // number of triangles
     int vx[n];
     int vy[n];
-    int qx, qy;
-    int ypos;
-    int s[n];
-    int t[n];
-    int k[n];
+    int s[nt];
+    int t[nt];
+    int k[nt];
     int c;
     int i;
+    int qx, qy;
+    int ypos;
     epx_flags_t flags = gc->fill_style;
     epx_pixel_t color = gc->fill_color;
-    
-    for (i = 1; i <(int)n; i++) {
-	vx[i] = x[i] - x[0];
-	vy[i] = y[i] - y[0];
-    }
-    for (i = 1; i <(int)n-1;  i++) {
-	k[i] = cross(vx[i], vy[i], vx[i+1], vy[i+1]);
-    }
 
     // clip triangle
-    if (xl < (c=epx_rect_left(&px->clip))) xl = c;
-    if (xr > (c=epx_rect_right(&px->clip))) xr = c;
-    if (yu < (c=epx_rect_top(&px->clip))) yu = c;
+    if (xl < (c=epx_rect_left(&px->clip)))   xl = c;
+    if (xr > (c=epx_rect_right(&px->clip)))  xr = c;
+    if (yu < (c=epx_rect_top(&px->clip)))    yu = c;
     if (yd > (c=epx_rect_bottom(&px->clip))) yd = c;
     
-    qx = xl - x[0];
-    qy = yu - y[0];
+    // V(0) .. V(n-2),  V(n-1) = V(0)
+    for (i = 0; i <(int)n-1; i++) {
+	vx[i] = x[i+1] - x[0];
+	vy[i] = y[i+1] - y[0];
+    }
+    if (closed) {
+	vx[n-1] = vx[0];
+	vy[n-1] = vy[0];
+    }
+    // K(0) = V(0) x V(1), K(1) = V(1) x V(2), ... K(n-3) = V(n-3) x V(n-4)
+    for (i = 0; i < (int)nt;  i++) {
+	k[i] = cross(vx[i], vy[i], vx[i+1], vy[i+1]);
 
-    for (i = 1; i < (int)n-1; i++) {
+	// i hope compile move qx and qy out of the loop
+	qx = xl - x[0];
+	qy = yu - y[0];
+
 	s[i] = cross(qx, qy, vx[i+1], vy[i+1]);
 	t[i] = cross(vx[i], vy[i], qx, qy);
     }
 
     for (ypos = yu; ypos <= yd; ypos++) {
-	int sx[n];
-	int tx[n];
+	int sx[nt];
+	int tx[nt];
 	int xpos = xl;
-
-	for (i = 0; i < (int)n; i++) {
-	    sx[i] = s[i];
-	    tx[i] = t[i];
+	int j;
+	
+	for (j = 0; j <(int)nt; j++) {
+	    sx[j] = s[j];
+	    tx[j] = t[j];
 	}
 
 	while(xpos < xr) {
 	    int in = 0;
-	    
-	    i = 1;
-	    while((i < (int)(n-1)) && !in) {
-		if (k[i] > 0) {
-		    if ((sx[i]>=0) && (tx[i]>=0) && (sx[i]+tx[i]<=k[i]))
-			in = 1;
+
+	    j = 0;
+	    while((j < (int)nt) && !in) {
+		if (k[j] >= 0) {
+		    in = PTINTRI_1(sx[j],tx[j],k[j]);
 		}
 		else {
-		    if ((sx[i]<0) && (tx[i]<0) && (sx[i]+tx[i]>k[i]))
-			in = 1;
+		    in = PTINTRI_2(sx[j],tx[j],k[j]);
 		}
-		i++;
-	    }
-
-	    for (i = 1; i < (int)n-1; i++) {
-		sx[i] += vy[i+1];
-		tx[i] -= vy[i];
+		sx[j] += vy[j+1];
+		tx[j] -= vy[j];
+		j++;
 	    }
 	    if (in)
 		plot(px, xpos, ypos, flags, color);
+	    while(j < (int)nt) {
+		sx[j] += vy[j+1];
+		tx[j] -= vy[j];
+		j++;
+	    }
 	    xpos++;
 	}
-	for (i = 1; i < (int)n-1; i++) {
-	    s[i] -= vx[i+1];
-	    t[i] += vx[i];
+	for (j = 0; j < (int)nt; j++) {
+	    s[j] -= vx[j+1];
+	    t[j] += vx[j];
 	}
     }
 }
 
-void draw_bary_poly(epx_pixmap_t* px, epx_gc_t* gc,
-		    int* x, int* y, size_t n)
+void draw_bary_fan(epx_pixmap_t* px, epx_gc_t* gc,
+		   int* x, int* y, size_t n, int closed)
 
 {
     if (n == 3) {
 	draw_bary_triangle_0(px, gc, x[0], y[0], x[1], y[1], x[2], y[2]);
     }
     else {
-	draw_bary_poly_0(px, gc, x, y, n);
+	draw_bary_fan_0(px, gc, x, y, n, closed);
+    }
+}
+
+
+//
+// strip
+//  P0       P2      P4     ...   P(2i)
+//  |     /  |     / |     /      |
+//  |    /   |    /  |    /       |
+//  |   /    |   /   |   /        |
+//  |  /     |  /    |  /         |
+//  v /      v /     v /          v
+//  P1       P3       P5      ...  P(2i+1)
+//
+//
+//  V(0)   = P(0) - P(1)  = -(P(1) - P(0))
+//  V(1)   = P(2) - P(1)  =
+//  ...
+//  V(i)   = P(i+1) - P(i)
+//
+//  K(0) = -V(0) x V(1)      P0,P1,P2
+//  K(1) = -V(2) x V(3)      P1,P2,P3
+//  K(2) = -V(4) x V(5)      P2,P3,P4
+// 
+void draw_bary_strip_0(epx_pixmap_t* px, epx_gc_t* gc,
+		       int* x, int* y, size_t n)
+{
+    int xl = minv(x, n);
+    int xr = maxv(x, n);
+    int yu = minv(y, n);
+    int yd = maxv(y, n);
+    size_t nt = n-2;
+    int vx[n];
+    int vy[n];
+    int s[nt];
+    int t[nt];
+    int k[nt];
+    int c;
+    int i;
+    int ypos;
+    epx_flags_t flags = gc->fill_style;
+    epx_pixel_t color = gc->fill_color;
+
+    // clip triangle
+    if (xl < (c=epx_rect_left(&px->clip)))   xl = c;
+    if (xr > (c=epx_rect_right(&px->clip)))  xr = c;
+    if (yu < (c=epx_rect_top(&px->clip)))    yu = c;
+    if (yd > (c=epx_rect_bottom(&px->clip))) yd = c;
+
+    for (i = 0; i < (int)n-1; i++) {
+	vx[i] = x[i+1] - x[i];
+	vy[i] = y[i+1] - y[i];
+    }
+
+    for (i = 0; i < (int)nt;  i++) {
+	int qx, qy;
+	    
+	k[i] = cross(-vx[i], -vy[i], vx[i+1], vy[i+1]);
+
+	qx = xl - x[i+1];
+	qy = yu - y[i+1];
+    
+	s[i] = cross(qx, qy, vx[i+1], vy[i+1]);
+	t[i] = cross(-vx[i], -vy[i], qx, qy);
+    }
+
+    for (ypos = yu; ypos <= yd; ypos++) {
+	int sx[nt];
+	int tx[nt];
+	int xpos = xl;
+	int j;
+	
+	for (j = 0; j <(int)nt; j++) {
+	    sx[j] = s[j];
+	    tx[j] = t[j];
+	}
+
+	while(xpos < xr) {
+	    int in = 0;
+
+	    j = 0;
+	    while((j < (int)nt) && !in) {
+		if (k[j] >= 0) {
+		    in = PTINTRI_1(sx[j],tx[j],k[j]);
+		}
+		else {
+		    in = PTINTRI_2(sx[j],tx[j],k[j]);
+		}
+		sx[j] += vy[j+1];
+		tx[j] -= -vy[j];
+		j++;
+	    }
+	    if (in)
+		plot(px, xpos, ypos, flags, color);
+	    while(j < (int)nt) {
+		sx[j] += vy[j+1];
+		tx[j] -= -vy[j];
+		j++;
+	    }
+	    xpos++;
+	}
+	for (j = 0; j < (int)nt; j++) {
+	    s[j] -= vx[j+1];
+	    t[j] += -vx[j];
+	}
+    }    
+    
+}
+
+void draw_bary_strip(epx_pixmap_t* px, epx_gc_t* gc,
+		     int* x, int* y, size_t n)
+
+{
+    if (n == 3) {
+	draw_bary_triangle_0(px, gc, x[0], y[0], x[1], y[1], x[2], y[2]);
+    }
+    else {
+	draw_bary_strip_0(px, gc, x, y, n);
     }
 }

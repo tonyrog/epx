@@ -111,8 +111,10 @@ static ERL_NIF_TERM pixmap_draw_triangles(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_draw_rectangle(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM pixmap_draw_poly(ErlNifEnv* env, int argc,
-				     const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM pixmap_draw_fan(ErlNifEnv* env, int argc,
+				    const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM pixmap_draw_strip(ErlNifEnv* env, int argc,
+				      const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc,
 					const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM pixmap_draw_roundrect(ErlNifEnv* env, int argc,
@@ -392,7 +394,8 @@ ErlNifFunc epx_funcs[] =
     NIF_FUNC("pixmap_draw_triangle", 8, pixmap_draw_triangle),
     NIF_FUNC("pixmap_draw_triangles", 3, pixmap_draw_triangles),    
     NIF_FUNC("pixmap_draw_rectangle", 6, pixmap_draw_rectangle),
-    NIF_FUNC("pixmap_draw_poly", 3, pixmap_draw_poly),
+    NIF_FUNC("pixmap_draw_fan", 4, pixmap_draw_fan),
+    NIF_FUNC("pixmap_draw_strip", 3, pixmap_draw_strip),
     NIF_FUNC("pixmap_draw_ellipse", 6, pixmap_draw_ellipse),
     NIF_FUNC("pixmap_draw_roundrect", 8, pixmap_draw_roundrect),
 
@@ -3575,8 +3578,8 @@ static ERL_NIF_TERM pixmap_draw_rectangle(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-static ERL_NIF_TERM pixmap_draw_poly(ErlNifEnv* env, int argc,
-				     const ERL_NIF_TERM argv[])
+static ERL_NIF_TERM pixmap_draw_fan(ErlNifEnv* env, int argc,
+				    const ERL_NIF_TERM argv[])
 {
     (void) argc;
     epx_pixmap_t* px;
@@ -3584,13 +3587,16 @@ static ERL_NIF_TERM pixmap_draw_poly(ErlNifEnv* env, int argc,
     size_t npoints;
     ERL_NIF_TERM list;
     ERL_NIF_TERM head, tail;
+    int closed;
     
     if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &gc_res, (void**) &gc))
 	return enif_make_badarg(env);
     if (!enif_is_list(env, argv[2]))
-	return enif_make_badarg(env);	
+	return enif_make_badarg(env);
+    if (!get_boolean(env, argv[3], &closed))
+	return enif_make_badarg(env);
 
     npoints = 0;
     list = argv[2];
@@ -3626,7 +3632,64 @@ static ERL_NIF_TERM pixmap_draw_poly(ErlNifEnv* env, int argc,
 	    i++;
 	    list = tail;
 	}
-	draw_bary_poly(px, gc, xs, ys, npoints);
+	draw_bary_fan(px, gc, xs, ys, npoints, closed);
+    }
+    return ATOM(ok);    
+}
+
+
+static ERL_NIF_TERM pixmap_draw_strip(ErlNifEnv* env, int argc,
+				      const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_pixmap_t* px;
+    epx_gc_t* gc;
+    size_t npoints;
+    ERL_NIF_TERM list;
+    ERL_NIF_TERM head, tail;
+    
+    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+	return enif_make_badarg(env);
+    if (!enif_is_list(env, argv[2]))
+	return enif_make_badarg(env);
+
+    npoints = 0;
+    list = argv[2];
+    // poly is given as a list of points
+    while(enif_get_list_cell(env, list, &head, &tail)) {
+	const ERL_NIF_TERM* pt;
+	int arity;
+
+	if (!enif_get_tuple(env, head, &arity, &pt) || (arity != 2))
+	    return enif_make_badarg(env);
+	npoints += 1;
+	list = tail;
+    }
+    if (!enif_is_empty_list(env, list))
+	return enif_make_badarg(env);
+
+    {
+	int xs[npoints];
+	int ys[npoints];
+	int i;
+
+	list = argv[2];
+	i = 0;
+	while(enif_get_list_cell(env, list, &head, &tail)) {
+	    const ERL_NIF_TERM* pt;
+	    int arity;
+
+	    enif_get_tuple(env, head, &arity, &pt);
+	    if (!get_coord(env, pt[0], &xs[i]))
+		return enif_make_badarg(env);
+	    if (!get_coord(env, pt[1], &ys[i]))
+		return enif_make_badarg(env);
+	    i++;
+	    list = tail;
+	}
+	draw_bary_strip(px, gc, xs, ys, npoints);
     }
     return ATOM(ok);    
 }

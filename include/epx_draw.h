@@ -107,7 +107,10 @@ extern void epx_pixmap_draw_ellipse(epx_pixmap_t* px, epx_gc_t* gc,
 extern void draw_bary_triangles(epx_pixmap_t* px, epx_gc_t* gc,
 				int* x, int* y, size_t n);
 
-extern void draw_bary_poly(epx_pixmap_t* px, epx_gc_t* gc,
-			   int* x, int* y, size_t n);
+extern void draw_bary_fan(epx_pixmap_t* px, epx_gc_t* gc,
+			  int* x, int* y, size_t n, int closed);
+
+extern void draw_bary_strip(epx_pixmap_t* px, epx_gc_t* gc,
+			    int* x, int* y, size_t n);
 
 #endif
