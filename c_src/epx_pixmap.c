@@ -1779,9 +1779,10 @@ void epx_pixmap_put_pixels(epx_pixmap_t* dst, int x, int y,
     // Clip destination and check if we have any thing to copy
     if (!epx_rect_intersect(&dr0, &dst->clip, &dr))
 	return;
+
     sr.wh = dr.wh;
-    sr.xy.x = (epx_rect_left(&dr0) - epx_rect_left(&dr));
-    sr.xy.y = (epx_rect_top(&dr0) - epx_rect_top(&dr));
+    sr.xy.x = (epx_rect_left(&dr) - epx_rect_left(&dr0));
+    sr.xy.y = (epx_rect_top(&dr) - epx_rect_top(&dr0));
 
     src_ptr = ((uint8_t*)data) +
 	(epx_rect_top(&sr)*src_wb) + (epx_rect_left(&sr)*src_psz);
