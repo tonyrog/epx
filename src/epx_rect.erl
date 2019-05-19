@@ -26,6 +26,7 @@
 -export([intersect/2, intersect/1]).
 -export([is_subrect/2]).
 -export([add_point/2]).
+-export([contains/2]).
 
 %% union of two rectangles
 union(undefined, R) -> R;
@@ -71,3 +72,12 @@ is_subrect({Xa,Ya,Wa,Ha}, {Xb,Yb,Wb,Hb}) ->
 %% Add Point P to rectangle A = union(A, {Px,Py,1,1})
 add_point(undefined, {Xp,Yp}) -> {Xp,Yp,1,1};
 add_point(A, {Xp,Yp}) -> union(A, {Xp,Yp,1,1}).
+
+%% return true if Point is inside the Rect, false otherwise
+-spec contains(Rect::undefined|epx:epx_rect(), 
+	       Point::epx:epx_point()) -> boolean.
+
+contains({X,Y,W,H}, {Xp,Yp}) ->
+    (Xp >= X) andalso (Xp < X+W) andalso (Yp >= Y) andalso (Yp < Y+H);
+contains(undefined, {_Xp,_Yp}) ->
+    false.
