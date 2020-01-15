@@ -103,6 +103,7 @@ struct CocoaBackend;
 - (void)rightMouseDragged:(NSEvent*) theEvent;
 - (void)keyDown:(NSEvent*) theEvent;
 - (void)keyUp:(NSEvent*) theEvent;
+- (void)scrollWheel:(NSEvent*) theEvent;
 - (void)mouseEntered:(NSEvent*) theEvent;
 - (void)mouseExited:(NSEvent*) theEvent;
 - (void)flagsChanged:(NSEvent*) theEvent;
@@ -431,6 +432,11 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
     [self key_event: theEvent andType:EPX_EVENT_KEY_RELEASE];
 }
 
+- (void)scrollWheel:(NSEvent*) theEvent
+{
+    [self pointer_event: theEvent andType:EPX_EVENT_BUTTON_PRESS];
+}
+
 - (void)mouseEntered:(NSEvent*) theEvent
 {
     [self crossing_event: theEvent andType:EPX_EVENT_ENTER];
@@ -548,6 +554,20 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 	     (nstype == NSEventTypeRightMouseUp) ||
 	     (nstype == NSEventTypeRightMouseDragged))
 	e.pointer.button |= EPX_BUTTON_RIGHT;
+    else if (nstype == NSScrollWheel) {
+	float dx = [theEvent deltaX];
+	float dy = [theEvent deltaY];
+	if (dx > 0)
+	    e.pointer.button |= EPX_WHEEL_RIGHT;
+	if (dx < 0)
+	    e.pointer.button |= EPX_WHEEL_LEFT;
+	if (dy > 0)
+	    e.pointer.button |= EPX_WHEEL_UP;
+	if (dy < 0)
+	    e.pointer.button |= EPX_WHEEL_DOWN;
+	if (e.pointer.button == 0)
+	    return;
+    }
     bounds = appwin.contentLayoutRect;
 
     e.pointer.x = where.x - bounds.origin.x;
