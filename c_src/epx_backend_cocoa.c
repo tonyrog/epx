@@ -409,7 +409,7 @@ static OSStatus cocoa_gl_cleanup(CocoaWindow* cwin)
 
 - (void)rightMouseDown:(NSEvent*) theEvent
 {
-    [self pointer_event: theEvent andType:EPX_EVENT_POINTER_MOTION];
+    [self pointer_event: theEvent andType:EPX_EVENT_BUTTON_PRESS];
 }
 
 - (void)rightMouseUp:(NSEvent*) theEvent
