@@ -489,7 +489,7 @@ pixmap_fill(_Dst, _Color, _Flags) ->
 		       Color::epx_color()) -> void().
 
 pixmap_fill_area(Dst, X, Y, Width, Height, Color) ->
-    pixmap_fill_area(Dst, X, Y, Width, Height, [], Color).
+    pixmap_fill_area(Dst, X, Y, Width, Height, Color, []).
 
 %% @doc
 %%   Fill and blend the rectangle Dst with Color
