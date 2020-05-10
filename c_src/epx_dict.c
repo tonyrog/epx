@@ -551,7 +551,6 @@ int epx_dict_lookup_integer(epx_dict_t* dict, char* key, int* value)
     return -1;
 }
 
-
 int epx_dict_lookup_float(epx_dict_t* dict, char* key, double* value)
 {
     epx_dict_data_t k;    
@@ -625,7 +624,6 @@ int epx_dict_set_none(epx_dict_t* dict, char* key)
     edata_set_none(&d);
     return epx_dict_set_ent(dict, &k, &d);
 }
-
 
 int epx_dict_set_float(epx_dict_t* dict, char* key, double value)
 {

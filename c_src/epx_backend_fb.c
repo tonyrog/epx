@@ -129,6 +129,7 @@ static int fb_evt_read(epx_backend_t*, epx_event_t*);
 static int fb_adjust(epx_backend_t *backend, epx_dict_t* param);
 static int fb_win_adjust(epx_window_t *win, epx_dict_t* param);
 static int fb_info(epx_backend_t *backend, epx_dict_t* param);
+static int fb_win_info(epx_window_t *win, epx_dict_t* param);
 
 
 static epx_callbacks_t fb_callbacks =
@@ -148,7 +149,8 @@ static epx_callbacks_t fb_callbacks =
     .begin      = fb_begin,
     .end        = fb_end,
     .win_adjust = fb_win_adjust,
-    .info       = fb_info
+    .info       = fb_info,
+    .win_info   = fb_win_info,
 };
 #ifdef HAVE_INPUT_EVENT
 /* Array indexed by struct input_event.type */
@@ -746,6 +748,13 @@ static int fb_adjust(epx_backend_t *backend, epx_dict_t* param)
 static int fb_info(epx_backend_t *backend, epx_dict_t* param)
 {
     (void) backend;
+    (void) param;
+    return 0;
+}
+
+static int fb_win_info(epx_window_t *win, epx_dict_t* param)
+{
+    (void) win;
     (void) param;
     return 0;
 }

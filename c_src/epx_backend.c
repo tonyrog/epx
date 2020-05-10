@@ -212,3 +212,10 @@ int epx_window_adjust(epx_window_t* win, epx_dict_t* param)
 	return -1;
     return epx_backend_window_adjust(win->backend, win, param);
 }
+
+int epx_window_info(epx_window_t* win, epx_dict_t* param)
+{
+    if (win->backend == NULL)
+	return -1;
+    return epx_backend_window_info(win->backend, win, param);
+}

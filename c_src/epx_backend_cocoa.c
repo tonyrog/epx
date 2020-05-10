@@ -178,6 +178,7 @@ static int cocoa_evt_read(epx_backend_t*, epx_event_t*);
 static int cocoa_adjust(epx_backend_t *backend, epx_dict_t* param);
 static int cocoa_win_adjust(epx_window_t*, epx_dict_t* param);
 static int cocoa_info(epx_backend_t *backend, epx_dict_t* param);
+static int cocoa_win_info(epx_window_t*, epx_dict_t* param);
 
 static epx_callbacks_t cocoa_callbacks =
 {
@@ -196,7 +197,8 @@ static epx_callbacks_t cocoa_callbacks =
     .begin      = cocoa_begin,
     .end        = cocoa_end,
     .win_adjust = cocoa_win_adjust,
-    .info       = cocoa_info
+    .info       = cocoa_info,
+    .win_info   = cocoa_win_info,
 };
 
 // #define DBG(...) NSLog(__VA_ARGS__)
@@ -1705,3 +1707,10 @@ static int cocoa_info(epx_backend_t *backend, epx_dict_t* param)
     return 0;
 }
 
+static int cocoa_win_info(epx_window_t *win, epx_dict_t* param)
+{
+    (void) win;
+    (void) param;
+    EPX_DBGFMT("cocoa: win_info");
+    return 0;
+}

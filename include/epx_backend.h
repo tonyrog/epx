@@ -79,6 +79,7 @@ typedef struct _epx_callbacks_t {
     int (*end)(epx_window_t*, int);
     int (*win_adjust)(epx_window_t*, epx_dict_t*);
     int (*info)(epx_backend_t*, epx_dict_t*);
+    int (*win_info)(epx_window_t*, epx_dict_t*);
 } epx_callbacks_t;
 
 extern char*          epx_backend_name(int i);
@@ -101,19 +102,19 @@ extern void epx_backend_destroy(epx_backend_t* be);
 #define epx_backend_event_read(be,e)    ((be)->cb->evt_read((be),(e)))
 #define epx_backend_window_adjust(be,win,param) ((be)->cb->win_adjust((win),(param)))
 #define epx_backend_info(be,param) ((be)->cb->info((be),(param)))
+#define epx_backend_window_info(be,win,param) ((be)->cb->win_info((win),(param)))
 
 extern int epx_backend_adjust(epx_backend_t *be, epx_dict_t *param);
 
 extern int  epx_window_swap(epx_window_t* win);
 extern int  epx_window_adjust(epx_window_t* win, epx_dict_t *param);
+extern int  epx_window_info(epx_window_t* win, epx_dict_t *param);
 
 extern int epx_backend_window_attach(epx_backend_t* be, epx_window_t* win);
 extern int epx_window_detach(epx_window_t* win);
 
 extern int epx_backend_pixmap_attach(epx_backend_t* be, epx_pixmap_t* pix);
 extern int epx_pixmap_detach(epx_pixmap_t* pix);
-
-
 
 #endif
 

@@ -53,6 +53,7 @@ static int none_evt_read(epx_backend_t*, epx_event_t*);
 static int none_adjust(epx_backend_t *backend, epx_dict_t* param);
 static int none_win_adjust(epx_window_t *window, epx_dict_t* param);
 static int none_info(epx_backend_t *backend, epx_dict_t* param);
+static int none_win_info(epx_window_t *window, epx_dict_t* param);
 
 
 static epx_callbacks_t none_callbacks =
@@ -72,7 +73,8 @@ static epx_callbacks_t none_callbacks =
     .begin        = none_begin,
     .end          = none_end,
     .win_adjust   = none_win_adjust,
-    .info         = none_info
+    .info         = none_info,
+    .win_info     = none_win_info,
 };
 
 
@@ -248,23 +250,30 @@ static int none_evt_read(epx_backend_t* backend, epx_event_t* e)
     return -1;
 }
 
-int none_adjust(epx_backend_t *be, epx_dict_t* param)
+static int none_adjust(epx_backend_t *be, epx_dict_t* param)
 {
     (void) be;
     (void) param;
     return 1;
 }
 
-int none_win_adjust(epx_window_t *win, epx_dict_t* param)
+static int none_win_adjust(epx_window_t *win, epx_dict_t* param)
 {
     (void) win;
     (void) param;
     return 1;
 }
 
-int none_info(epx_backend_t *be, epx_dict_t* param)
+static int none_info(epx_backend_t *be, epx_dict_t* param)
 {
     (void) be;
+    (void) param;
+    return 0;
+}
+
+static int none_win_info(epx_window_t *window, epx_dict_t* param)
+{
+    (void) window;
     (void) param;
     return 0;
 }

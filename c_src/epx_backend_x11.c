@@ -104,6 +104,7 @@ static int x11_evt_read(epx_backend_t*, epx_event_t*);
 static int x11_adjust(epx_backend_t *backend, epx_dict_t* param);
 static int x11_win_adjust(epx_window_t*, epx_dict_t* param);
 static int x11_info(epx_backend_t*, epx_dict_t* param);
+static int x11_win_info(epx_window_t*, epx_dict_t* param);
 /* util */
 static void x11_grab(epx_backend_t* backend, epx_window_t* window, int toggle);
 static int  x11_error(Display * dpy, XErrorEvent * ev);
@@ -126,7 +127,8 @@ static epx_callbacks_t x11_callbacks =
     .begin      = x11_draw_begin,
     .end        = x11_draw_end,
     .win_adjust = x11_win_adjust,
-    .info       = x11_info
+    .info       = x11_info,
+    .win_info   = x11_win_info
 };
 
 #define NUM_LOCK_MASK    0x00000002
@@ -1503,7 +1505,7 @@ static int x11_error(Display * dpy, XErrorEvent * ev)
 }
 
 
-int x11_adjust(epx_backend_t* backend, epx_dict_t* param)
+static int x11_adjust(epx_backend_t* backend, epx_dict_t* param)
 {
     X11Backend* b = (X11Backend*) backend;    
     int int_param;
@@ -1542,14 +1544,24 @@ int x11_adjust(epx_backend_t* backend, epx_dict_t* param)
     return 1;
 }
 
-int x11_info(epx_backend_t* backend, epx_dict_t*param)
+static int x11_info(epx_backend_t* backend, epx_dict_t*param)
 {
-    (void) backend;
-    (void) param;
-    return 0;
+    X11Backend* b  = (X11Backend*) backend;
+    int bval;
+    
+    if (epx_dict_lookup_boolean(param, "display", &bval) >= 0) {
+	// return the low-level Window
+	epx_dict_set_binary(param, "display", &b->display, sizeof(Display*));
+    }
+    if (epx_dict_lookup_boolean(param, "visual", &bval) >= 0) {
+	VisualID vid;
+	vid = XVisualIDFromVisual(b->visual);
+	epx_dict_set_binary(param, "visual", &vid, sizeof(VisualID));
+    }
+    return 1;    
 }
 
-int x11_win_adjust(epx_window_t *win, epx_dict_t*param)
+static int x11_win_adjust(epx_window_t *win, epx_dict_t*param)
 {
     int bool_val;
     char* window_name = NULL;
@@ -1658,4 +1670,34 @@ int x11_win_adjust(epx_window_t *win, epx_dict_t*param)
     return 1;    
 }
 
+// Query interface, send boolean entries and return the
+// queried for value
 
+static int x11_win_info(epx_window_t* win, epx_dict_t* param)
+{
+    int bval;
+    X11Window*  w  = (X11Window*) win->opaque;
+    X11Backend* b  = (X11Backend*) win->backend;
+    
+    if (epx_dict_lookup_boolean(param, "name", &bval) >= 0) {
+	char* window_name;
+	if (XFetchName(b->display, w->window, &window_name) == Success) {
+	    epx_dict_set_string(param, "name", window_name);
+	    XFree(window_name);
+	}
+	else {
+	    epx_dict_set_string(param, "name", "");
+	}
+    }
+
+    if (epx_dict_lookup_boolean(param, "display", &bval) >= 0) {
+	// return the low-level Window
+	epx_dict_set_binary(param, "display", &b->display, sizeof(Display*));
+    }    
+
+    if (epx_dict_lookup_boolean(param, "window", &bval) >= 0) {
+	// return the low-level Window
+	epx_dict_set_binary(param, "window", &w->window, sizeof(Window));
+    }
+    return 1;
+}
