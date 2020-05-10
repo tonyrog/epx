@@ -107,6 +107,7 @@ static int carbon_evt_read(epx_backend_t*, epx_event_t*);
 static int carbon_adjust(epx_backend_t* backend, epx_dict_t* param);
 static int carbon_win_adjust(epx_window_t*, epx_dict_t* param);
 static int carbon_info(epx_backend_t* backend, epx_dict_t* param);
+static int carbon_win_info(epx_window_t*, epx_dict_t* param);
 
 static epx_callbacks_t carbon_callbacks =
 {
@@ -124,7 +125,8 @@ static epx_callbacks_t carbon_callbacks =
     .begin      = carbon_begin,
     .end        = carbon_end,
     .win_adjust = carbon_win_adjust,
-    .info       = carbon_info
+    .info       = carbon_info,
+    .win_info   = carbon_win_info,
 };
 
 static pascal OSStatus EPxAppEventHandler(
@@ -1250,6 +1252,15 @@ int carbon_info(epx_backend_t *backend, epx_dict_t* param)
     (void) backend;
     (void) param;
     EPX_DBGFMT("carbon: info");
+    return 0;
+}
+
+
+int carbon_win_info(epx_window_t *win, epx_dict_t* param)
+{
+    (void) win;
+    (void) param;
+    EPX_DBGFMT("carbon: win_info");
     return 0;
 }
 
