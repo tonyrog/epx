@@ -211,14 +211,9 @@ static int bit_pos(unsigned long mask)
     return -1;
 }
 
-int efmt_table_size = 0;
-epx_format_t efmt_table[64];
-
-// #if 0 
-// Not used right now but it's a fixme
-#define DBG(...) printf(__VA_ARGS__)
 /* scan trough a screen and locate a "nice" visual  */
-int make_screen_formats(Screen* screen, epx_format_t* efmt, size_t efmt_size)
+static int make_screen_formats(Screen* screen, epx_format_t* efmt,
+			       size_t efmt_size)
 {
     int i;
     size_t efmt_loaded = 0;
@@ -381,7 +376,7 @@ epx_backend_t* x11_init(epx_dict_t* param)
     be->fbconfigs = NULL;
 #endif
 
-    epx_dict_lookup_string(param, "x11_display", &display_name, &len);
+    epx_dict_lookup_string(param, "display", &display_name, &len);
 
     if ((be->display = XOpenDisplay(display_name)) == NULL) {
 	free(be);
@@ -1274,7 +1269,7 @@ next:
 	}
 	if (ev.xkey.state & Mod5Mask) {
 	    EPX_DBGFMT("mod5mask (scr)");
-	    b->modstate |= EPX_KBD_MOD_SCR;
+	    // b->modstate |= EPX_KBD_MOD_SCR;
 	}
 	if (b->modstate) {
 	    EPX_DBGFMT("2:modstate=%x", b->modstate);

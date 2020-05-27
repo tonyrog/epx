@@ -24,6 +24,25 @@ start() ->
 
     (fun Draw() ->
 	    receive
+		{epx_event,Win,{key_press,KeySym,Mod,KeyCode}} ->
+		    if is_integer(KeySym), KeySym < 256 ->
+			    io:format("key_press: sym=~w, mod=~w, code=~w: \"~s\"\n",
+				      [KeySym,Mod,KeyCode,[KeySym]]);
+		       true ->
+			    io:format("key_press: sym=~w, mod=~w, code=~w\n",
+				      [KeySym,Mod,KeyCode])
+		    end,
+		    Draw();
+		{epx_event,Win,{key_release,KeySym,Mod,KeyCode}} ->
+		    if is_integer(KeySym), KeySym < 256 ->
+			    io:format("key_release: sym=~w, mod=~w, code=~w: \"~s\"\n",
+				      [KeySym,Mod,KeyCode,[KeySym]]);
+		       true ->
+			    io:format("key_release: sym=~w, mod=~w, code=~w\n",
+				      [KeySym,Mod,KeyCode])
+		    end,
+		    Draw();
+
 		{epx_event,Win, close} ->
 		    epx:window_detach(Win),
 		    epx:pixmap_detach(Pix),
