@@ -2274,7 +2274,7 @@ static int xcb_win_info(epx_window_t* win, epx_dict_t* param)
     
     if (epx_dict_lookup_boolean(param, "window", &bval) >= 0) {
 	epx_dict_set_binary(param, "window",
-			    &w->window, sizeof(xcb_window_t*));
+			    &w->window, sizeof(xcb_window_t));
     }
     
     if (epx_dict_lookup_boolean(param, "visual", &bval) >= 0) {
