@@ -135,7 +135,9 @@ image() ->
 draw_image(Win,Pix) ->
     W = epx:window_info(Win, width) - 100,
     H = epx:window_info(Win, height) - 100,
-    A = epx:pixmap_create(12, 12, argb),
+    Format = epx:pixmap_info(Pix, pixel_format),
+    io:format("format = ~p\n", [Format]),
+    A = epx:pixmap_create(12, 12, Format),
     epx:pixmap_put_pixels(A, 0, 0, 12, 12, l8,
 			  [I*255 || I <- image()]),
     epx:pixmap_scale_area(A, Pix, 50, 50, W, H),

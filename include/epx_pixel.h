@@ -197,10 +197,13 @@
 #define EPX_FORMAT_BGRA   EPX_FORMAT_B8G8R8A8_BE
 #define EPX_FORMAT_ABGR   EPX_FORMAT_A8B8G8R8_BE
 
-#define EPX_PIXEL_BIT_SIZE(pt)   (((pt)&EPX_M_Size)+1)
-#define EPX_PIXEL_BYTE_SIZE(pt)       (EPX_PIXEL_BIT_SIZE(pt)>>3)
-#define EPX_PIXEL_HAS_ALPHA(pt)  (((pt)&EPX_F_Alpha) != 0)
-#define EPX_PIXEL_FMT(pt)        (((pt)&EPX_M_Fmt)>>12)
+#define EPX_PIXEL_BIT_SIZE(pt)    (((pt)&EPX_M_Size)+1)
+#define EPX_PIXEL_BYTE_SIZE(pt)   (EPX_PIXEL_BIT_SIZE(pt)>>3)
+#define EPX_PIXEL_HAS_ALPHA(pt)   (((pt)&EPX_F_Alpha) != 0)
+#define EPX_PIXEL_FMT(pt)         (((pt)&EPX_M_Fmt)>>12)
+#define EPX_PIXEL_BGR(pt)         (((pt)&EPX_F_Bgr) != 0)
+#define EPX_PIXEL_LITTLE(pt)      (((pt)&EPX_F_Little) != 0)
+#define EPX_PIXEL_ALPHA_FIRST(pt) (((pt)&EPX_F_AFirst) != 0)
 
 // size of pixel format
 typedef uint16_t epx_format_t;

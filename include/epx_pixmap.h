@@ -134,6 +134,8 @@ extern int epx_pixmap_init_sub_pixmap(epx_pixmap_t* src, epx_pixmap_t* dst,
 
 extern epx_pixmap_t* epx_pixmap_create(unsigned int width, unsigned int height,
 				       epx_format_t fmt);
+extern int epx_pixmap_set_format(epx_pixmap_t*, epx_format_t fmt);
+
 extern epx_pixmap_t* epx_pixmap_copy(epx_pixmap_t* src);
 extern epx_pixmap_t* epx_pixmap_sub_pixmap(epx_pixmap_t* src,
 					   int x, int y,

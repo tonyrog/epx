@@ -1552,6 +1552,44 @@ static void init_pixel_area_functions(epx_pixmap_functions_t* func,
     }
 }
 
+int epx_pixmap_set_format(epx_pixmap_t* dst, epx_format_t fmt)
+{
+    if (dst->pixel_format != fmt) {
+	uint8_t* data0;
+	unsigned int bytes_per_pixel = EPX_PIXEL_BYTE_SIZE(fmt);
+	unsigned int bytes_per_row   = bytes_per_pixel*dst->width;
+	size_t sz;
+	epx_pixel_unpack_t unpack;
+	epx_pixel_pack_t pack;
+
+	bytes_per_row += EPX_ALIGN_OFFS(bytes_per_row, EPX_ALIGNMENT);
+	sz             = bytes_per_row*dst->height;
+	
+	unpack = epx_pixel_unpack_func(fmt);
+	pack   = epx_pixel_pack_func(fmt);
+
+	if ((unpack == NULL) || (pack == NULL))
+	    return -1;
+	
+	if (sz > dst->sz) { // reallocate pixels
+	    if (!(data0 = (uint8_t*) realloc(dst->data0, sz+15)))
+		return -1;
+	    dst->sz = sz;
+	    dst->data0 = data0;
+	    dst->data = data0 + EPX_ALIGN_OFFS(data0, EPX_ALIGNMENT);
+	}
+	dst->bytes_per_row  = bytes_per_row;	
+	dst->bits_per_pixel = bytes_per_pixel*8;
+	dst->bytes_per_pixel = bytes_per_pixel;
+	dst->pixel_format   = fmt;
+	dst->func.unpack    = unpack;
+	dst->func.pack      = pack;	
+    }
+    return 0;
+}
+
+    
+
 int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
 		    epx_format_t fmt)
 {

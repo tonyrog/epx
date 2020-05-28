@@ -33,6 +33,7 @@
 // Need XInitThreads?
 #include <X11/Xlib.h>
 
+// #define DEBUG 1
 
 #if defined(__APPLE__)
 #include <machine/endian.h>
@@ -493,8 +494,10 @@ static int make_screen_formats(xcb_screen_t* screen, epx_format_t* efmt,
 	    int k;
 
 	    if (((c != XCB_VISUAL_CLASS_TRUE_COLOR) &&
-		 (c != XCB_VISUAL_CLASS_DIRECT_COLOR)))
+		 (c != XCB_VISUAL_CLASS_DIRECT_COLOR))) {
+		xcb_visualtype_next(&jter);
 		continue;
+	    }
 #if BYTE_ORDER == LITTLE_ENDIAN
 	    little_endian = 1;  // stored in native format
 #endif
@@ -526,9 +529,17 @@ static int make_screen_formats(xcb_screen_t* screen, epx_format_t* efmt,
 		fmt = EPX_FMT_RGB8;
 		alpha = 1;
 		alpha_first = (r_offs == 23);
+		if (little_endian) { // try swap
+		    alpha_first = !alpha_first;
+		    bgr = 1;
+		    little_endian = 0;
+		}
 		bits_per_pixel = 32;
 	    }
-
+	    else {
+		xcb_visualtype_next(&jter);
+		continue;
+	    }
 	    f = EPX_FMT(fmt,bgr,alpha,alpha_first,little_endian,bits_per_pixel);
 	    for (k = 0; k < (int)efmt_loaded; k++) {
 		if (efmt[k] == f)
@@ -690,6 +701,22 @@ epx_backend_t* xcb_init(epx_dict_t* param)
     b->max_request_length = xcb_get_maximum_request_length(b->display);    
     b->b.nformats = 
 	make_screen_formats(b->screen, b->b.formats, EPX_BACKEND_MAX_FORMATS);
+    // debug output image formats
+#ifdef DEBUG
+    {
+	epx_format_t image_format[100];
+	int num_formats;
+	int i;
+	num_formats = make_image_formats(setup, image_format, 100);
+	for (i = 0; i < num_formats; i++) {
+	    char buf[80];
+	    char* ptr;
+	    ptr = epx_pixel_format_to_name(image_format[i], buf, sizeof(buf));
+	    fprintf(stderr, "loaded image format %d = %s\r\n",
+		    i, ptr);
+	}
+    }
+#endif
 
     xcb_adjust((epx_backend_t*)b, param);
 
@@ -705,8 +732,6 @@ epx_backend_t* xcb_init(epx_dict_t* param)
     b->visual = b->screen->root_visual;
     b->modstate = 0;
     b->grab_key = 0;
-
-
 
     /* FIXME
     if(XkbGetIndicatorState (be->display,XkbUseCoreKbd,&state) == Success) {
@@ -753,6 +778,42 @@ static int xcb_finish(epx_backend_t* backend)
     return 0;
 }
 
+static int match_or_update_format(XCBBackend* b, epx_pixmap_t* p)
+{
+    epx_format_t src_fmt = p->pixel_format;
+    epx_format_t new_fmt = EPX_FORMAT_INVALID;
+    int src_depth = EPX_PIXEL_BIT_SIZE(src_fmt);
+    int i;
+    
+    for (i = 0; i < b->b.nformats; i++) {
+	epx_format_t dst_fmt = b->b.formats[i];
+	if (EPX_PIXEL_BIT_SIZE(dst_fmt) == src_depth) { // depth match
+	    if (src_fmt == dst_fmt)
+		return 0;  // ok native format works
+	    new_fmt = dst_fmt;
+	}
+    }
+    if (new_fmt == EPX_FORMAT_INVALID) {
+	if (b->b.nformats == 0)
+	    return -1;
+	new_fmt = b->b.formats[0];
+    }
+#ifdef DEBUG
+    {
+	char buf1[32];
+	char* ptr1;
+	char buf2[32];
+	char* ptr2;
+	ptr1 = epx_pixel_format_to_name(src_fmt, buf1, sizeof(buf1));
+	ptr2 = epx_pixel_format_to_name(new_fmt, buf2, sizeof(buf2));
+	fprintf(stderr, "format update %s => %s\r\n", ptr1, ptr2);
+    }
+#endif
+    epx_pixmap_set_format(p, new_fmt);
+    return 0;    
+}
+
+
 static int xcb_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     XCBBackend* b = (XCBBackend*) backend;
@@ -761,6 +822,9 @@ static int xcb_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
     unsigned int bits_per_pixel  = pixmap->bits_per_pixel;
 
     if (pixmap->opaque != NULL)
+	return -1;
+
+    if (match_or_update_format(b, pixmap) < 0)
 	return -1;
 
     if ((p = (XCBPixmap*) calloc(1,sizeof(XCBPixmap))) == NULL)
@@ -822,7 +886,7 @@ static int xcb_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
     default:
 	break;
     }
-    p->depth = 24;                     /* ...*/
+    p->depth = bits_per_pixel;
     p->bytes_per_line = bytes_per_row;
     p->bits_per_pixel = bits_per_pixel;
     p->red_mask   = 0xFF << 16;
@@ -948,27 +1012,29 @@ static int xcb_draw(epx_backend_t* backend, epx_pixmap_t* pic,
 #endif
     }
     else {
-	xcb_drawable_t d = (b->use_off_screen && w->pm) ? w->pm : w->window;
+	xcb_drawable_t drawable =
+	    (b->use_off_screen && w->pm) ? w->pm : w->window;
 	uint8_t left_pad = 0;
 
 	if (src_x != 0) { // write each line
-	    uint8_t* data = p->data + p->bytes_per_line*src_y + src_x;
+	    int offs_x = (src_x*p->bits_per_pixel+7)/8;
+	    uint8_t* data = p->data + p->bytes_per_line*src_y + offs_x;
 	    uint32_t data_len = (width * p->bits_per_pixel + 7) / 8;
 	    unsigned int i;
 
-	    EPX_DBGFMT("src_x=%d,src_y=%d,data_len=%ld*%d, max_req_len=%u",
-		       src_x, src_y, data_len, height,
-		       b->max_request_length);
-	    
+#ifdef DEBUG
+	    fprintf(stderr,"src_x=%d,src_y=%d,dst_y=%d,dst_t=%dmdata_len=%u max_req_len=%d\r\n",
+		    src_x,src_y,dst_x,dst_y,data_len,b->max_request_length);
+#endif	    
 	    for (i = 0; i < height; i++) {
 		xcb_put_image(b->display,
 			      p->format,
-			      d,
+			      drawable,
 			      w->gc,
-			      width, height,
+			      width, 1,
 			      dst_x, dst_y,
 			      left_pad,
-			      p->bits_per_pixel,
+			      b->screen->root_depth,
 			      data_len,
 			      data);
 		dst_y++;
@@ -980,18 +1046,18 @@ static int xcb_draw(epx_backend_t* backend, epx_pixmap_t* pic,
 	    // but then epx_pixmap alignement must match!
 	    uint8_t* data = p->data + p->bytes_per_line*src_y;
 	    uint32_t data_len = p->bytes_per_line * height;
-
-	    EPX_DBGFMT("src_x=%d,src_y=%d,data_len=%ld max_req_len=%d",
-		       src_x, src_y, data_len, b->max_request_length);
-	    
+#ifdef DEBUG
+	    fprintf(stderr,"src_x=%d,src_y=%d,data_len=%u max_req_len=%d\r\n",
+		    src_x, src_y, data_len, b->max_request_length);
+#endif
 	    xcb_put_image(b->display,
 			  p->format,
-			  d,
+			  drawable,
 			  w->gc,
 			  width, height,
 			  dst_x, dst_y,
 			  left_pad,
-			  p->bits_per_pixel,
+			  b->screen->root_depth,
 			  data_len,
 			  data);
 	}
