@@ -80,7 +80,7 @@ typedef struct {
 
 typedef struct {
     epx_backend_t b;                /* DO NOT MOVE !!! */
-    xcb_connection_t* display; // rename later
+    xcb_connection_t* connection;   // rename later
     int      screen_nbr;
     xcb_screen_t* screen;
     xcb_visualid_t  visual;
@@ -218,7 +218,7 @@ static void clip_window(XCBBackend* b, XCBWindow* w,
     clip.y = y;
     clip.width = width;
     clip.height = height;
-    xcb_set_clip_rectangles(b->display, XCB_CLIP_ORDERING_UNSORTED,
+    xcb_set_clip_rectangles(b->connection, XCB_CLIP_ORDERING_UNSORTED,
 			    w->gc, 0, 0, 1, &clip);
 }
 #endif
@@ -250,15 +250,15 @@ static int bit_pos(unsigned long mask)
 
 static int init_keysyms(XCBBackend* b)
 {
-    const xcb_setup_t* setup = xcb_get_setup(b->display);
+    const xcb_setup_t* setup = xcb_get_setup(b->connection);
     xcb_keycode_t min_keycode = setup->min_keycode;
     xcb_keycode_t max_keycode = setup->max_keycode;
     uint8_t count = max_keycode - min_keycode + 1;
     xcb_get_keyboard_mapping_cookie_t req;    
     xcb_generic_error_t* err;
     
-    req = xcb_get_keyboard_mapping(b->display,min_keycode,count);
-    if ((b->keymap = xcb_get_keyboard_mapping_reply(b->display, req, &err)) == NULL) {
+    req = xcb_get_keyboard_mapping(b->connection,min_keycode,count);
+    if ((b->keymap = xcb_get_keyboard_mapping_reply(b->connection, req, &err)) == NULL) {
 	fprintf(stderr, "xcb_get_keyboard_mapping_reply %d\r\n",
 		err->error_code);
 	return -1;
@@ -569,14 +569,14 @@ static void init_off_screen(XCBWindow* w)
 static int create_off_screen(XCBBackend* b, XCBWindow* w)
 {
     if (b->use_off_screen) {
-	xcb_pixmap_t pm = xcb_generate_id(b->display);
+	xcb_pixmap_t pm = xcb_generate_id(b->connection);
 	xcb_void_cookie_t req;
 	xcb_generic_error_t* err;
-	req = xcb_create_pixmap(b->display, b->screen->root_depth,
+	req = xcb_create_pixmap(b->connection, b->screen->root_depth,
 				pm,
 				w->window,
 				w->width, w->height);
-	if ((err = xcb_request_check(b->display, req)) != NULL) {
+	if ((err = xcb_request_check(b->connection, req)) != NULL) {
 	    fprintf(stderr, "create_pixmap error %d\r\n", err->error_code);
 	    return -1;
 	}
@@ -591,7 +591,7 @@ static int create_off_screen(XCBBackend* b, XCBWindow* w)
 static int destroy_off_screen(XCBBackend* b, XCBWindow* w)
 {
     if (w->pm == 0) return -1;
-    xcb_free_pixmap(b->display, w->pm);
+    xcb_free_pixmap(b->connection, w->pm);
     init_off_screen(w);
     return 0;
 }
@@ -611,17 +611,17 @@ static int resize_off_screen(XCBBackend* b, XCBWindow* w)
     ww = (width > w->pm_width) ? width+(width/2) : w->pm_width;
     hh = (height > w->pm_height) ? height+(height/2) : w->pm_height;
     // printf("pm: w=%d,h=%d\r\n", ww, hh);
-    pm = xcb_generate_id(b->display);
-    req = xcb_create_pixmap(b->display, b->screen->root_depth,
+    pm = xcb_generate_id(b->connection);
+    req = xcb_create_pixmap(b->connection, b->screen->root_depth,
 			    pm,
 			    w->window,
 			    ww, hh);
-    if ((err = xcb_request_check(b->display, req)) != NULL) {
+    if ((err = xcb_request_check(b->connection, req)) != NULL) {
 	fprintf(stderr, "create_pixmap error %d\r\n", err->error_code);
 	return -1;
     }    
-    xcb_copy_area(b->display,w->pm,pm,w->gc,0,0,0,0,w->pm_width,w->pm_height);
-    xcb_free_pixmap(b->display, w->pm);
+    xcb_copy_area(b->connection,w->pm,pm,w->gc,0,0,0,0,w->pm_width,w->pm_height);
+    xcb_free_pixmap(b->connection, w->pm);
     w->pm = pm;
     w->pm_width  = ww;
     w->pm_height = hh;
@@ -664,12 +664,12 @@ epx_backend_t* xcb_init(epx_dict_t* param)
 
     epx_dict_lookup_string(param, "display", &display_name, &len);
 
-    if ((b->display = xcb_connect(display_name, &b->screen_nbr)) == NULL) {
+    if ((b->connection = xcb_connect(display_name, &b->screen_nbr)) == NULL) {
 	free(b);
 	return NULL;
     }
 
-    setup = xcb_get_setup(b->display);
+    setup = xcb_get_setup(b->connection);
 
     // Get the screen #screen_nbr
     b->screen = NULL;
@@ -698,7 +698,7 @@ epx_backend_t* xcb_init(epx_dict_t* param)
     b->white_pixel = b->screen->white_pixel;
     b->black_pixel = b->screen->black_pixel;
     b->pending_event = NULL;
-    b->max_request_length = xcb_get_maximum_request_length(b->display);    
+    b->max_request_length = xcb_get_maximum_request_length(b->connection);    
     b->b.nformats = 
 	make_screen_formats(b->screen, b->b.formats, EPX_BACKEND_MAX_FORMATS);
     // debug output image formats
@@ -722,8 +722,8 @@ epx_backend_t* xcb_init(epx_dict_t* param)
 
     // wrap in a function?
     name = "WM_DELETE_WINDOW";
-    req = xcb_intern_atom(b->display,0,strlen(name), name);
-    rep = xcb_intern_atom_reply(b->display, req, NULL);
+    req = xcb_intern_atom(b->connection,0,strlen(name), name);
+    rep = xcb_intern_atom_reply(b->connection, req, NULL);
     b->wm_delete_window = rep->atom;
     free(rep);
 
@@ -734,7 +734,7 @@ epx_backend_t* xcb_init(epx_dict_t* param)
     b->grab_key = 0;
 
     /* FIXME
-    if(XkbGetIndicatorState (be->display,XkbUseCoreKbd,&state) == Success) {
+    if(XkbGetIndicatorState (be->connection,XkbUseCoreKbd,&state) == Success) {
 	EPX_DBGFMT("initial modstate=%x", state);
 	if (state & NUM_LOCK_MASK)
 	    be->modstate |= EPX_KBD_MOD_NUM;
@@ -758,7 +758,7 @@ int xcb_upgrade(epx_backend_t* backend)
 static EPX_HANDLE_T xcb_evt_attach(epx_backend_t* backend)
 {
     XCBBackend* b = (XCBBackend*) backend;
-    int fd = xcb_get_file_descriptor(b->display);
+    int fd = xcb_get_file_descriptor(b->connection);
     return (EPX_HANDLE_T)((long)fd);
 }
 
@@ -773,7 +773,7 @@ static int xcb_finish(epx_backend_t* backend)
     XCBBackend* b = (XCBBackend*) backend;
     // FIXME: close all windows & detach all pixmaps
     free(b->keymap);
-    xcb_disconnect(b->display);
+    xcb_disconnect(b->connection);
     free(b);
     return 0;
 }
@@ -949,7 +949,7 @@ static int xcb_draw_begin(epx_window_t* ewin)
 	XCBBackend* b  = (XCBBackend*) ewin->backend;
 	XCBWindow*  w  = (XCBWindow*) ewin->opaque;
 	
-	glXMakeCurrent(b->display, w->window, w->context);
+	glXMakeCurrent(b->connection, w->window, w->context);
 #endif
     }
     return 0;
@@ -964,15 +964,15 @@ static int xcb_draw_end(epx_window_t* ewin, int off_screen)
 #ifdef HAVE_OPENGL
 	glFlush();
 	if (!off_screen)
-	    glXSwapBuffers(b->display, w11->window);
+	    glXSwapBuffers(b->connection, w11->window);
 #endif
     }
     else if (off_screen)
 	return 0;
     else if (!b->use_off_screen) {
-	xcb_flush(b->display);
+	xcb_flush(b->connection);
 	if (b->pending_event == NULL)
-	    b->pending_event = xcb_poll_for_queued_event(b->display);
+	    b->pending_event = xcb_poll_for_queued_event(b->connection);
 	b->b.pending = (b->pending_event != NULL);
     }
     return 0;
@@ -1027,7 +1027,7 @@ static int xcb_draw(epx_backend_t* backend, epx_pixmap_t* pic,
 		    src_x,src_y,dst_x,dst_y,data_len,b->max_request_length);
 #endif	    
 	    for (i = 0; i < height; i++) {
-		xcb_put_image(b->display,
+		xcb_put_image(b->connection,
 			      p->format,
 			      drawable,
 			      w->gc,
@@ -1050,7 +1050,7 @@ static int xcb_draw(epx_backend_t* backend, epx_pixmap_t* pic,
 	    fprintf(stderr,"src_x=%d,src_y=%d,data_len=%u max_req_len=%d\r\n",
 		    src_x, src_y, data_len, b->max_request_length);
 #endif
-	    xcb_put_image(b->display,
+	    xcb_put_image(b->connection,
 			  p->format,
 			  drawable,
 			  w->gc,
@@ -1073,7 +1073,7 @@ static int xcb_pix_sync(epx_backend_t* backend, epx_pixmap_t* pixmap,
     (void) pixmap;
     (void) ewin;
 
-    return xcb_flush(be->display);
+    return xcb_flush(be->connection);
 }
 
 static int xcb_win_swap(epx_backend_t* backend, epx_window_t* ewin)
@@ -1083,21 +1083,21 @@ static int xcb_win_swap(epx_backend_t* backend, epx_window_t* ewin)
 
     if (ewin->opengl) {
 #ifdef HAVE_OPENGL
-	glXMakeCurrent(be->display, w->window, w->context);
-	glXSwapBuffers(be->display, w->window);
+	glXMakeCurrent(be->connection, w->window, w->context);
+	glXSwapBuffers(be->connection, w->window);
 #endif
     }
     else if (w && w->pm && b->use_off_screen) {
-	xcb_copy_area(b->display, w->pm, w->window, w->gc,
+	xcb_copy_area(b->connection, w->pm, w->window, w->gc,
 		      0, 0, 0, 0, w->width, w->height);
-	xcb_flush(b->display);
+	xcb_flush(b->connection);
     }
     else {
-	xcb_flush(b->display);
+	xcb_flush(b->connection);
     }
 
     if (b->pending_event == NULL)
-	b->pending_event = xcb_poll_for_queued_event(b->display);
+	b->pending_event = xcb_poll_for_queued_event(b->connection);
     b->b.pending = (b->pending_event != NULL);
     return 0;
 }
@@ -1182,17 +1182,17 @@ static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 #ifdef HAVE_OPENGL
 	XVisualInfo *vinfo;
 
-	vinfo = glXGetVisualFromFBConfig(b->display, b->fbconfigs[0]);
+	vinfo = glXGetVisualFromFBConfig(b->connection, b->fbconfigs[0]);
 	attr.border_pixel = 0;
 	// FIXME save in be - need to release colormap / resuse!?
-	attr.colormap = XCreateColormap(b->display,
-					RootWindow(b->display, vinfo->screen),
+	attr.colormap = XCreateColormap(b->connection,
+					RootWindow(b->connection, vinfo->screen),
 					vinfo->visual, AllocNone);
 	valuemask |= XCB_CW_COLORMAP;
 	
-	win = xcb_generate_id(b->display);
+	win = xcb_generate_id(b->connection);
 	
-	xcb_create_window(b->display,
+	xcb_create_window(b->connection,
 			  XCB_COPY_FROM_PARENT, // vinfo->depth, /* depth */
 			  win,
 			  b->screen->root,
@@ -1206,11 +1206,11 @@ static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 			  value_mask,	        // valuemask 
 			  value_list);	        // attributes 
 	if (win) {
-	    /* w->context = glXCreateNewContext(b->display,
+	    /* w->context = glXCreateNewContext(b->connection,
 						be->fbconfigs[0], 
 						GLX_RGBA_TYPE,
 						NULL, True ); */
-	    w->context = glXCreateContext(b->display, vinfo, NULL, True);
+	    w->context = glXCreateContext(b->connection, vinfo, NULL, True);
 	    if (w->context)
 		ewin->opengl = 1;
 	}
@@ -1218,9 +1218,9 @@ static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     }
 
     if (!win) {
-	win = xcb_generate_id(b->display);
-	
-	xcb_create_window(b->display,
+	win = xcb_generate_id(b->connection);
+	fprintf(stderr, "xcb window = 0x%x\n", win);
+	xcb_create_window(b->connection,
 			  XCB_COPY_FROM_PARENT, // vinfo->depth, /* depth */
 			  win,
 			  b->screen->root,
@@ -1249,8 +1249,8 @@ static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	w->width = ewin->area.wh.width;
 	w->height = ewin->area.wh.height;
 
-	w->gc = xcb_generate_id(b->display);
-	xcb_create_gc(b->display, w->gc, win, 0, NULL);
+	w->gc = xcb_generate_id(b->connection);
+	xcb_create_gc(b->connection, w->gc, win, 0, NULL);
 
 	value_mask = XCB_GC_FOREGROUND|XCB_GC_BACKGROUND;
 	set_value(value_mask, XCB_GC_FOREGROUND, value_list,
@@ -1258,18 +1258,18 @@ static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	set_value(value_mask, XCB_GC_BACKGROUND, value_list,
 		  b->white_pixel);
 	
-	xcb_change_gc(b->display, w->gc, value_mask, value_list);
+	xcb_change_gc(b->connection, w->gc, value_mask, value_list);
 	
 	init_off_screen(w);
 	create_off_screen(b, w);
 	
-	// XSetWMProtocols(be->display, win, &be->wm_delete_window, 1);
+	// XSetWMProtocols(be->connection, win, &be->wm_delete_window, 1);
 
-	xcb_map_window(b->display, win);
+	xcb_map_window(b->connection, win);
 
 	// fixme loop until MAP_NOTIFY on current window
-	// XIfEvent(be->display, &event, WaitForNotify, (XPointer) win );
-	xcb_flush(b->display);
+	// XIfEvent(be->connection, &event, WaitForNotify, (XPointer) win );
+	xcb_flush(b->connection);
 	epx_object_link(&backend->window_list, ewin);
 	ewin->opaque  = (void*) w;
 	ewin->backend = (epx_backend_t*) b;
@@ -1286,18 +1286,18 @@ static int xcb_win_detach(epx_backend_t* backend, epx_window_t* ewin)
     
     if ((xwin != NULL) && (xwin->window != 0)) {
 	EPX_DBGFMT("xcb_unmap_window");
-	xcb_unmap_window(be->display, xwin->window);
+	xcb_unmap_window(be->connection, xwin->window);
 	destroy_off_screen(be, xwin);
 	if (ewin->opengl) {
 #ifdef HAVE_OPENGL
-	    glXDestroyContext(be->display, xwin->context);
+	    glXDestroyContext(be->connection, xwin->context);
 	    if (be->fbconfigs != NULL)
 		XFree(be->fbconfigs);
 #endif
 	}
-	xcb_free_gc(be->display, xwin->gc);
-	xcb_destroy_window(be->display, xwin->window);
-	xcb_flush(be->display);
+	xcb_free_gc(be->connection, xwin->gc);
+	xcb_destroy_window(be->connection, xwin->window);
+	xcb_flush(be->connection);
 	/* Ungrabb? */
 	free(xwin);
 	epx_object_unlink(&backend->window_list, ewin);
@@ -1398,7 +1398,7 @@ static int xcb_evt_read(epx_backend_t* backend, epx_event_t* e)
 	goto again;
     }
     
-    if ((ev = xcb_poll_for_event(b->display)) == NULL)
+    if ((ev = xcb_poll_for_event(b->connection)) == NULL)
 	return -1;
 again:
     switch ((ev_type=(ev->response_type & ~0x80))) {
@@ -1502,7 +1502,7 @@ again:
 	    if (xev->count > 0)
 		break;
 	    if (b->use_off_screen && win->pm && !b->use_exposure) {
-		xcb_copy_area(b->display, win->pm, win->window, win->gc,
+		xcb_copy_area(b->connection, win->pm, win->window, win->gc,
 			      win->dirty.xy.x, win->dirty.xy.y,
 			      win->dirty.xy.x, win->dirty.xy.y,
 			      win->dirty.wh.width, win->dirty.wh.height);
@@ -1586,8 +1586,8 @@ again:
 	xcb_get_atom_name_reply_t *rep;
 	xcb_property_notify_event_t* xev=(xcb_property_notify_event_t*)ev;
 	
-	req = xcb_get_atom_name(b->display, xev->atom);
-	rep = xcb_get_atom_name_reply(b->display, req, NULL);
+	req = xcb_get_atom_name(b->connection, xev->atom);
+	rep = xcb_get_atom_name_reply(b->connection, req, NULL);
 	
 	
 	EPX_DBGFMT("Event: PropertyNotify %s", xcb_get_atom_name_name(rep));
@@ -1927,7 +1927,7 @@ again:
 
 ignore_event:
     free(ev);
-    if ((ev = xcb_poll_for_queued_event(b->display)) != NULL)
+    if ((ev = xcb_poll_for_queued_event(b->connection)) != NULL)
 	goto again;
     return 0;
 
@@ -1935,7 +1935,7 @@ got_event:
     if (FilterEvent(e)) goto ignore_event;
     free(ev);
     
-    b->pending_event = xcb_poll_for_queued_event(b->display);
+    b->pending_event = xcb_poll_for_queued_event(b->connection);
     backend->pending = (b->pending_event != NULL);
     return 1+backend->pending;
 }
@@ -1951,9 +1951,9 @@ static void xcb_grab(epx_backend_t* backend, epx_window_t* wptr, int toggle)
     if (toggle) {
 	/* toggle grab control */
 	if (w->grabbed) {
-	    xcb_ungrab_pointer(b->display, XCB_TIME_CURRENT_TIME);
-	    xcb_ungrab_keyboard(b->display, XCB_TIME_CURRENT_TIME);
-	    xcb_change_pointer_control(b->display,
+	    xcb_ungrab_pointer(b->connection, XCB_TIME_CURRENT_TIME);
+	    xcb_ungrab_keyboard(b->connection, XCB_TIME_CURRENT_TIME);
+	    xcb_change_pointer_control(b->connection,
 				       w->accel_num,
 				       w->accel_den,
 				       0, 
@@ -1967,22 +1967,22 @@ static void xcb_grab(epx_backend_t* backend, epx_window_t* wptr, int toggle)
 	    xcb_get_pointer_control_reply_t* rep;
 	    
 	    /* save pointer config */
-	    req = xcb_get_pointer_control(b->display);
-	    rep = xcb_get_pointer_control_reply(b->display, req, NULL);
+	    req = xcb_get_pointer_control(b->connection);
+	    rep = xcb_get_pointer_control_reply(b->connection, req, NULL);
 		
 	    w->accel_num = rep->acceleration_numerator;
 	    w->accel_den = rep->acceleration_denominator;
 	    w->thres = rep->threshold;
 	    free(rep);
 
-	    xcb_change_pointer_control(b->display,
+	    xcb_change_pointer_control(b->connection,
 				       1, 1, 0,
 				       True, False);
 	    
-	    xcb_grab_keyboard(b->display, w->window,
+	    xcb_grab_keyboard(b->connection, w->window,
 			      True,  /* only to this window */
 			      GrabModeAsync, GrabModeAsync, CurrentTime);
-	    xcb_grab_pointer(b->display, w->window, False,
+	    xcb_grab_pointer(b->connection, w->window, False,
 			 PointerMotionMask | ButtonPressMask,
 			 GrabModeAsync, GrabModeAsync, None, None,
 			 CurrentTime);
@@ -1990,7 +1990,7 @@ static void xcb_grab(epx_backend_t* backend, epx_window_t* wptr, int toggle)
 	}
     }
     else if (w->grabbed)
-	xcb_change_pointer_control(b->display,
+	xcb_change_pointer_control(b->connection,
 				   w->accel_num, w->accel_den, 0,
 				   True, False);
 				   
@@ -2006,10 +2006,10 @@ static int xcb_adjust(epx_backend_t* backend, epx_dict_t* param)
 #ifdef HAVE_OPENGL
 	if ((b->b.use_opengl = int_param) && (b->fbconfigs == NULL)) {
 	    int   i;
-	    int   nscreens = XScreenCount(b->display);
+	    int   nscreens = XScreenCount(b->connection);
 	    for (i = 0; i < nscreens; i++) {
 		GLXFBConfig* config;
-		config = glXChooseFBConfig(be->display, i,
+		config = glXChooseFBConfig(be->connection, i,
 					   glxAttributes,
 					   &be->fbnumconfigs);
 		if (config) {
@@ -2043,7 +2043,7 @@ static int xcb_info(epx_backend_t* backend, epx_dict_t*param)
     if (epx_dict_lookup_boolean(param, "display", &bval) >= 0) {
 	// return the low-level Window
 	epx_dict_set_binary(param, "display",
-			    &b->display, sizeof(xcb_connection_t*));
+			    &b->connection, sizeof(xcb_connection_t*));
     }
     if (epx_dict_lookup_boolean(param, "visual", &bval) >= 0) {
 	epx_dict_set_binary(param, "visual",
@@ -2097,7 +2097,7 @@ static int xcb_win_adjust(epx_window_t *win, epx_dict_t*param)
 
     if (epx_dict_lookup_string(param, "name", &window_name, &name_len) >= 0) {
 
-	xcb_change_property(b->display,
+	xcb_change_property(b->connection,
 			    XCB_PROP_MODE_REPLACE,
 			    w->window,
 			    XCB_ATOM_WM_NAME,
@@ -2109,7 +2109,7 @@ static int xcb_win_adjust(epx_window_t *win, epx_dict_t*param)
 
     if (epx_dict_lookup_string(param, "icon_name", &icon_name, &name_len) >= 0) {
 
-	xcb_change_property(b->display,
+	xcb_change_property(b->connection,
 			    XCB_PROP_MODE_REPLACE,
 			    w->window,
 			    XCB_ATOM_WM_ICON_NAME,
@@ -2148,7 +2148,7 @@ static int xcb_win_adjust(epx_window_t *win, epx_dict_t*param)
 	    (max_w < 0) ? win->area.wh.width :  (unsigned int) max_w;
 	hints.max_height =
 	    (max_h < 0) ? win->area.wh.height : (unsigned int) max_h;
-	xcb_change_property(b->display,
+	xcb_change_property(b->connection,
 			    XCB_PROP_MODE_REPLACE,
 			    w->window,
 			    XCB_ATOM_WM_NORMAL_HINTS,
@@ -2210,16 +2210,16 @@ static int xcb_win_adjust(epx_window_t *win, epx_dict_t*param)
 	set_value(value_mask,  XCB_CONFIG_WINDOW_BORDER_WIDTH,
 		  value_list, value_bw);
 
-	xcb_configure_window(b->display, w->window, value_mask, value_list);
+	xcb_configure_window(b->connection, w->window, value_mask, value_list);
     }
 
     if (epx_dict_lookup_boolean(param, "show", &bool_val) >= 0) {
 	EPX_DBGFMT("xcb: show=%d", bool_val);
 	if (bool_val)
-	    xcb_map_window(b->display, w->window);
+	    xcb_map_window(b->connection, w->window);
 	else
-	    xcb_unmap_window(b->display, w->window);
-	xcb_flush(b->display);	
+	    xcb_unmap_window(b->connection, w->window);
+	xcb_flush(b->connection);	
     }
 
     if (epx_dict_lookup_boolean(param, "select", &bool_val) >= 0) {
@@ -2228,9 +2228,9 @@ static int xcb_win_adjust(epx_window_t *win, epx_dict_t*param)
 	    value_mask = XCB_CONFIG_WINDOW_STACK_MODE;
 	    value_list[0] = XCB_STACK_MODE_ABOVE;
 
-	    xcb_configure_window(b->display, w->window,
+	    xcb_configure_window(b->connection, w->window,
 				 value_mask, value_list);
-	    xcb_flush(b->display);
+	    xcb_flush(b->connection);
 	}
     }
     //  "focus", "modal" ...
@@ -2250,12 +2250,12 @@ static int xcb_win_info(epx_window_t* win, epx_dict_t* param)
 	xcb_get_property_cookie_t cookie;
 	xcb_get_property_reply_t *reply;
 
-	cookie = xcb_get_property(b->display, 0,
+	cookie = xcb_get_property(b->connection, 0,
 				  w->window,
 				  XCB_ATOM_WM_NAME,
 				  XCB_ATOM_STRING,
 				  0, 0);
-	if ((reply = xcb_get_property_reply(b->display, cookie, NULL))) {
+	if ((reply = xcb_get_property_reply(b->connection, cookie, NULL))) {
 	    int len = xcb_get_property_value_length(reply);
 
 	    if (len == 0)
@@ -2267,9 +2267,9 @@ static int xcb_win_info(epx_window_t* win, epx_dict_t* param)
 	}
     }
 
-    if (epx_dict_lookup_boolean(param, "display", &bval) >= 0) {
-	epx_dict_set_binary(param, "display",
-			    &b->display, sizeof(xcb_connection_t*));
+    if (epx_dict_lookup_boolean(param, "connection", &bval) >= 0) {
+	epx_dict_set_binary(param, "connection",
+			    &b->connection, sizeof(xcb_connection_t*));
     }
     
     if (epx_dict_lookup_boolean(param, "window", &bval) >= 0) {
