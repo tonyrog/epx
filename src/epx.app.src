@@ -1,9 +1,10 @@
 %% -*- erlang -*-
 {application, epx,
  [{description, "Pixel libray for Erlang"},
+  {vsn, git},
   {registered, [epx_font_srv, epx_backend_srv,
 		epx_animation_srv, epx_style_srv]},
-  {vsn, git},
+  {modules, ["@@MODULES@@"]},
   {mod,{epx_app,[]}},
   {env, []},
   {applications,[kernel,stdlib,tree_db]}

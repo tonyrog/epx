@@ -59,8 +59,12 @@
 -define(is_string(Cs), is_list((Cs))).
 
 %% HARD DEBUG
+-define(dbg(F), ok).
 -define(dbg(F,A), ok).
+%%-define(dbg(F), io:format((F))).
 %%-define(dbg(F,A), io:format((F),(A))).
+-define(error(F,A), io:format((F),(A))).
+-define(warning(F,A), io:format((F),(A))).
 
 -type widget_type() :: window | panel | button | switch | slider | value |
 		       menu | rectangle | ellipse | line | text | user.
@@ -357,7 +361,7 @@ handle_call({set,ID,Flags}, _From, State) ->
 		    {reply, ok, State2}
 	    catch
 		error:Reason ->
-		    lager:warning("set ~s ~p crashed ~p\n", [ID,Flags,Reason]),
+		    ?warning("set ~s ~p crashed ~p\n", [ID,Flags,Reason]),
 		    {reply, {error,Reason}, State}
 	    end
     end;
@@ -377,8 +381,8 @@ handle_call({new,ID,Flags}, _From, State) ->
 			{ok,_W} ->
 			    {reply, ok, State};
 			Error={error,Reason} ->
-			    lager:warning("widget ~p not created ~p\n",
-				       [ID, Reason]),
+			    ?warning("widget ~p not created ~p\n",
+				     [ID, Reason]),
 			    {reply, Error, State}
 		    end;
 		{ok,_W} ->
@@ -391,8 +395,8 @@ handle_call({new,ID,Flags}, _From, State) ->
 			{ok,_W} ->
 			    {reply, ok, State};
 			Error={error,Reason} ->
-			    lager:warning("widget ~p not created ~p\n",
-				       [ID, Reason]),
+			    ?warning("widget ~p not created ~p\n",
+				     [ID, Reason]),
 			    {reply, Error, State}
 		    end;
 		{ok,Win} when Win#widget.type =:= window ->
@@ -400,8 +404,8 @@ handle_call({new,ID,Flags}, _From, State) ->
 			{ok,_W} ->
 			    {reply, ok, State};
 			Error={error,Reason} ->
-			    lager:warning("widget ~p not created ~p\n",
-				       [ID, Reason]),
+			    ?warning("widget ~p not created ~p\n",
+				     [ID, Reason]),
 			    {reply, Error, State}
 		    end;
 		{ok,_W} -> %% not under a window, must be under "screen"
@@ -409,8 +413,8 @@ handle_call({new,ID,Flags}, _From, State) ->
 			{ok,_W1} ->
 			    {reply, ok, State};
 			Error={error,Reason} ->
-			    lager:warning("widget ~p not created ~p\n",
-				       [ID, Reason]),
+			    ?warning("widget ~p not created ~p\n",
+				     [ID, Reason]),
 			    {reply, Error, State}
 		    end
 	    end
@@ -450,7 +454,7 @@ handle_call(stop,_From,State) ->
     {stop, normal, State};
     
 handle_call(_Request, _From, State) ->
-    lager:debug("unknown call ~p", [_Request]),
+    ?dbg("unknown call ~p\n", [_Request]),
     {reply, {error,bad_call}, State}.
 
 %%--------------------------------------------------------------------
@@ -489,7 +493,7 @@ handle_info({epx_event,Win,Event}, State) ->
 		   end
 	   end, [], State) of
 	[] ->
-	    lager:error("window ~p not found", [Win]),
+	    ?error("window ~p not found", [Win]),
 	    {noreply, State};
 	[W] ->  %% should only be one!
 	    handle_event(Event, W, State)
@@ -498,7 +502,7 @@ handle_info(refresh, State) ->
     {noreply, redraw_schedule(State)};
 handle_info({timeout,TRef,redraw}, State)
   when TRef =:= State#state.redraw_timer ->
-    %% lager:debug("redraw"),
+    %% ?dbg("redraw"),
     put(animations, false),
     State1 = redraw_state(State#state { redraw_timer=undefined}),
     case get(animations) of
@@ -519,7 +523,7 @@ handle_info({'DOWN',Ref,process,_Pid,_Reason}, State) ->
 	    {noreply, State#state { subs=Subs} }
     end;
 handle_info(_Info, State) ->
-    lager:debug("info = ~p", [_Info]),
+    ?dbg("info = ~p\n", [_Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -585,7 +589,7 @@ widget_create(ID,WID,Flags,State) ->
 	    {ok,W3}
     catch
 	error:Reason ->
-	    lager:warning("widget ~p not created ~p\n", [ID, Reason]),
+	    ?warning("widget ~p not created ~p\n", [ID, Reason]),
 	    {error,Reason}
     end.
 
@@ -722,7 +726,7 @@ handle_event(Event=close,Window,State) ->
 	    {noreply, State1}
     end;
 handle_event(_Event,_W,State) ->
-    lager:error("unknown event: ~p", [_Event]),
+    ?error("unknown event: ~p", [_Event]),
     {noreply, State}.
 
 
@@ -858,8 +862,8 @@ select_children(W,ID,Pos,XY,Acc,State) when
 		    TabID = ID++[list_to_binary(Tab)],
 		    select_one(TabID,Pos,XY,Acc,false,State);
 	       true ->
-		    lager:error("panel tab ~w not defined in ~s\n",
-				[V,W#widget.id]),
+		    ?error("panel tab ~w not defined in ~s\n",
+			   [V,W#widget.id]),
 		    Acc
 	    end;
 	_Tab ->
@@ -1036,7 +1040,7 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 	slider ->
 	    case widget_slider_value(W,Where,XY) of
 		false ->
-		    lager:debug("slider min/max/width error"),
+		    ?dbg("slider min/max/width error\n"),
 		    W;
 		Value ->
 		    epx:window_enable_events(Window#widget.win, [motion]),
@@ -1047,7 +1051,7 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 	panel ->
 	    case tab_at_location(W,Where,XY) of
 		0 ->
-		    lager:debug("panel box select error"),
+		    ?dbg("panel box select error\n"),
 		    W;
 		Value ->
 		    ?dbg("tab at ~w = ~w\n", [XY,Value]),
@@ -1058,7 +1062,7 @@ widget_event_(Event={button_press,_Button,Where},W,XY,Window,State) ->
 	menu ->
 	    case item_at_location(W,Where,XY) of
 		0 ->
-		    lager:debug("menu box select error"),
+		    ?dbg("menu box select error\n"),
 		    W;
 		_ ->
 		    ?dbg("item at ~w\n", [XY]),
@@ -1306,7 +1310,7 @@ widget_set(W,VKs) ->
 widget_set_(W,[{Key,Value}|Ks],Mask) ->
     case keypos(Key) of
 	0 ->
-	    lager:debug("key ~p not found, ignored ~p", [Key]),
+	    ?dbg("key ~p not found, ignored ~p\n", [Key]),
 	    widget_set_(W,Ks,Mask);
 	I ->
 	    %% ?dbg("widget_set_: ~s ~p[~w] = ~p\n", [W#widget.id,Key,I,Value]),
@@ -1317,8 +1321,8 @@ widget_set_(W,[{Key,Value}|Ks],Mask) ->
 		{true,Value1} ->
 		    widget_set_(setelement(I,W,Value1),Ks,Mask1);
 		false ->
-		    lager:debug("value ~p for key ~p not valid, ignored", 
-				[Value,Key]),
+		    ?dbg("value ~p for key ~p not valid, ignored\n", 
+			   [Value,Key]),
 		    widget_set_(W,Ks,Mask1)
 	    end
     end;
@@ -1339,7 +1343,7 @@ widget_get(W,Keys) ->
 widget_get_(W,[K|Ks],Acc) ->
     case keypos(K) of
 	0 ->
-	    lager:debug("key not found ~p", [K]),
+	    ?dbg("key not found ~p\n", [K]),
 	    widget_get_(W,Ks,Acc);
 	I ->
 	    widget_get_(W,Ks,[{K,element(I,W)}|Acc])
@@ -1488,7 +1492,7 @@ validate_color(Arg) ->
 validate_font(Arg) when is_list(Arg) ->
     case epx_font:match(Arg) of
 	false ->
-	    lager:error("unable to load font ~p", [Arg]),
+	    ?error("unable to load font ~p\n", [Arg]),
 	    false;
 	{ok,Font} ->
 	    {true,Font}
@@ -1500,11 +1504,11 @@ validate_animation(Arg) when is_list(Arg) ->
     File = text_expand(Arg, []),
     try epx:animation_open(File) of
 	Anim ->
-	    lager:debug("open animation file ~s.",[File]),
+	    ?dbg("open animation file ~s.\n",[File]),
 	    {true,Anim}
     catch
 	error:_Reason ->
-	    lager:error("unable to open animation file ~s:~p",
+	    ?error("unable to open animation file ~s:~p\n",
 			[File,_Reason]),
 	    false
     end;
@@ -1515,18 +1519,18 @@ validate_image(Arg) when is_list(Arg) ->
     File = text_expand(Arg, []),
     case epx_image:load(File) of
 	{ok,Image} ->
-	    lager:debug("load image file ~s.",[File]),
+	    ?dbg("load image file ~s.\n",[File]),
 	    case Image#epx_image.pixmaps of
 		[Pixmap] ->
-		    lager:debug("pixmap created ~s.",[File]),
+		    ?dbg("pixmap created ~s.\n",[File]),
 		    {true,Pixmap};
 		_ ->
-		    lager:error("no pixmap found in ~s",[File]),
+		    ?warning("no pixmap found in ~s\n",[File]),
 		    false
 	    end;
 	Error ->
-	    lager:error("unable to load image file ~s:~p",
-			[File,Error]),
+	    ?error("unable to load image file ~s:~p\n",
+		   [File,Error]),
 	    false
     end;
 validate_image(Arg) when is_record(Arg,epx_pixmap) -> true;
@@ -1649,7 +1653,7 @@ draw_siblings(ID, Win, XY, State, Last) ->
 draw_one(ID, Win, XY, State, Last) ->
     case tree_db:lookup(State#state.wtree,ID) of
 	[] ->
-	    lager:error("widget ~p not in the tree", [ID]),
+	    ?error("widget ~p not in the tree\n", [ID]),
 	    Last;
 	[{_,Wid}] ->
 	    %% ?dbg("draw_one: ~p\n", [Wid]),
@@ -1694,8 +1698,8 @@ draw_children(ID, Win, XY, W, State, Last) when
 	    TabID = ID++[list_to_binary(Tab)],
 	    draw_child(TabID, Win, XY, State, Last);
        true ->
-	    lager:error("panel tab ~w not defined in ~s\n",
-			[V,W#widget.id]),
+	    ?error("panel tab ~w not defined in ~s\n",
+		   [V,W#widget.id]),
 	    Last
     end;
 draw_children(ID, Win, XY, _W, State, Last) ->
@@ -1704,7 +1708,7 @@ draw_children(ID, Win, XY, _W, State, Last) ->
 draw_child(ID, Win, XY, State, Last) ->
     case tree_db:lookup(State#state.wtree,ID) of
 	[] ->
-	    lager:error("widget ~p not in the tree", [ID]),
+	    ?error("widget ~p not in the tree\n", [ID]),
 	    Last;
 	[{_,Wid}] ->
 	    W = widget_fetch(Wid),
@@ -1817,8 +1821,8 @@ widget_draw(W, Win, XY={X,Y}, _State) ->
 		      draw_border(Win, X, Y, W, W#widget.border),
 		      draw_text_box(Win, X, Y, W, W#widget.text)
 	      end);
-	Type ->
-	    lager:debug("bad widget type ~p", [Type])
+	_Type ->
+	    ?dbg("bad widget type ~p\n", [_Type])
     end.
 
 %% draw widget button/value with centered text
@@ -2128,7 +2132,7 @@ draw_one_background(Win,W,X,Y,Width,Height,N,Color,Image,Anim,Frame) ->
     if Color =:= undefined ->
 	    ok;
        true ->
-	    %% lager:debug("draw_one_background: color = ~p\n", [Color]),
+	    %% ?dbg("draw_one_background: color = ~p\n", [Color]),
 	    epx_gc:set_fill_style(W#widget.fill),  %% fill, fill2!
 	    set_color(W, Color),
 	    if W#widget.type =:= button ->
@@ -2166,7 +2170,7 @@ draw_one_background(Win,W,X,Y,Width,Height,N,Color,Image,Anim,Frame) ->
     end,
     %% optionally draw animation possibly with image as background
     if is_record(Anim, epx_animation) ->
-	    lager:debug("drawing animation ~p", [Anim]),
+	    ?dbg("drawing animation ~p\n", [Anim]),
 	    AWidth  = epx:animation_info(Anim,width),
 	    AHeight = epx:animation_info(Anim,height),
 	    Count = epx:animation_info(Anim, count),
@@ -2174,7 +2178,7 @@ draw_one_background(Win,W,X,Y,Width,Height,N,Color,Image,Anim,Frame) ->
 			true -> 0
 		     end,
 	    Frame1 = clamp(Frame0, 0, Count-1),
-	    %% lager:debug("draw frame: ~w", [Frame1]),
+	    %% ?dbg("draw frame: ~w\n", [Frame1]),
 	    if AWidth =:= Width, AHeight =:= Height ->
 		    epx:animation_draw(Anim, round(Frame1),
 				       Win#widget.image, epx_gc:current(),
@@ -2307,8 +2311,8 @@ value_proportion(W) ->
     end.
 
 draw_topimage(Win,Xw,Yw, W, TopImage, R) ->
-    lager:debug("drawing topimage ~p, orientation ~p, r ~p", 
-		[W#widget.topimage, W#widget.orientation, R]),
+    ?dbg("drawing topimage ~p, orientation ~p, r ~p\n", 
+	   [W#widget.topimage, W#widget.orientation, R]),
     Width = epx:pixmap_info(TopImage,width),
     Height = epx:pixmap_info(TopImage,height),
     {X,Y} = case W#widget.orientation of
@@ -2369,7 +2373,7 @@ parse_color({A,R,G,B}) when is_integer(A),is_integer(R),
 parse_color(Name) when is_list(Name); is_atom(Name) ->
     case epx_color:from_name(Name) of
 	false ->
-	    lager:error("no such color ~s", [Name]),
+	    ?error("no such color ~s\n", [Name]),
 	    false;
 	{R,G,B} ->
 	    (16#ff bsl 24)+(R bsl 16)+(G bsl 8)+B

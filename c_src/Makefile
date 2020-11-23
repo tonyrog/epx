@@ -4,6 +4,8 @@
 OSNAME := $(shell uname -s)
 MACHINE := $(shell uname -m)
 RELEASE := $(shell uname -r)
+ERL=$(shell readlink -f `which erl`)
+ERL_TOP=$(ERL:%/bin/erl=%)
 CC = gcc
 RANLIB = ranlib
 
@@ -15,6 +17,7 @@ MAC_OS_X  = No
 WIN32     = No
 LINUX     = No
 X11       = No
+XCB       = No
 FB        = No
 GLX       = No
 AGL       = No
@@ -25,26 +28,25 @@ SSE       = No
 SSE2      = No
 SSE3      = No
 SSE4      = No
+AVX2      = No
 NEON      = No
 
 OBJDIR=../obj
-LIBDIR=../lib
+LIBDIR=../priv
 
 ifeq ($(TYPE), debug)
-override OBJDIR=../obj/debug
-override LIBDIR=../lib/debug
-CFG_LIB=$(EPX_DIR)/lib/debug/epx.a -lm 
+CFG_LIB=$(EPX_DIR)/priv/epx.a -lm 
 DFLAGS += -DDEBUG -D_THREAD_SAFE -D_REENTRANT
 CFLAGS += -g -Wall -Wextra -Wswitch-default -Wswitch-enum -fno-common 
 endif
 
 ifeq ($(TYPE), release)
-override OBJDIR=../obj/release
-override LIBDIR=../lib/release
-CFG_LIB=$(EPX_DIR)/lib/release/epx.a -lm 
+CFG_LIB=$(EPX_DIR)/priv/epx.a -lm 
 DFLAGS += -D_THREAD_SAFE -D_REENTRANT
 CFLAGS += -O3 -Wall -Wextra -Wswitch-default -Wswitch-enum -fno-common
 endif
+
+nif_target:	CFLAGS += -I$(ERL_TOP)/usr/include
 
 CFG_CFLAGS=-I$(EPX_DIR)/include
 
@@ -54,6 +56,7 @@ LINUX = Yes
 ifeq ($(TARGET_SYS),)
 FB  = Yes
 X11 = Yes
+XCB = Yes
 CFLAGS += -DHAVE_MTTR
 else
 FB  = Yes
@@ -119,20 +122,34 @@ BE_LD_FLAGS =
 #
 ifeq ($(LINUX), Yes)
 X11_PATH=/usr
+BE_LD_FLAGS += -L$(X11_PATH)/lib
+CFG_LDFLAGS += -L$(X11_PATH)/lib
+
+ifeq ($(XCB), Yes)
+	DFLAGS += -DXCB
+	CFLAGS += -I$(X11_PATH)/include
+	BE_OBJS += epx_backend_xcb.o
+	BE_LD_FLAGS += -lxcb
+	CFG_LDFLAGS += -lxcb
+endif
+
 ifeq ($(X11), Yes)
 	DFLAGS += -DX11
 	CFLAGS += -I$(X11_PATH)/include
 	BE_OBJS += epx_backend_x11.o
-	BE_LD_FLAGS += -L$(X11_PATH)/lib -lX11
-	CFG_LDFLAGS += -L$(X11_PATH)/lib -lX11
+	BE_LD_FLAGS += -lX11
+	CFG_LDFLAGS += -lX11
+endif
+
 ifeq ($(GLX), Yes)
 	DFLAGS += -DX11_GLX -DHAVE_OPENGL
 	CFLAGS +=
 	BE_LD_FLAGS += -lGL -lGLU
 	CFG_LDFLAGS += -lGL -lGLU
 endif
+
 endif
-endif
+
 #
 # MacOSX with optional X11,GLX,AGL support
 #
@@ -192,7 +209,6 @@ CFG_LDFLAGS += $(CFG_LIB)
 
 SIMD_OBJS = epx_simd_emu.o
 
-
 ifeq ($(ALTIVEC),Yes)
 	DFLAGS +=  -DUSE_ALTIVEC
 	ARCH_FLAGS += -maltivec
@@ -211,6 +227,16 @@ endif
 
 ifeq ($(SSE3),Yes)
 	ARCH_FLAGS += -msse3
+endif
+
+ifeq ($(SSE4),Yes)
+	ARCH_FLAGS += -msse4.1
+endif
+
+ifeq ($(AVX2),Yes)
+	DFLAGS += -DUSE_AVX2
+	ARCH_FLAGS += -mavx2
+	SIMD_OBJS += epx_simd_avx2.o
 endif
 
 ifeq ($(MMX),Yes)
@@ -253,27 +279,24 @@ DFLAGS += -I ../include
 CFLAGS += $(WARN) -g -fPIC
 
 nif:
-	$(MAKE) -f Makefile.clib nif_target TYPE=release
-	$(MAKE) -f Makefile.clib epx-config TYPE=release
-	$(MAKE) -f Makefile.clib nif_target TYPE=debug
-	$(MAKE) -f Makefile.clib epx-config TYPE=debug
+	$(MAKE) nif_target TYPE=release
+	$(MAKE) epx-config TYPE=release
+
+nif_debug:
+	$(MAKE) nif_target TYPE=debug
+	$(MAKE) epx-config TYPE=debug
 
 clean:
-	$(MAKE) -f Makefile.clib clean_target TYPE=release
-	$(MAKE) -f Makefile.clib clean_target TYPE=debug
+	$(MAKE) clean_target TYPE=release
+	$(MAKE) clean_target TYPE=debug
 
-# Make epx library
 debug:
-	$(MAKE) -f Makefile.clib lib_target TYPE=debug
-	$(MAKE) -f Makefile.clib epx-config TYPE=debug
+	$(MAKE) lib_target TYPE=debug
+	$(MAKE) epx-config TYPE=debug
 
 release:
-	$(MAKE) -f Makefile.clib lib_target TYPE=release
-	$(MAKE) -f Makefile.clib epx-config TYPE=release
-
-depend:
-	$(MAKE) -f Makefile.clib depend_target TYPE=release
-	$(MAKE) -f Makefile.clib depend_target TYPE=debug
+	$(MAKE) lib_target TYPE=release
+	$(MAKE) epx-config TYPE=release
 
 lib_target: $(EPX_LIB)
 
@@ -281,11 +304,6 @@ nif_target: $(EPX_LIB) $(EPX_NIF)
 
 epx-config: $(OBJDIR)/epx-config
 	chmod +x $(OBJDIR)/epx-config
-
-# add -MG if we have generated include files
-depend_target:
-	$(CC) -MM $(DFLAGS) $(CFLAGS) $(SRC) | \
-		sed 's|^\([^:]*:\)|$$(OBJDIR)/\1|g' > $(OBJDIR)/depend.mk
 
 clean_target:
 	-rm -f $(EPX_LIB) $(OBJDIR)/*.o $(EPX_NIF)
@@ -300,15 +318,14 @@ endif
 $(EPX_NIF): $(EPX_LIB) $(OBJDIR)/epx_nif.o
 	$(LD_SHARED) -o $@ $(OBJDIR)/epx_nif.o $(DLL_LIBS)  $(EPX_LIB) $(LD_FLAGS) $(ARCH_FLAGS) $(BE_LD_FLAGS)
 
--include $(OBJDIR)/depend.mk
-
 $(OBJDIR)/epx_nif.o: epx_nif.c
-	$(CC) -c -o $@ $(DFLAGS) $(CFLAGS) $(ARCH_FLAGS) epx_nif.c
+	$(CC) -c -o $@ -MMD -MF .epx_nif.d $(DFLAGS) $(CFLAGS) $(ARCH_FLAGS) epx_nif.c
 
-$(OBJDIR)/epx-config: epx-config.src ../vsn.mk Makefile.clib
+$(OBJDIR)/epx-config: epx-config.src ../vsn.mk
 	sed -e 's;%EPX_VSN%;$(EPX_VSN);' -e 's;%CFLAGS%;$(CFG_CFLAGS);' -e 's;%LDFLAGS%;$(CFG_LDFLAGS);' $< > $@
 
+# we should probably generate dependcies dependent on (at least) debug flags!
 $(OBJDIR)/%.o:	%.c
-	$(CC) -c -o $@ $(CFLAGS) $(ARCH_FLAGS) $(DFLAGS) $<
+	$(CC) -c -o $@ -MMD -MF .$<.d $(CFLAGS) $(ARCH_FLAGS) $(DFLAGS) $<
 
-
+-include .*.d
