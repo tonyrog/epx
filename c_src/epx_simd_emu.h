@@ -48,7 +48,7 @@ epx_simd_vector_set_8(uint8_t x0,uint8_t x1,uint8_t x2,uint8_t x3)
 static inline epx_vector_t __attribute__((__always_inline__))
 epx_simd_vector_set_16(uint16_t y0,uint16_t y1)
 {
-    epx_vector_t r;
+    epx_vector_t r = 0;  // strange, gcc handles set_8 but not this case
     uint16_t* pr = (uint16_t*) &r;
     pr[0]=y0; pr[1]=y1;
     return r;
