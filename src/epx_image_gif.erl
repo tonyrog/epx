@@ -437,11 +437,11 @@ write_image(Fd, IMG, Pm) ->
 write_pixels(Fd, Pixels, Width, Height, Interlaced, Inline) ->
     Bin = collect_pixels(Pixels, Width, Height, Interlaced),
     {LZWCodeSize, Bin1} = 
-	if Inline == 1 ->
+	if Inline =:= 1 ->
 		%% FIXME: check that all pixels are 7 bit !!!!!
 		{7,<<128, Bin/binary, 129>>};
 	   true ->
-		lzw:compress_gif(Bin)
+		epx_lzw:compress_gif(Bin)
 	end,
     ?dbg("compress: orig_size=~w, size=~w codesize=~w\n",
 	 [size(Bin), size(Bin1), LZWCodeSize]),
@@ -534,7 +534,7 @@ read_image(Fd, LZWCodeSize, _Width, _Height) ->
     case read_blocks(Fd) of
 	{ok,Bin} ->
 	    ?dbg("LZWCodeSize=~p compressed=~p\n", [LZWCodeSize, size(Bin)]),
-	    {ok,lzw:decompress_gif(Bin, LZWCodeSize)};
+	    {ok,epx_lzw:decompress_gif(Bin, LZWCodeSize)};
 	Error ->
 	    Error
     end.
