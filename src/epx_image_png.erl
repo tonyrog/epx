@@ -97,15 +97,17 @@ scan_info(Fd, IMG, true, ?IHDR, Length) ->
     end;
 scan_info(Fd, IMG, false, ?tEXt, Length) ->
     case read_chunk_crc(Fd, Length) of
-	{ok, Bin} ->
-	    scan_info(Fd, update_txt(IMG, Bin), false);
+	{ok, Chunk} ->
+	    {Key,<<Value/binary>>} = keyword(Chunk),
+	    scan_info(Fd,update_txt(IMG,Key,Value), false);
 	Error -> Error
     end;
 scan_info(Fd, IMG, false, ?zTXt, Length) ->
     case read_chunk_crc(Fd, Length) of
-	{ok, CBin} ->
-	    Bin = zlib:uncompress(CBin),
-	    scan_info(Fd, update_txt(IMG, Bin), false);
+	{ok, Chunk} ->
+	    {Key,<<0,CBin/binary>>} = keyword(Chunk),
+	    Value = zlib:uncompress(CBin),
+	    scan_info(Fd, update_txt(IMG,Key,Value), false);
 	Error -> Error
     end;
 scan_info(Fd, IMG, false, ?bKGD, Length) ->
@@ -149,18 +151,14 @@ scan_info(Fd, IMG, false, _Type, Length) ->
     scan_info(Fd, IMG, false).
 
 %% Update txt attributes
-update_txt(IMG, Txt) ->
-    case txt(binary_to_list(Txt), []) of
-	{value,{Key,Value}} ->
-	    case Key of
-		'Comment' ->
-		    IMG#epx_image { comment = Value };
-		_ ->
-		    As = [{Key,Value} | IMG#epx_image.attributes],
-		    IMG#epx_image { attributes = As }
-	    end;
-	false ->
-	    IMG
+update_txt(IMG,Key,Value) ->
+    ?dbg("update_txt: key=~p, value=~p\n", [Key,Value]),
+    case Key of
+	'Comment' ->
+	    IMG#epx_image { comment = binary_to_list(Value) };
+	_ ->
+	    As = [{Key,Value} | IMG#epx_image.attributes],
+	    IMG#epx_image { attributes = As }
     end.
 
 
@@ -234,13 +232,15 @@ color_type(r8g8b8a8) -> {6, 8};
 color_type(rgba) -> {6, 8};
 color_type(r16g16b16a16) -> {6, 16}.
 
-%% process text chunk
-txt([0|Value], RKey) ->
-    {value, {list_to_atom(reverse(RKey)), Value}};
-txt([C|Cs], RKey) ->
-    txt(Cs,[C|RKey]);
-txt([], _) ->
-    false.
+%% scan for a keyword, null terminated (max 79 characters or fail)
+keyword(Bin) ->
+    keyword(Bin, 79, []).
+
+keyword(<<0,Bin/binary>>,_I,Key) ->
+    {lists:reverse(Key), Bin};
+keyword(<<C,Bin/binary>>,I,Key) when I >= 0 ->
+    keyword(Bin,I-1,[C|Key]).
+
 
 %% read palette
 plte(<<R,G,B, Data/binary>>) ->

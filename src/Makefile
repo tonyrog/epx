@@ -1,7 +1,7 @@
 #@BEGIN-APP-DEFAULT-RULES@
 APP=$(shell basename `cd ..; pwd`)
 ERLC=$(shell which erlc)
-ERLC_FLAGS=-MMD -MF .$<.d -I ../.. +debug_info -Ddebug
+ERLC_FLAGS=-MMD -MF .$<.d -I ../.. +debug_info
 ERL_SOURCES=$(wildcard *.erl)
 ERL_OBJECTS=$(ERL_SOURCES:%.erl=../ebin/%.beam)
 ALL_OBJECTS=$(ERL_OBJECTS)
