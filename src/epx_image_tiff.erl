@@ -137,12 +137,23 @@ read_strips(Fd,PIX,Ri,Rs,
 
 		5 -> %% lzw compression
 		    Bin1 = epx_lzw:decompress_tiff(Bin, 8, Fill),
-		    [{width,Width},{format,Format}] =
-			epx:pixmap_info(PIX, [width,format]),
+		    [{width,Width},{pixel_format,Format}] =
+			epx:pixmap_info(PIX, [width,pixel_format]),
 		    Bin2 = undo_differencing(Bin1, Predict, Format, Width),
 		    Rj = split_strip(PIX,Bin2,BytesPerRow,Ri,Rs),
 		    read_strips(Fd,PIX,Rj,Rs,BytesPerRow,
 				Compression, Predict, Fill, SOffset, SCount);
+
+		8 -> %% zlib deflate method
+		    Bin1 = zlib:uncompress(Bin),
+		    [{width,Width},{pixel_format,Format}] =
+			epx:pixmap_info(PIX, [width,pixel_format]),
+		    %% io:format("width=~w, format=~w\n",[Width,Format]),
+		    Bin2 = undo_differencing(Bin1, Predict, Format, Width),
+
+		    Rj = split_strip(PIX,Bin2,BytesPerRow,Ri,Rs),
+		    read_strips(Fd,PIX,Rj,Rs,BytesPerRow,
+				Compression,Predict,Fill,SOffset,SCount);
 		
 		32773 ->
 		    Bin1 = unpack_bits(Bin),
@@ -160,8 +171,8 @@ read_strips(Fd,PIX,Ri,Rs,
 split_strip(PIX,Strip,RowWidth,Ri,Rs) ->
     case Strip of
 	<<RowData:RowWidth/binary, Tail/binary>> ->
-	    [{width,Width},{format,Format}] = 
-		epx:pixmap_info(PIX, [width,format]),
+	    [{width,Width},{pixel_format,Format}] = 
+		epx:pixmap_info(PIX, [width,pixel_format]),
 	    epx:pixmap_put_pixels(PIX,0,Ri,Width,1,Format,RowData),
 	    split_strip(PIX,Tail,RowWidth,Ri+Rs,Rs);
 	_ ->
@@ -570,7 +581,11 @@ decode_strings([], String, Acc) ->
 
 undo_differencing(Data,2,r8g8b8a8,Width) ->
     undo_differencing4(Data, Width);
+undo_differencing(Data,2,rgba,Width) ->
+    undo_differencing4(Data, Width);
 undo_differencing(Data,2,r8g8b8,Width) ->
+    undo_differencing3(Data, Width);
+undo_differencing(Data,2,rgb,Width) ->
     undo_differencing3(Data, Width);
 undo_differencing(Data,_,_,_) ->
     Data.
