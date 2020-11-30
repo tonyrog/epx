@@ -136,7 +136,7 @@ read_strips(Fd,PIX,Ri,Rs,
 				Compression,Predict,Fill,SOffset,SCount);
 
 		5 -> %% lzw compression
-		    Bin1 = lzw:decompress_tiff(Bin, 8, Fill),
+		    Bin1 = epx_lzw:decompress_tiff(Bin, 8, Fill),
 		    [{width,Width},{format,Format}] =
 			epx:pixmap_info(PIX, [width,format]),
 		    Bin2 = undo_differencing(Bin1, Predict, Format, Width),

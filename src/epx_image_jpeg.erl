@@ -149,13 +149,19 @@ read_segments(JFd0,Ei0) ->
 	    ?dbg("SOF0\n",[]),
 	    segment(JFd1,Ei0,
 		    fun(Bin,Ei) ->
-			    process_sofn(Marker, Bin,Ei)
+			    process_sofn(Marker,Bin,Ei)
 		    end);
 	{JFd1,Marker=?M_SOF1} ->
 	    ?dbg("SOF1\n",[]),
 	    segment(JFd1,Ei0,
 		    fun(Bin,Ei) ->
-			    process_sofn(Marker, Bin,Ei)
+			    process_sofn(Marker,Bin,Ei)
+		    end);
+	{JFd1,Marker=?M_SOF2} ->
+	    ?dbg("SOF2\n",[]),
+	    segment(JFd1,Ei0,
+		    fun(Bin,Ei) ->
+			    process_sofn(Marker,Bin,Ei)
 		    end);
 	{JFd1,?M_DHT} -> 
 	    ?dbg("DHT\n", []),
@@ -189,7 +195,7 @@ read_segments(JFd0,Ei0) ->
 			{_JFd3, eof} ->
 			    io:format("Warning: EOF before EOI\n"),
 			    {ok,Ei0};
-			{JFd3,<<Bin/binary>>} when size(Bin) == Len-2 ->
+			{JFd3,<<Bin/binary>>} when size(Bin) =:= Len-2 ->
 			    SOS = init_sos(Bin, Ei0),
 			    {JFd4,Ei1} = read_sos(JFd3, SOS, Ei0),
 			    read_segments(JFd4, Ei1);
@@ -232,8 +238,8 @@ component_vh(Comps, IMG) ->
     component_vh(Comps, IMG, 0, 0).
 
 component_vh([{Format,_DC,_AC}|Cs], IMG, H, V) ->
-    %% io:format("component_vh: ~p\n", [{component,Format}]),
-    %% io:format("attributes = ~p\n", [IMG#epx_image.attributes]),
+    ?dbg("component_vh: ~p\n", [{component,Format}]),
+    ?dbg("attributes = ~p\n", [IMG#epx_image.attributes]),
     {_Q,H0,V0} = epx_image:attribute(IMG, {component,Format}, undefined),
     component_vh(Cs, IMG, erlang:max(H,H0), erlang:max(V,V0));
 component_vh([], _IMG, H, V) ->
@@ -360,7 +366,6 @@ read_block(JFd,I,C, Dc, Acc) ->
     read_block(JFd1,I-1,C,hd(B0),[B3|Acc]).
 
 
-    
 read_rst(JFd, 0, Dcs, _SOS) ->
     {JFd,Dcs};    
 read_rst(JFd, N, Dcs, SOS) ->
@@ -666,7 +671,7 @@ jfd_load_bits_(JFd, Bits, Bytes, N) ->
 %% decode all DHT tables
 decode_dht(<<_:3,AC:1,Ti:4,Bin/binary>>, IMG) ->
     {DHT,Bin1} = epx_huffman:decode_dht(Bin),
-    if AC==0 -> 
+    if AC=:=0 -> 
 	    ?dbg("DHT: DC table=~p\n", [Ti]);
        true ->
 	    ?dbg("DHT: AC table=~p\n", [Ti])
@@ -828,7 +833,7 @@ process_sofn_component(0, _Bin, IMG) ->
     IMG;
 process_sofn_component(I, <<ID:8,H:4,V:4,Q:8,Bin/binary>>,IMG) ->
     Format = component_id(ID),
-    %% io:format("set_attribute ~w\n", [{component,Format}]),
+    ?dbg("set_attribute ~w\n", [{component,Format}]),
     IMG1 = epx_image:set_attribute(IMG, {component,Format}, {Q,H,V}),
     ?dbg("component ~p q=~p, h=~p, v=~p\n", [Format,Q,H,V]),
     process_sofn_component(I-1, Bin, IMG1).

@@ -30,6 +30,8 @@
 -include("../include/epx_image.hrl").
 -include("dbg.hrl").
 
+-compile(export_all).
+
 -record(bmp_file_header,
 	{
 	  magic,   %% 2 bytes, "BM"/"BA", "CI", "CP", "IC", PT"
@@ -120,7 +122,9 @@ read_dib_header(Fd) ->
 		     HRes:32/little,
 		     VRes:32/little,
 		     ColorsUsed:32/little, 
-		     ImportantColors:32/little>> } ->
+		     ImportantColors:32/little,
+		      _Profile/binary>>}
+		->
 		    {ok, #bmp_dib_header { hdr_size=HSize,
 					   width = Width,
 					   height = Height,
@@ -133,7 +137,7 @@ read_dib_header(Fd) ->
 					   colors = ColorsUsed,
 					   important = ImportantColors }};
 		{ok, _} ->
-		    {error, bad_magic};
+		    {error, bad_dib_header};
 		Error ->
 		    Error
 	    end;
@@ -149,6 +153,7 @@ bits_per_row(l4,W) -> W*4;
 bits_per_row(l8,W) -> W*8;
 bits_per_row(r8g8b8,W) -> W*24;
 bits_per_row(b8g8r8,W) -> W*24;
+bits_per_row(b8g8r8a8,W) -> W*32;
 bits_per_row(palette1,W) -> W;
 bits_per_row(palette2,W) -> W*2;
 bits_per_row(palette4,W) -> W*4;
@@ -162,6 +167,7 @@ format(0, 1)  -> l1;
 format(0, 4)  -> l4;
 format(0, 8)  -> l8;
 format(0, 24) -> b8g8r8;
+format(0, 32) -> b8g8r8a8;
 format(_, 1)  -> palette1;
 format(_, 2)  -> palette2;
 format(_, 4)  -> palette4;
