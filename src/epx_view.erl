@@ -23,9 +23,15 @@
 -module(epx_view).
 
 -export([push/1, pop/1]).
--export([put_pixel/4, put_pixels/6, get_pixel/3]).
--export([draw_point/3, draw_line/5,  draw_rectangle/5, draw_ellipse/5]).
+-export([put_pixel/3,put_pixel/4]).
+-export([put_pixels/3, put_pixels/6]).
+-export([get_pixel/2, get_pixel/3]).
+-export([draw_point/2, draw_point/3]).
+-export([draw_line/3, draw_line/5]).
+-export([draw_rectangle/2, draw_rectangle/5]).
+-export([draw_ellipse/2, draw_ellipse/5]).
 -export([draw/2]).
+-export([show/2, show/3]).
 -export([set_clip/5]).
 -export([moveto/3, lineto/3, turnto/2]).
 -export([move/2, move/3, line/2, line/3, turn/2]).
@@ -209,17 +215,23 @@ turn(Pixmap,Deg) when is_number(Deg) ->
 %%
 %% Pixmap interface
 %%
+draw_point(Pixmap, {X, Y}) ->
+    draw_point(Pixmap, X, Y).
 draw_point(Pixmap, X, Y) ->
     Vm = get_vm(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
     epx:draw_point(Pixmap,X1,Y1).
 
+draw_line(Pixmap, {X0,Y0}, {X1,Y1}) ->
+    draw_line(Pixmap, X0, Y0, X1, Y1).
 draw_line(Pixmap, X0, Y0, X1, Y1) ->
     Vm = get_vm(Pixmap),
     {X2,Y2} = epx_t2d:point(Vm,X0,Y0),
     {X3,Y3} = epx_t2d:point(Vm,X1,Y1),
     epx:draw_line(Pixmap,X2,Y2,X3,Y3).
 
+draw_rectangle(Pixmap, {X, Y, W, H}) ->    
+    draw_rectangle(Pixmap, X, Y, W, H).
 draw_rectangle(Pixmap, X, Y, W, H) ->    
     Vm = get_vm(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
@@ -227,6 +239,8 @@ draw_rectangle(Pixmap, X, Y, W, H) ->
     {W1,H1} = epx_t2d:dimension(Vm,W,H),
     epx:draw_rectangle(Pixmap,X1,Y1,W1,H1).
 
+draw_ellipse(Pixmap, {X, Y, A, B}) ->
+    draw_ellipse(Pixmap, X,Y, A,B).
 draw_ellipse(Pixmap, X, Y, A, B) ->
     Vm = get_vm(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
@@ -234,18 +248,61 @@ draw_ellipse(Pixmap, X, Y, A, B) ->
     {A1,B1} = epx_t2d:dimension(Vm,A,B),
     epx:draw_ellipse(Pixmap,X1,Y1,A1,B1).
 
+put_pixel(Pixmap,{X,Y},Pixel) ->
+    put_pixel(Pixmap,X,Y,Pixel).
 put_pixel(Pixmap,X,Y,Pixel) ->
     Vm = get_vm(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
     epx:pixmap_put_pixel(Pixmap,X1,Y1,Pixel).
 
+put_pixels(Pixmap, {X, Y, W, H}, Ps) ->
+    put_pixels(Pixmap, X, Y, W, H, Ps).
 put_pixels(Pixmap, X, Y, W, H, Ps) ->
     Vm = get_vm(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
     %% fixme: scale etc..
     epx:pixmap_put_pixels(Pixmap,X1,Y1,W,H,Ps).    
 
+get_pixel(Pixmap,{X,Y}) ->
+    get_pixel(Pixmap,X,Y).
 get_pixel(Pixmap,X,Y) ->
     Vm = get_vm(Pixmap),
     {X1,Y1} = epx_t2d:point(Vm,X,Y),
     epx:pixmap_get_pixel(Pixmap,X1,Y1).
+
+%% utility to setup window and draw som content 
+show(Fun, WindowRect) ->
+    show(Fun, WindowRect, [configure]).
+
+show(Fun, {X,Y,W,H}, Events) ->
+    epx:start(),
+    Win = epx:window_create(X,Y,W,H,Events),
+    epx:window_attach(Win),
+    Pix = epx:pixmap_create(W,H,argb),
+    epx:pixmap_fill(Pix, white),
+    epx:pixmap_attach(Pix),
+    epx:pixmap_draw(Pix,Win,0,0,0,0,W, H),
+    %%  prepare epx_view
+    identity(Pix),
+    draw(Pix, fun() -> Fun(Pix) end),
+    epx:pixmap_draw(Pix,Win,0,0,0,0,W, H),
+    (fun DRAW() ->
+	     receive
+		 {epx_event,Win, close} ->
+		     ok;
+		 {epx_event,_Win,{configure, _Rect}} ->
+		     epx:pixmap_fill(Pix, white),
+		     identity(Pix),
+		     draw(Pix, fun() -> Fun(Pix) end),
+		     epx:pixmap_draw(Pix,Win,0,0,0,0,W, H),
+		     DRAW();
+		 %% fixme: handle zoom(+/-) scroll(arrows)
+		 Event ->
+		     io:format("epx_view: got ~w\n", [Event]),
+		     DRAW()
+	     end
+
+     end)(),
+    epx:window_detach(Win),
+    epx:pixmap_detach(Pix),
+    ok.
