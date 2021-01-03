@@ -251,6 +251,7 @@ LIB_OBJS = \
 	epx_dict.o \
 	epx_pixel.o \
 	epx_pixmap.o \
+	epx_canvas.o \
 	epx_anim.o \
 	epx_line.o \
 	epx_ellipse.o \

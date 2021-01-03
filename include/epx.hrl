@@ -20,8 +20,6 @@
 -ifndef(__EPX_HRL__).
 -define(__EPX_HRL__, true).
 
-%%-record(epx_point, { x, y }).
-%%-record(epx_rect,  {  x, y, w, h }).
 -record(epx_event, {  win, data }).
 
 -record(epx_backend, { id, data }).
@@ -31,6 +29,7 @@
 -record(epx_gc, { id, data }).
 -record(epx_dict, { id, data }).
 -record(epx_animation, { id, data }).
+-record(epx_canvas, { id, data }).
 
 -record(epx_font_info,
 	{

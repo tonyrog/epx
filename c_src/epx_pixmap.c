@@ -2644,6 +2644,31 @@ static epx_pixel_t binop_dst_blend(epx_pixel_t a, epx_pixel_t b)
     return epx_pixel_blend(b.a, b, a);
 }
 
+epx_pixel_t epx_pixel_operation(epx_pixel_operation_t op,
+				epx_pixel_t a, epx_pixel_t b)
+{
+    switch(op) {
+    case EPX_PIXEL_OP_CLEAR:    return binop_clear(a,b);
+    case EPX_PIXEL_OP_SRC:      return binop_src(a,b);
+    case EPX_PIXEL_OP_DST:      return binop_dst(a,b);
+    case EPX_PIXEL_OP_SRC_OVER: return binop_src_over(a,b);
+    case EPX_PIXEL_OP_DST_OVER: return binop_dst_over(a,b);
+    case EPX_PIXEL_OP_SRC_IN:   return binop_src_in(a,b);
+    case EPX_PIXEL_OP_DST_IN:   return binop_dst_in(a,b);
+    case EPX_PIXEL_OP_SRC_OUT:  return binop_src_out(a,b);
+    case EPX_PIXEL_OP_DST_OUT:  return binop_dst_out(a,b);
+    case EPX_PIXEL_OP_SRC_ATOP: return binop_src_atop(a,b);
+    case EPX_PIXEL_OP_DST_ATOP: return binop_dst_atop(a,b);
+    case EPX_PIXEL_OP_XOR:      return binop_xor(a,b);
+    case EPX_PIXEL_OP_COPY:     return binop_copy(a,b);
+    case EPX_PIXEL_OP_ADD:      return epx_pixel_add(a,b);
+    case EPX_PIXEL_OP_SUB:      return epx_pixel_sub(a,b);
+    case EPX_PIXEL_OP_SRC_BLEND: return binop_src_blend(a,b);
+    case EPX_PIXEL_OP_DST_BLEND: return binop_dst_blend(a,b);
+    default: return (epx_pixel_t)EPX_PIXEL_TRANSPARENT;
+    }
+}
+
 // FUNCTION: epx_binop_sub_AREA ( ... )
 #define AREA_FUNCTION         epx_binop_sub_AREA
 #define AREA_PARAMS_DECL

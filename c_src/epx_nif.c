@@ -136,8 +136,17 @@ static void epx_unload(ErlNifEnv* env, void* priv_data);
     NIF("animation_info_", 2, animation_info) \
     NIF("animation_draw", 6, animation_draw) \
     NIF("animation_copy", 6, animation_copy) \
-    NIF("animation_open", 1, animation_open)
-
+    NIF("animation_open", 1, animation_open) \
+    NIF("canvas_create", 0, canvas_create)   \
+    NIF("canvas_line", 4, canvas_line)	     \
+    NIF("canvas_quad", 7, canvas_quad)	     \
+    NIF("canvas_and",  3, canvas_and)	     \
+    NIF("canvas_or",   3, canvas_or)	     \
+    NIF("canvas_over", 3, canvas_over)	     \
+    NIF("canvas_not",  2, canvas_not)	     \
+    NIF("canvas_set_color", 3, canvas_set_color) \
+    NIF("canvas_set_operation", 3, canvas_set_operation)	\
+    NIF("canvas_draw", 2, canvas_draw)
 
 // Declare all nif functions
 #undef NIF
@@ -335,6 +344,7 @@ epx_resource_t font_res;
 epx_resource_t backend_res;
 epx_resource_t window_res;
 epx_resource_t anim_res;
+epx_resource_t canvas_res;
 
 
 // Atom macros
@@ -374,6 +384,7 @@ DECL_ATOM(epx_dict);
 DECL_ATOM(epx_gc);
 DECL_ATOM(epx_font);
 DECL_ATOM(epx_animation);
+DECL_ATOM(epx_canvas);
 
 // simd
 DECL_ATOM(emu);
@@ -680,6 +691,22 @@ int nif_enter(const char* funcname, int argc, const ERL_NIF_TERM argv[])
 
 
 // some primitive argument access functions
+
+static int get_number(ErlNifEnv* env, const ERL_NIF_TERM term, double* number)
+{
+    double x;
+    int64_t xi;
+
+    if (enif_get_int64(env, term, &xi)) {
+	*number = (double) xi;
+	return 1;
+    }
+    if (!enif_get_double(env, term, &x))
+	return 0;
+    *number = x;
+    return 1;
+}
+
 
 static int get_coord(ErlNifEnv* env, const ERL_NIF_TERM term, int* coord)
 {
@@ -3797,6 +3824,202 @@ static ERL_NIF_TERM animation_info(ErlNifEnv* env, int argc,
 
 /******************************************************************************
  *
+ * canvas
+ *
+ *****************************************************************************/
+
+
+static ERL_NIF_TERM canvas_create(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    (void) argv;
+    epx_canvas_t* canvas;
+    ERL_NIF_TERM t;
+    
+    canvas = epx_resource_alloc(&canvas_res, sizeof(epx_canvas_t));
+    if (!canvas)
+	return enif_make_badarg(env);
+    epx_canvas_init(canvas);
+    epx_object_ref(canvas);
+    t = make_object(env,ATOM(epx_canvas), canvas);
+    enif_release_resource(canvas);
+    return t;
+}
+
+static ERL_NIF_TERM canvas_line(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    (void) argv;
+    epx_canvas_t* canvas;
+    double D, E, F;
+    int k;
+   
+    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+	return enif_make_badarg(env);
+    if (!get_number(env, argv[1], &D))
+	return enif_make_badarg(env);
+    if (!get_number(env, argv[2], &E))
+	return enif_make_badarg(env);
+    if (!get_number(env, argv[3], &F))
+	return enif_make_badarg(env);
+    if ((k = epx_canvas_line(canvas, D, E, F)) < 0)
+	return enif_make_badarg(env); // exception alloc ?
+    return enif_make_int(env, k);
+}
+
+static ERL_NIF_TERM canvas_quad(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    (void) argv;
+    epx_canvas_t* canvas;
+    double A, B, C, D, E, F;
+    int k;
+   
+    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+	return enif_make_badarg(env);
+    if (!get_number(env, argv[1], &A))
+	return enif_make_badarg(env);
+    if (!get_number(env, argv[2], &B))
+	return enif_make_badarg(env);
+    if (!get_number(env, argv[3], &C))
+	return enif_make_badarg(env);
+    if (!get_number(env, argv[4], &D))
+	return enif_make_badarg(env);
+    if (!get_number(env, argv[5], &E))
+	return enif_make_badarg(env);
+    if (!get_number(env, argv[6], &F))
+	return enif_make_badarg(env);    
+    if ((k = epx_canvas_quad(canvas, A,B,C,D,E,F)) < 0)
+	return enif_make_badarg(env);
+    return enif_make_int(env, k);
+}
+
+static ERL_NIF_TERM canvas_and(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    (void) argv;
+    epx_canvas_t* canvas;
+    int i, j, k;
+
+    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[1], &i))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[2], &j))
+	return enif_make_badarg(env);
+    if ((k = epx_canvas_and(canvas, i, j)) < 0)
+	return enif_make_badarg(env);
+    return enif_make_int(env, k);    
+}
+
+static ERL_NIF_TERM canvas_or(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    (void) argv;
+    epx_canvas_t* canvas;
+    int i, j, k;
+
+    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[1], &i))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[2], &j))
+	return enif_make_badarg(env);
+    if ((k = epx_canvas_or(canvas, i, j)) < 0)
+	return enif_make_badarg(env);
+    return enif_make_int(env, k);    
+}
+
+static ERL_NIF_TERM canvas_over(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    (void) argv;
+    epx_canvas_t* canvas;
+    int i, j, k;
+
+    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[1], &i))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[2], &j))
+	return enif_make_badarg(env);
+    if ((k = epx_canvas_over(canvas, i, j)) < 0)
+	return enif_make_badarg(env);
+    return enif_make_int(env, k);    
+}
+
+static ERL_NIF_TERM canvas_not(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    (void) argv;
+    epx_canvas_t* canvas;
+    int i, k;
+
+    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[1], &i))
+	return enif_make_badarg(env);
+    if ((k = epx_canvas_not(canvas, i)) < 0)
+	return enif_make_badarg(env);
+    return enif_make_int(env, k);    
+}
+
+
+static ERL_NIF_TERM canvas_set_color(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    (void) argv;
+    epx_canvas_t* canvas;
+    int i;
+    epx_pixel_t color;
+
+    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[1], &i))
+	return enif_make_badarg(env);
+    if (!get_color(env, argv[2], &color))
+	return enif_make_badarg(env);
+    if (!epx_canvas_set_color(canvas, i, color))
+	return enif_make_badarg(env);
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM canvas_set_operation(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    (void) argv;
+    epx_canvas_t* canvas;
+    int i;
+    epx_pixel_operation_t op;    
+
+    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[1], &i))
+	return enif_make_badarg(env);
+    if (!get_operation(env, argv[2], &op))
+	return enif_make_badarg(env);
+    if (!epx_canvas_set_operation(canvas, i, op))
+	return enif_make_badarg(env);
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM canvas_draw(ErlNifEnv* env, int argc,
+				const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_canvas_t* canvas;    
+    epx_pixmap_t* pixmap;
+
+    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+	return enif_make_badarg(env);
+    if (!get_object(env, argv[1], &pixmap_res, (void**) &pixmap))
+	return enif_make_badarg(env);
+    epx_canvas_draw(canvas, pixmap);
+    return ATOM(ok);
+}
+
+/******************************************************************************
+ *
  * Dictionary
  *
  *****************************************************************************/
@@ -5533,6 +5756,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(epx_gc);
     LOAD_ATOM(epx_font);
     LOAD_ATOM(epx_animation);
+    LOAD_ATOM(epx_canvas);    
 
     // Flags
     LOAD_ATOM(solid);
@@ -5907,8 +6131,10 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 		      ERL_NIF_RT_CREATE, &tried);
     epx_resource_init(env, &window_res, "epx_window", window_dtor,
 		      ERL_NIF_RT_CREATE, &tried);
-    epx_resource_init(env, &anim_res, "epx_animation",  object_dtor,
+    epx_resource_init(env, &anim_res, "epx_animation", object_dtor,
 		      ERL_NIF_RT_CREATE, &tried);
+    epx_resource_init(env, &canvas_res, "epx_canvas", object_dtor,
+		      ERL_NIF_RT_CREATE, &tried);    
 
     if ((ctx = (epx_ctx_t*) enif_alloc(sizeof(epx_ctx_t))) == NULL)
 	return -1;
@@ -5969,6 +6195,8 @@ static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
 		      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, &tried);
     epx_resource_init(env, &anim_res, "epx_animation",  object_dtor,
 		      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, &tried);
+    epx_resource_init(env, &canvas_res, "epx_canvas",  object_dtor,
+		      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, &tried);    
 
     load_atoms(env, ctx);
 

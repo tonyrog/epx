@@ -284,25 +284,35 @@ show(Fun, {X,Y,W,H}, Events) ->
     epx:pixmap_draw(Pix,Win,0,0,0,0,W, H),
     %%  prepare epx_view
     identity(Pix),
-    draw(Pix, fun() -> Fun(Pix) end),
-    epx:pixmap_draw(Pix,Win,0,0,0,0,W, H),
+    %% draw(Pix, fun() -> Fun(Pix) end),
+    epx:pixmap_draw(Pix,Win,0,0,0,0,W,H),
     (fun DRAW() ->
+	     epx:pixmap_fill(Pix, white),
+	     identity(Pix),
+	     draw(Pix, fun() -> Fun(Pix) end),
+	     epx:pixmap_draw(Pix,Win,0,0,0,0,W, H),
 	     receive
 		 {epx_event,Win, close} ->
 		     ok;
-		 {epx_event,_Win,{configure, _Rect}} ->
-		     epx:pixmap_fill(Pix, white),
-		     identity(Pix),
-		     draw(Pix, fun() -> Fun(Pix) end),
-		     epx:pixmap_draw(Pix,Win,0,0,0,0,W, H),
+		 {epx_event,Win,{configure, _Rect}} ->
+		     flush_configure(Win),
 		     DRAW();
 		 %% fixme: handle zoom(+/-) scroll(arrows)
 		 Event ->
 		     io:format("epx_view: got ~w\n", [Event]),
 		     DRAW()
 	     end
-
      end)(),
     epx:window_detach(Win),
     epx:pixmap_detach(Pix),
     ok.
+
+flush_configure(Win) ->
+    receive
+	{epx_event,Win,{configure, _Rect}} ->
+	    flush_configure(Win)
+    after 0 ->
+	    ok
+    end.
+
+    

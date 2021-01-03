@@ -233,6 +233,9 @@ extern void epx_pixmap_scroll(epx_pixmap_t* src, epx_pixmap_t* dst,
 			      int horizontal, int vertical, 
 			      int rotate, epx_pixel_t fill);
 
+extern epx_pixel_t epx_pixel_operation(epx_pixel_operation_t op,
+				       epx_pixel_t a, epx_pixel_t b);
+
 extern void epx_pixmap_operation_area(epx_pixmap_t* src,epx_pixmap_t* dst, 
 				      epx_pixel_operation_t op,
 				      int x_src, int y_src, int x_dst, int y_dst,

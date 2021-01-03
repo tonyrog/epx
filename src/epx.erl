@@ -138,6 +138,18 @@
 -export([window_detach/1]).
 -export([window_sync/1]).
 
+%% Canvas
+-export([canvas_create/0]).
+-export([canvas_line/4]).
+-export([canvas_quad/7]).
+-export([canvas_and/3]).
+-export([canvas_or/3]).
+-export([canvas_over/3]).
+-export([canvas_not/2]).
+-export([canvas_set_color/3]).
+-export([canvas_set_operation/3]).
+-export([canvas_draw/2]).
+
 %% Utils
 -export([draw_point/3, draw_point/2]).
 -export([draw_line/3, draw_line/5]).
@@ -171,7 +183,8 @@
 	      epx_font/0,
 	      epx_gc/0,
 	      epx_dict/0,
-	      epx_animation/0]).
+	      epx_animation/0,
+	      epx_canvas/0]).
 
 -export_type([epx_rect/0,
 	      epx_pixel_format/0,
@@ -200,6 +213,10 @@
 -opaque epx_gc()        ::  #epx_gc{}  | undefined.
 -opaque epx_dict()      ::  #epx_dict{}  | undefined.
 -opaque epx_animation() ::  #epx_animation{}  | undefined.
+-opaque epx_canvas()    ::  #epx_canvas{} | undefined.
+
+-type canvas_elem() :: integer().
+
 -type epx_rect() :: { X::coord(), Y::coord(),
 		      Width::dim(), Height::dim() }.
 
@@ -256,11 +273,11 @@
 -type epx_window_event_flags() :: epx_window_event_flag() |
 				 [epx_window_event_flag()].
 
-
+-define(nif_stub(),
+	erlang:nif_error({nif_not_loaded,module,?MODULE,line,?LINE})).
 
 init() ->
     Nif = filename:join([code:priv_dir(epx),"epx_nif"]),
-    %% io:format("Loading: ~s\n", [Nif]),
     erlang:load_nif(Nif, 0).
 
 %%
@@ -281,7 +298,7 @@ start() ->
 
 
 debug(_Level) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -type epx_simd_info_key() ::
 	'accel' |
@@ -342,7 +359,7 @@ simd_info(K) when is_atom(K) ->
 -spec simd_info_(Key::epx_simd_info_key()) -> term().
 
 simd_info_(_Info) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Set current acceleration type
@@ -350,7 +367,7 @@ simd_info_(_Info) ->
 -spec simd_set(Accel::epx_accel_type()) -> void().
 
 simd_set(_Accel) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Create a pixmap of size WidthxHeight using the pixel format 'argb'
@@ -368,7 +385,7 @@ pixmap_create(Width,Height) ->
 			   epx_pixmap().
 
 pixmap_create(_Width,_Height,_Format) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Create a new pixmap with all pixels from Src
@@ -376,7 +393,7 @@ pixmap_create(_Width,_Height,_Format) ->
 -spec pixmap_copy(Src::epx_pixmap()) -> epx_pixmap().
 
 pixmap_copy(_Src) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 
 %% @doc
@@ -392,7 +409,7 @@ pixmap_copy(_Src) ->
 			       epx_pixmap().
 
 pixmap_sub_pixmap(_Src, _X, _Y, _Width, _Height) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -type epx_pixmap_info_key() ::
 	'width' |
@@ -452,7 +469,7 @@ pixmap_info(Pixmap, K) when is_atom(K) ->
 			  term().
 
 pixmap_info_(_Pixmap, _Key) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Set the clipping Rectangle, pixels drawn outside the clipping
@@ -461,7 +478,7 @@ pixmap_info_(_Pixmap, _Key) ->
 -spec pixmap_set_clip(Pixmap::epx_pixmap(), Rect::epx_rect()) -> void().
 
 pixmap_set_clip(_Pixmap, _Rect) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Fill the rectangle Dst with Color
@@ -478,7 +495,7 @@ pixmap_fill(Dst, Color) ->
 			 void().
 
 pixmap_fill(_Dst, _Color, _Flags) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Fill the rectangle Dst with Color
@@ -501,7 +518,7 @@ pixmap_fill_area(Dst, X, Y, Width, Height, Color) ->
 			      void().
 
 pixmap_fill_area(_Dst, _X, _Y, _Width, _Height, _Color, _Flags) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Copy pixles from `Src' pixmap to `Dst' pixmap, ignoring clip rectangle
@@ -509,7 +526,7 @@ pixmap_fill_area(_Dst, _X, _Y, _Width, _Height, _Color, _Flags) ->
 -spec pixmap_copy_to(Src::epx_pixmap(),Dst::epx_pixmap()) -> void().
 
 pixmap_copy_to(_Src, _Dst) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Inline, flip pixmap vertically, that is swap top and bottom rows
@@ -517,7 +534,7 @@ pixmap_copy_to(_Src, _Dst) ->
 -spec pixmap_flip(Pixmap::epx_pixmap()) -> void().
 
 pixmap_flip(_Pixmap) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Scale `Src' pixmap to size (`Width' and `Height') and put the result
@@ -526,7 +543,7 @@ pixmap_flip(_Pixmap) ->
 -spec pixmap_scale(Src::epx_pixmap(),Dst::epx_pixmap(),
 		   Width::dim(), Height::dim()) -> void().
 pixmap_scale(_Src, _Dst, _Width, _Height) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Scale `Src' pixmap to size (`Width' and `Height') and put the result
@@ -567,7 +584,7 @@ pixmap_scale_area(_Src, _Dst,
 		  _XSrc, _YSrc, _XDst, _YDst,
 		  _WSrc, _HSrc, _WDst, _HDst,
 		  _Flags) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Read the pixel value at position (`X',`Y') in pixmap `Src', return
@@ -577,7 +594,7 @@ pixmap_scale_area(_Src, _Dst,
 -spec pixmap_get_pixel(Src::epx_pixmap(), X::coord(), Y::coord()) ->
 			      epx_color4().
 pixmap_get_pixel(_Pixmap,_X,_Y) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Read the interpolated pixel value at position (`X',`Y') in pixmap 
@@ -587,7 +604,7 @@ pixmap_get_pixel(_Pixmap,_X,_Y) ->
 -spec pixmap_interp_pixel(Src::epx_pixmap(), X::coord(), Y::coord()) ->
 			      epx_color4().
 pixmap_interp_pixel(_Pixmap,_X,_Y) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Read the pixels in the rectangle given by (`X',`Y',`Width',`Height')
@@ -597,7 +614,7 @@ pixmap_interp_pixel(_Pixmap,_X,_Y) ->
 			Width::dim(), Height::dim()) ->
 			       binary().
 pixmap_get_pixels(_Pixmap,_X,_Y,_W,_H) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Write the pixel value to position (`X',`Y') in the pixmap `Dst'
@@ -614,7 +631,7 @@ pixmap_put_pixel(Dst,X,Y,Color) ->
 -spec pixmap_put_pixel(Dst::epx_pixmap(), X::coord(), Y::coord(),
 		       Color::epx_color(),Flags::epx_flags()) -> void().
 pixmap_put_pixel(_Dst,_X,_Y,_Color,_Flags) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Write the raw pixels in Data described by Format, into
@@ -640,7 +657,7 @@ pixmap_put_pixels(Dst,X,Y,Width,Height,Format,Data) ->
 			Flags::epx_flags()) ->
 			       void().
 pixmap_put_pixels(_Dst,_X,_Y,_Width,_Height,_Format,_Data,_Flags) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Copy pixels from the area (`XSrc',`YSrc',`Width',`Height') in `Src' pixmap
@@ -671,7 +688,7 @@ pixmap_copy_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height) ->
 		       Flags::epx_flags()) -> void().
 
 pixmap_copy_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Blend `Src' rectangle (`XSrc',`YSrc',`Width',`Height') with
@@ -688,7 +705,7 @@ pixmap_copy_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
 			Width::dim(),Height::dim()) -> void().
 
 pixmap_alpha_area(_Src,_Dst,_Alpha,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Blend `Src' rectangle (`XSrc',`YSrc',`Width',`Heght') to `Dst'
@@ -701,7 +718,7 @@ pixmap_alpha_area(_Src,_Dst,_Alpha,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
 		       XDst::coord(),YDst::coord(),
 		       Width::dim(),Height::dim()) -> void().
 pixmap_fade_area(_Src,_Dst,_Fade,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Shadow `Src' rectangle (`XSrc',`YSrc',`Width',`Heght') to
@@ -723,7 +740,7 @@ pixmap_shadow_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height) ->
 			 Width::dim(),Height::dim(),
 			 Flags::epx_flags()) -> void().
 pixmap_shadow_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 pixmap_add_color_area(Src,Dst,Fade,Color,XSrc,YSrc,XDst,YDst,Width,Height) ->
     pixmap_add_color_area(Src,Dst,Fade,Color,XSrc,YSrc,XDst,YDst,
@@ -731,14 +748,14 @@ pixmap_add_color_area(Src,Dst,Fade,Color,XSrc,YSrc,XDst,YDst,Width,Height) ->
 
 pixmap_add_color_area(_Src,_Dst,_Fade,_Color,_XSrc,_YSrc,_XDst,_YDst,
 		      _Width,_Height,_Flags) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 pixmap_filter_area(Src,Dst,Filter,XSrc,YSrc,XDst,YDst,Width,Height) ->
     pixmap_filter_area(Src,Dst,Filter,XSrc,YSrc,XDst,YDst,Width,Height,[]).
 
 pixmap_filter_area(_Src,_Dst,_Filter,
 		   _XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%    Rotate the `Src' pixels in rectangle (`XSrc',`YSrc',`Width',`Height')
@@ -758,7 +775,7 @@ pixmap_filter_area(_Src,_Dst,_Filter,
 pixmap_rotate_area(_Src,_Dst,_Angle,
 		   _XSrc,_YSrc,_XCSrc,_YCSrc,_XCDst,_YCDst,
 		   _Width,_Height,_Flags) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
 		   Width,Height) ->
@@ -795,7 +812,7 @@ pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
 			    Width::dim(),Height::dim()) -> void().
 
 pixmap_operation_area(_Src,_Dst,_Op,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -spec pixmap_scroll(Src::epx_pixmap(),Dst::epx_pixmap(),
 		    Horizontal::integer(), Vertical::integer(),
@@ -803,7 +820,7 @@ pixmap_operation_area(_Src,_Dst,_Op,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
 			   void().
 
 pixmap_scroll(_Src,_Dst,_Horizontal,_Vertical,_Rotate,_FillColor) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -spec pixmap_attach(Pixmap::epx_pixmap()) -> void().
 
@@ -813,12 +830,12 @@ pixmap_attach(Pixmap) ->
 -spec pixmap_attach(Pixmap::epx_pixmap(),Backend::epx_backend()) -> void().
 
 pixmap_attach(_Pixmap, _Backend) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -spec pixmap_detach(Pixmap::epx_pixmap()) -> void().
 
 pixmap_detach(_Pixmap) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Draw pixels from the area (`XSrc',`YSrc',`Width',`Height') in `Pixmap'
@@ -832,14 +849,14 @@ pixmap_detach(_Pixmap) ->
 		  Width::dim(),Height::dim()) -> void().
 
 pixmap_draw(_Pixmap, _Win, _XSrx, _YSrc, _XDst, _YDst, _Width, _Height) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% Send a sync event to the window, the response from the
 %% window is to send a synced event back.
 -spec window_sync(Win::epx_window()) ->
 			 ok.
 window_sync(_Win) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 sync(Win) ->
     window_sync(Win),
@@ -854,51 +871,51 @@ sync(_Pixmap, Win) -> %% previous interface deprecated...
 
 
 pixmap_draw_point(_Pixmap, _Gc, _X, _Y) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 pixmap_draw_line(_Pixmap, _Gc, _X1, _Y1, _X2, _Y2) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 pixmap_draw_triangle(_Pixmap, _Gc, _X0, _Y0, _X1, _Y1, _X2, _Y2) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -spec pixmap_draw_triangles(Pixmap::epx_pixmap(), Gc::epx_gc(),
 			    Triangles::[triangle()]) -> void().
 			   
 pixmap_draw_triangles(_Pixmap, _Gc, _Triangles) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 pixmap_draw_rectangle(_Pixmap, _Gc, _X, _Y, _Width, _Height) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 pixmap_draw_ellipse(_Pixmap, _Gc, _X, _Y, _Width, _Height) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 pixmap_draw_roundrect(_Pixmap, _Gc, _X, _Y, _Width, _Height, _Rw, _Rh) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -spec pixmap_draw_fan(Pixmap::epx_pixmap(), Gc::epx_gc(), [{X::coord(),Y::coord()}], Closed::boolean()) -> void().
 			   
 pixmap_draw_fan(_Pixmap, _Gc, _Points, _Closed) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -spec pixmap_draw_strip(Pixmap::epx_pixmap(), Gc::epx_gc(), [{X::coord(),Y::coord()}]) -> void().
 			   
 pixmap_draw_strip(_Pixmap, _Gc, _Points) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %%
 %% Animation
 %%
 
 animation_open(_File) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 animation_copy(_Anim, _Index, _Pixmap, _Gx,  _X, _Y) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 animation_draw(_Anim, _Index, _Pixmap, _Gx,  _X, _Y) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 animation_info_keys() ->
     [file_name, file_size, count, width, height, pixel_format].
@@ -912,46 +929,88 @@ animation_info(Anim, K) when is_atom(K) ->
     animation_info_(Anim, K).
 
 animation_info_(_Anim, _Key) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
+
+-spec canvas_create() -> epx_canvas().
+canvas_create() ->
+    ?nif_stub().
+-spec canvas_line(Canvas::epx_canvas(), D::float(), E::float(), F::float()) ->
+	  canvas_elem().
+canvas_line(_Cancas,_D,_E,_F) ->
+    ?nif_stub().
+-spec canvas_quad(Canvas::epx_canvas(), A::float(), B::float(), C::float(),
+		  D::float(), E::float(), F::float()) -> canvas_elem().
+canvas_quad(_Cancas,_A,_B,_C,_D,_E,_F) ->
+    ?nif_stub().
+-spec canvas_and(Canvas::epx_canvas(), I::canvas_elem(), J::canvas_elem()) -> 
+	  canvas_elem().
+canvas_and(_Canvas,_I,_J) ->
+    ?nif_stub().
+-spec canvas_or(Canvas::epx_canvas(), I::canvas_elem(), J::canvas_elem()) -> 
+	  canvas_elem().
+canvas_or(_Canvas,_I,_J) ->
+    ?nif_stub().
+-spec canvas_over(Canvas::epx_canvas(), I::canvas_elem(), J::canvas_elem()) -> 
+	  canvas_elem().
+canvas_over(_Canvas,_I,_J) ->
+    ?nif_stub().
+-spec canvas_not(Canvas::epx_canvas(), I::canvas_elem()) -> 
+	  canvas_elem().
+canvas_not(_Canvas,_I) ->
+    ?nif_stub().
+-spec canvas_set_color(Canvas::epx_canvas(),I::canvas_elem(),
+		       Op::epx_color()) -> ok.
+	   
+canvas_set_color(_Canvas,_I,_Color) ->
+    ?nif_stub().
+-spec canvas_set_operation(Canvas::epx_canvas(),I::canvas_elem(),
+			   Op::epx_pixmap_operation()) ->
+	  ok.
+canvas_set_operation(_Canvas,_I,_Operation) ->
+    ?nif_stub().
+-spec canvas_draw(Canvas::epx_canvas(),Pixmap::epx_pixmap()) ->
+	  ok.
+canvas_draw(_Canvas,_Pixmap) ->
+    ?nif_stub().
 
 %%
 %% Dictionary context
 %%
 dict_create() ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_copy(_Dict) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_set(_Dict, _Key, _Value) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_get(_Dict, _Key) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_is_key(_Dict, _Key) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_first(_Dict) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_next(_Dict, _Key) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_get_boolean(_Dict, _Key) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_get_integer(_Dict, _Key) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_get_float(_Dict, _Key) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_get_string(_Dict, _Key) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_get_binary(_Dict, _Key) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_from_list(List) ->
     Dict = dict_create(),
@@ -969,7 +1028,7 @@ dict_info(Dict, K) when is_atom(K) ->
     dict_info_(Dict, K).
 
 dict_info_(_Dict, _Info) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 dict_info_keys() ->
     ['size', 'sorted'].
@@ -1033,7 +1092,7 @@ dict_info(Dict) ->
 -spec gc_create() -> epx_gc().
 
 gc_create() ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Get the default graphic context
@@ -1042,7 +1101,7 @@ gc_create() ->
 -spec gc_default() -> epx_gc().
 
 gc_default() ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Copy a graphic context
@@ -1050,7 +1109,7 @@ gc_default() ->
 -spec gc_copy(Gc::epx_gc()) -> epx_gc().
 
 gc_copy(_Gc) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Set graphic context item
@@ -1059,7 +1118,7 @@ gc_copy(_Gc) ->
 -spec gc_set(Gc::epx_gc(), Item::epx_gc_info_key(), Value::term()) -> void().
 
 gc_set(_Gc, _Item, _Value) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%  Get graphic context item
@@ -1068,7 +1127,7 @@ gc_set(_Gc, _Item, _Value) ->
 -spec gc_get(Gc::epx_gc(), Item::epx_gc_info_key()) -> term().
 
 gc_get(_Gc, _Item) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% @doc
 %%   Get list of all available gc atributes
@@ -1116,18 +1175,18 @@ gc_info(Gc, Key) when is_atom(Key) ->
 
 %% Font
 font_open(_Filename) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 font_load(_Font) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 font_unload(_Font) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 font_map(_Font) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 font_unmap(_Font) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 font_info_keys() ->
     [file_name, file_size, foundry_name, family_name,
@@ -1145,20 +1204,20 @@ font_info(Font, K) when is_atom(K) ->
 
 
 font_info_(_Font, _Item) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 font_draw_glyph(_Pixmap,_Gc,_X, _Y, _C) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 font_draw_string(_Pixmap, _Gc, _X, _Y, _String) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 font_draw_utf8(_Pixmap,_Gc, _X, _Y, _IOList) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% Backend
 backend_list() ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 backend_open(Name, Params) when is_list(Params) ->
     backend_open_(Name, dict_from_list(Params));
@@ -1168,10 +1227,10 @@ backend_open(Name, Params) when is_record(Params, epx_dict) ->
     backend_open_(Name, Params).
 
 backend_open_(_Name, _Dict) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 backend_info_(_Backend, _Item) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 backend_info(Backend) ->
     [{K,backend_info(Backend,K)} || K <- backend_info_keys()].
@@ -1193,7 +1252,7 @@ backend_adjust(Backend, Params) when is_record(Params,epx_dict) ->
     backend_adjust_(Backend, Params).
 
 backend_adjust_(_Backend, _Dict) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% Window
 -spec window_create(X::coord(), Y::coord(),
@@ -1201,7 +1260,7 @@ backend_adjust_(_Backend, _Dict) ->
 			   epx_window().
 
 window_create(_X,_Y,_Width,_Height) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -spec window_create(X::coord(), Y::coord(),
 		    Width::dim(),Height::dim(),
@@ -1209,7 +1268,7 @@ window_create(_X,_Y,_Width,_Height) ->
 			   epx_window().
 
 window_create(_X,_Y,_Width,_Height,_Mask) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %%
 %% window_info(Window::epx_window(), Item)
@@ -1252,7 +1311,7 @@ window_info(Window, K) when is_atom(K) ->
 			 term().
 
 window_info_(_Window, _Item) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 window_adjust(Window, Params) when is_list(Params) ->
     window_adjust_(Window, dict_from_list(Params));
@@ -1262,37 +1321,37 @@ window_adjust(Window, Params) when is_record(Params,epx_dict) ->
     window_adjust_(Window, Params).
 
 window_adjust_(_Window, _Dict) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -spec window_set_event_mask(Window::epx_window(),
 			    Events::epx_window_event_flags()) ->
 				   void().
 
 window_set_event_mask(_Window, _Events) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -spec window_enable_events(Window::epx_window(),
 			   Events::epx_window_event_flags()) ->
 				  void().
 
 window_enable_events(_Window, _Events) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 -spec window_disable_events(Window::epx_window(),
 			    Events::epx_window_event_flags()) ->
 				   void().
 
 window_disable_events(_Window, _Events) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 window_attach(Window) ->
     window_attach(Window, epx_backend:default()).
 
 window_attach(_Window, _Backend) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 window_detach(_Window) ->
-    erlang:error(nif_not_loaded).
+    ?nif_stub().
 
 %% UTILS
 draw_point(Pixmap,{X,Y}) ->

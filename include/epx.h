@@ -47,6 +47,7 @@ extern "C" {
 #include "epx_dict.h"
 #include "epx_pixmap.h"
 #include "epx_anim.h"
+#include "epx_canvas.h"    
 #include "epx_gc.h"
 #include "epx_draw.h"
 #include "epx_window.h"
