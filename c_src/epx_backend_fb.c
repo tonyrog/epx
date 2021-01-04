@@ -285,8 +285,15 @@ static int load_pixel_format(epx_backend_t* backend,
     little_endian = 1;  // stored in native format
 #endif
     bgr = (b_offs > g_offs);
-    alpha = (a_size > 0);   // alpha channel present 
-    alpha_first = alpha && (a_offs > r_offs);
+    alpha = (a_size > 0);   // alpha channel present
+    // alpha_first = alpha && (a_offs > r_offs);
+    if ((r_size + g_size + b_size) > 0) {
+	if (alpha)
+	    alpha_first = (a_offs > r_offs);
+	else if ((r_size + g_size + b_size) > bits_per_pixel)
+	    alpha_first = (r_offs > 0);
+    }
+
     bits_per_pixel = vinfo->bits_per_pixel;
     if (vinfo->grayscale) fmt = EPX_FMT_GRAY;
     else if ((r_size==g_size) && (g_size==b_size)) {
@@ -603,7 +610,6 @@ epx_backend_t* fb_init(epx_dict_t* param)
     FbBackend* be;
     char* string_param;
     int   int_param;
-    int   r;
 
     if ((be = (FbBackend*) malloc(sizeof(FbBackend))) == NULL)
 	return NULL;
@@ -627,6 +633,9 @@ epx_backend_t* fb_init(epx_dict_t* param)
 #endif
 
 #ifdef HAVE_INPUT_EVENT
+    {
+	int   r;
+	    
     be->poll_fd = -1;
     be->input_fd_sz = 0;
     be->mouse_x = 0;
@@ -650,7 +659,7 @@ epx_backend_t* fb_init(epx_dict_t* param)
     
     if (!setup_input_system(be, param)) 
 	DEBUGF("Failed to setup input system. Disabled");
-
+    }
 #endif
     
     if (epx_dict_lookup_string(param, "framebuffer_device", &string_param, NULL) == -1) {
