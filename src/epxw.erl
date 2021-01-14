@@ -6,28 +6,9 @@
 %%% @end
 %%% Created : 31 Jan 2020 by Tony Rogvall <tony@rogvall.se>
 %%%-------------------------------------------------------------------
--module(epx_server).
+-module(epxw).
 
 -behaviour(gen_server).
-
-%%% Possible user module callbacks are:
-%%%
-%%%    configure(Event, State) -> State'
-%%%    key_press(Event, State) -> State'
-%%%    key_release(Event, State) -> State'
-%%%    button_press(Event, State) -> State'
-%%%    button_release(Event, State) -> State'
-%%%    enter(Event, State) -> State'
-%%%    leave(Event, State) -> State'
-%%%    close(State) -> State'
-%%%    draw(Pixmap,Rect,State) -> State'
-%%%    
-%%%  general events
-%%     handle_call(Request, From, State) -> Reply
-%%     handle_cast(Request, From, State) -> Reply
-%%     handle_info(Info, From, State) -> Reply
-%%%  any event:
-%%%     event(Event, UsertState) -> UserState'
 
 %% API
 -export([start_link/3, start/3]).
@@ -35,7 +16,8 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2, code_change/3, format_status/2]).
+	 handle_continue/2, terminate/2, code_change/3]).
+%% -export([handle_status/2]).
 
 %% api callable from callbacks
 -export([window/0, screen/0, pixels/0, width/0, height/0]).
@@ -49,6 +31,85 @@
 -include_lib("epx/include/epx.hrl").
 -include_lib("epx/include/epx_menu.hrl").
 -include_lib("epx/include/epx_window_content.hrl").
+
+%% epxw callbacks
+-callback init(Window :: epx:epx_window(), Screen::epx:epx_pixmap(),
+	      [Opt::term()]) ->
+    State :: term().
+-callback configure(Event :: term(), State :: term()) -> 
+    NewState :: term().
+-callback key_press(Event :: term(), State :: term()) -> 
+    NewState :: term().
+-callback key_release(Event :: term(), State :: term()) -> 
+    NewState :: term().
+-callback button_press(Event :: term(), State :: term()) -> 
+    NewState :: term().
+-callback button_release(Event :: term(), State :: term()) -> 
+    NewState :: term().
+-callback enter(Event :: term(), State :: term()) -> 
+    NewState :: term().
+-callback leave(Event :: term(), State :: term()) -> 
+    NewState :: term().
+-callback close(State :: term()) -> 
+    NewState :: term().
+-callback draw(Pixels::epx:epx_pixmap(), Rect::epx:epx_rect(),
+	       State :: term()) -> 
+    NewState :: term().
+
+-callback handle_call(Request :: term(), From :: {pid(), Tag :: term()},
+                      State :: term()) ->
+    {reply, Reply :: term(), NewState :: term()} |
+    {reply, Reply :: term(), NewState :: term(), timeout() | hibernate | {continue, term()}} |
+    {noreply, NewState :: term()} |
+    {noreply, NewState :: term(), timeout() | hibernate | {continue, term()}} |
+    {stop, Reason :: term(), Reply :: term(), NewState :: term()} |
+    {stop, Reason :: term(), NewState :: term()}.
+-callback handle_cast(Request :: term(), State :: term()) ->
+    {noreply, NewState :: term()} |
+    {noreply, NewState :: term(), timeout() | hibernate | {continue, term()}} |
+    {stop, Reason :: term(), NewState :: term()}.
+-callback handle_info(Info :: timeout | term(), State :: term()) ->
+    {noreply, NewState :: term()} |
+    {noreply, NewState :: term(), timeout() | hibernate | {continue, term()}} |
+    {stop, Reason :: term(), NewState :: term()}.
+-callback handle_continue(Info :: term(), State :: term()) ->
+    {noreply, NewState :: term()} |
+    {noreply, NewState :: term(), timeout() | hibernate | {continue, term()}} |
+    {stop, Reason :: term(), NewState :: term()}.
+-callback terminate(Reason :: (normal | shutdown | {shutdown, term()} |
+                               term()),
+                    State :: term()) ->
+    term().
+-callback code_change(OldVsn :: (term() | {down, term()}), State :: term(),
+                      Extra :: term()) ->
+    {ok, NewState :: term()} | {error, Reason :: term()}.
+%% -callback format_status(Opt, StatusData) -> Status when
+%%      Opt :: 'normal' | 'terminate',
+%%      StatusData :: [PDict | State],
+%%      PDict :: [{Key :: term(), Value :: term()}],
+%%      State :: term(),
+%%      Status :: term().
+
+-optional_callbacks(
+   [handle_call/3, 
+    handle_cast/2, 
+    handle_info/2, 
+    handle_continue/2, 
+    code_change/3,
+    terminate/2
+   ]).
+
+-optional_callbacks(
+   [init/3, 
+    configure/2,
+    key_press/2,
+    key_release/2,
+    button_press/2,
+    button_release/2,
+    enter/2,
+    leave/2,
+    close/1,
+    draw/3]).
 
 -ifdef(DEBUG).
 -define(dbg(F,A), io:format(F "\n", [A])).
@@ -103,26 +164,63 @@
 	 bottom_bar_color              = red6
 	}).
 
--record(state, {
-		window :: #epx_window{},
-		screen :: #epx_pixmap{},   %% on-screen pixels
-		pixels :: #epx_pixmap{},   %% off-screen pixels
-		width  :: integer(),      %% window width
-		height :: integer(),      %% window height
-		invalid :: undefined | epx:epx_rect(),
-		status = "" :: string(),  %% bottom status text
-		profile :: #profile{},
-		menu_profile :: #menu_profile{},
-		window_profile :: #window_profile{},
-		content :: #window_content{},
-		keymod :: #keymod{}, %% modifiers
-		esc    :: boolean(), %% escape modifier
-		menu,                %% global menu state
-		winfo :: #window_info{},
-		user_mod :: atom(),       %% user module
-		user_state :: term(),     %% user state
-		ok
-	       }).
+-record(callbacks, 
+	{
+	 init :: undefined | 
+		 fun((Window::epx:epx_window(),
+		      Screen::epx:epx_pixmap(),
+		      UserOpts::[term()]) -> NewState::term()),
+	 handle_call :: undefined | fun(),
+	 handle_cast :: undefined | fun(),
+         handle_info :: undefined | fun(),
+         handle_continue :: undefined | fun(),
+         code_changed :: undefined | fun(),
+         terminate :: undefined | fun(),
+	 configure :: undefined |
+		      fun((Event::term(), State::term()) -> NewState::term()),
+	 key_press :: undefined |
+		      fun((Event::term(), State::term()) -> NewState::term()),
+	 key_release :: undefined |
+		      fun((Event::term(), State::term()) -> NewState::term()),
+	 button_press :: undefined |
+		      fun((Event::term(), State::term()) -> NewState::term()),
+         button_release :: undefined |
+		      fun((Event::term(), State::term()) -> NewState::term()),
+	 enter :: undefined |
+		      fun((Event::term(), State::term()) -> NewState::term()),
+         leave :: undefined |
+		      fun((Event::term(), State::term()) -> NewState::term()),
+         close  :: undefined |
+		      fun((State::term()) -> NewState::term()),
+	 draw  :: undefined |
+		      fun((Pixmap::epx:epx_pixmap(),Rect::epx:epx_rect(),
+			   State::term()) -> NewState::term())
+ }).
+
+-define(CALLBACK(S,Name), (((S)#state.user_cb)#callbacks.Name)).
+
+-record(state, 
+	{
+	 window :: #epx_window{},
+	 screen :: #epx_pixmap{},   %% on-screen pixels
+	 pixels :: #epx_pixmap{},   %% off-screen pixels
+	 width  :: integer(),      %% window width
+	 height :: integer(),      %% window height
+	 invalid :: undefined | epx:epx_rect(),
+	 status = "" :: string(),  %% bottom status text
+	 profile :: #profile{},
+	 menu_profile :: #menu_profile{},
+	 window_profile :: #window_profile{},
+	 content :: #window_content{},
+	 keymod :: #keymod{}, %% modifiers
+	 esc    :: boolean(), %% escape modifier
+	 menu,                %% global menu state
+	 winfo :: #window_info{},
+	 user_mod :: atom(),       %% user module
+	 user_cb  :: #callbacks{}, %% user callbacks
+	 user_state :: term(),     %% user state
+	 ok
+	}).
 
 -define(SHIFT(State), (State#state.keymod)#keymod.shift).
 -define(CTRL(State), (State#state.keymod)#keymod.ctrl).
@@ -132,33 +230,34 @@
 %%% API
 %%%===================================================================
 
--spec start_link(UserMod::atom(), UserOpts::[{Key::atom(),Value::term()}],
+-spec start_link(UserMod::atom()|map(),
+		 UserOpts::[{Key::atom(),Value::term()}],
 		 Opts :: list()) ->
 			{ok, Pid :: pid()} |
 			{error, Error :: term()} |
 			ignore.
 
-start_link(UserMod, UserOpts, Opts) when
-      is_atom(UserMod), is_list(UserOpts), is_list(Opts) ->
-
-    gen_server:start_link(?MODULE, [UserMod,UserOpts,Opts], []).
+start_link(User, UserOpts, Opts) when
+      (is_atom(User) orelse is_map(User)), is_list(UserOpts), is_list(Opts) ->
+    gen_server:start_link(?MODULE, [User,UserOpts,Opts], []).
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
--spec start(UserMod::atom(), UserOpts::[{Key::atom(),Value::term()}],
+-spec start(User::atom()|map(), UserOpts::[{Key::atom(),Value::term()}],
 	    Options :: list()) ->
 		   {ok, Pid :: pid()} |
 		   {error, Error :: term()} |
 		   ignore.
 
-start(UserMod) ->
-    start(UserMod, [], []).
+start(User) ->
+    start(User, [], []).
 
-start(UserMod, UserOpts, Opts) when
-      is_atom(UserMod), is_list(UserOpts), is_list(Opts) ->
-    gen_server:start(?MODULE, [UserMod,UserOpts,Opts], []).
+start(User, UserOpts, Opts) when
+      (is_atom(User) orelse is_map(User)),
+      is_list(UserOpts), is_list(Opts) ->
+    gen_server:start(?MODULE, [User,UserOpts,Opts], []).
 
 %% dictionary ugly api
 window() -> (get(epx_server_state))#state.window.
@@ -193,12 +292,14 @@ set_status_text(Text) -> self() ! {'SET_STATUS_TEXT', lists:flatten(Text)}.
 			      {stop, Reason :: term()} |
 			      ignore.
 
-init([UserMod,UserOpts,Opts]) when is_atom(UserMod),
-				   is_list(UserOpts) ->
+init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
+				is_list(UserOpts) ->
     application:ensure_all_started(epx),
-    {module,_} = code:ensure_loaded(UserMod),
+    {UserMod,UserCb} = load_callbacks(User),
     process_flag(trap_exit, true),
-    Env = Opts ++ application:get_all_env(UserMod),
+    Env = if UserMod =:= undefined -> Opts;
+	     true -> Opts ++ application:get_all_env(UserMod)
+	  end,
     Profile = load_profile(Opts),
     MProfile = create_menu_profile(Profile),
     WProfile = create_window_profile(Profile),
@@ -223,15 +324,20 @@ init([UserMod,UserOpts,Opts]) when is_atom(UserMod),
 	       bottom_bar = 18 %% candy use a bottom status bar
 	       %% use default for rest options
 	      },
-    %% FIXME: set event mask based on exported functions
-    EventMask = init_event_mask(UserMod, [configure, close],
+    EventMask = init_event_mask([configure, close],
 				[
-				 {button_press, button_press, 2},
-				 {button_release, button_release, 2},
-				 {key_press, key_press, 2},
-				 {key_release, key_release, 2},
-				 {enter, enter, 2},
-				 {leave, leave, 2}
+				 {button_press,
+				  UserCb#callbacks.button_press},
+				 {button_release,
+				  UserCb#callbacks.button_release},
+				 {key_press,
+				  UserCb#callbacks.key_press},
+				 {key_release,
+				  UserCb#callbacks.key_release},
+				 {enter,
+				  UserCb#callbacks.enter},
+				 {leave,
+				  UserCb#callbacks.leave}
 				]),
     Window = epx:window_create(50, 50, Width, Height, EventMask),
     Screen = epx:pixmap_create(Width, Height, argb),
@@ -243,11 +349,10 @@ init([UserMod,UserOpts,Opts]) when is_atom(UserMod),
     epx:window_attach(Window),
     epx:pixmap_attach(Screen),
     epx:window_adjust(Window, [{name, Title}]),
-    UserState = 
-	case erlang:function_exported(UserMod, init, 1) of
-	    true -> apply(UserMod, init, [[Window, Screen | UserOpts]]);
-	    false -> undefined
-	end,
+    UserState = case UserCb#callbacks.init of
+		    undefined -> undefined;
+		    Init -> Init(Window, Screen, UserOpts)
+		end,
     State0 = #state {
 		window = Window,
 		screen = Screen,
@@ -262,13 +367,63 @@ init([UserMod,UserOpts,Opts]) when is_atom(UserMod),
 		window_profile = WProfile,
 		content = WContent,
 		user_mod = UserMod,
+		user_cb  = UserCb,
 		user_state = UserState
 	       },
     State1 = set_view_rect(State0, 0, Width-scroll_bar_size(State0)-1,
 			   0, (1.5)*Height),
     Rect = {0, 0, Width, Height},
-    State2 = configure({configure,Rect}, State1),
+    State2 = user_event({configure,Rect}, ?CALLBACK(State1,configure), State1),
     {ok, draw(State2, Rect)}.
+
+
+load_callbacks(UserMod) when is_atom(UserMod) ->
+    {module,_} = code:ensure_loaded(UserMod),
+    load_callbacks_(UserMod, #{});
+load_callbacks(UserMap) when is_map(UserMap) ->
+    UserMod =
+	case maps:get(module, UserMap, undefined) of
+	    undefined -> 
+		undefined;
+	    Mod ->
+		{module,_} = code:ensure_loaded(Mod),
+		Mod
+	end,
+    load_callbacks_(UserMod, UserMap).
+
+load_callbacks_(UserMod, UserMap) ->
+    {UserMod, 
+     #callbacks {
+	init = load_callback_(UserMod, UserMap, init, 3),
+	handle_call = load_callback_(UserMod, UserMap, handle_call, 3),
+	handle_cast = load_callback_(UserMod, UserMap, handle_cast, 2),
+	handle_info = load_callback_(UserMod, UserMap,handle_info, 2),
+	handle_continue = load_callback_(UserMod, UserMap, handle_continue, 2),
+	code_changed = load_callback_(UserMod, UserMap, code_change, 3),
+	terminate = load_callback_(UserMod, UserMap, close, 2),
+	close = load_callback_(UserMod, UserMap, close, 1),
+	configure = load_callback_(UserMod, UserMap, configure, 2),
+	key_press = load_callback_(UserMod, UserMap, key_press, 2),
+	key_release = load_callback_(UserMod, UserMap, key_release, 2),
+	button_press = load_callback_(UserMod, UserMap, button_press, 2),
+	button_release = load_callback_(UserMod, UserMap, button_release, 2),
+	enter = load_callback_(UserMod, UserMap, enter, 2),
+	leave = load_callback_(UserMod, UserMap, leave, 2),
+	draw  = load_callback_(UserMod, UserMap, draw, 3)
+       }}.
+
+load_callback_(UserMod, UserMap, Func, Arity) ->
+    case maps:get(Func, UserMap, undefined) of
+	undefined ->
+	    case erlang:function_exported(UserMod, Func, Arity) of
+		true ->
+		    erlang:make_fun(UserMod, Func, Arity);
+		false ->
+		    undefined
+	    end;
+	UserFun when is_function(UserFun, Arity) ->
+	    UserFun
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -343,15 +498,15 @@ handle_info('REDRAW',State) ->
     {noreply, State1#state { invalid = undefined }};
 handle_info({'SET_STATUS_TEXT', Text}, State) ->
     {noreply, State#state { status = Text }};
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
     case erlang:function_exported(State#state.user_mod, handle_info, 2) of
 	true ->
 	    put(epx_server_state, State),
 	    Reply = apply(State#state.user_mod, handle_info,
-			  [_Info, State#state.user_state]),
+			  [Info, State#state.user_state]),
 	    reply(Reply, State);
 	false ->
-	    ?dbg("handle_info: unhandled event ~p", [_Info]),
+	    ?dbg("handle_info: unhandled event ~p", [Info]),
 	    {noreply, State}
     end.
 
@@ -365,6 +520,25 @@ reply({noreply,UState,Arg}, State) ->
     {noreply, State#state { user_state = UState },Arg};
 reply({stop, Reason, UState}, State) ->
     {stop, Reason, State#state { user_state = UState }}.
+
+-spec handle_continue(Info :: term(), State :: term()) ->
+	  {noreply, NewState :: term()} |
+	  {noreply, NewState :: term(), timeout() | hibernate | {continue, term()}} |
+	  {stop, Reason :: term(), NewState :: term()}.
+
+handle_continue(Info, State) ->
+    case erlang:function_exported(State#state.user_mod, handle_info, 2) of
+	true ->
+	    put(epx_server_state, State),
+	    Reply = apply(State#state.user_mod, handle_continue,
+			  [Info, State#state.user_state]),
+	    reply(Reply, State);
+	false ->
+	    ?dbg("handle_continue: unhandled event ~p", [Info]),
+	    {noreply, State}
+    end.
+
+
 
 collect_invalidate(all, All, _Invalid) ->
     collect_invalidate(All,All);
@@ -391,7 +565,9 @@ epx_event(_Event={configure,Rect0}, State) ->
 	    State1 = State#state { screen = Screen, 
 				   pixels = Pixels,
 				   width=W, height=H },
-	    State2 = user_event({configure,Rect1},configure,State1),
+	    State2 = user_event({configure,Rect1},
+				?CALLBACK(State1,configure),
+				State1),
 	    {noreply, draw(State2)};
        true ->
 	    {noreply, State}
@@ -408,22 +584,24 @@ epx_event(Event={key_press, Sym, Mod, _code}, State) ->
        true ->
 	    M = set_mod(State#state.keymod, Mod),
 	    State1 = State#state { keymod=M },
-	    State2 = user_event(Event, key_press, State1),
+	    State2 = user_event(Event,
+				?CALLBACK(State1,key_press),
+				State1),
 	    {noreply, State2#state { esc = false }}
     end;
 epx_event(Event={key_release, _Sym, Mod, _code}, State) ->
     M = clr_mod(State#state.keymod, Mod),
     State1 = State#state { keymod = M },
-    State2 = user_event(Event, key_release, State1),
+    State2 = user_event(Event,?CALLBACK(State1,key_release), State1),
     {noreply, State2};
 
 epx_event(Event={button_release, [wheel_down], _Pos3D}, State) ->
     flush_wheel(State#state.window),
-    State1 = user_event(Event, button_release, State),
+    State1 = user_event(Event, ?CALLBACK(State,button_release), State),
     {noreply, scroll_down(State1)};
 epx_event(Event={button_release, [wheel_up], _Pos3D}, State) ->
     flush_wheel(State#state.window),
-    State1 = user_event(Event, button_release, State),
+    State1 = user_event(Event, ?CALLBACK(State,button_release), State),
     {noreply, scroll_up(State1)};
 
 epx_event(Event={button_press, _Buttons, _Pos3D={X0,Y0,_}}, State) ->
@@ -431,13 +609,13 @@ epx_event(Event={button_press, _Buttons, _Pos3D={X0,Y0,_}}, State) ->
 	true ->
 	    case scroll_hit({X0,Y0}, State) of
 		false ->
-		    State1 = user_event(Event, button_press, State),
+		    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
 		    {noreply, State1};
 		State1 ->
 		    {noreply, State1}
 	    end;
 	false ->
-	    State1 = user_event(Event, button_press, State),
+	    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
 	    {noreply, State1}
     end;
 epx_event(Event={button_release, _Buttons, _Pos3D}, State) ->
@@ -445,7 +623,7 @@ epx_event(Event={button_release, _Buttons, _Pos3D}, State) ->
     State1 =
 	case get_motion(State) of
 	    undefined ->
-		user_event(Event, button_release, State);
+		user_event(Event, ?CALLBACK(State,button_release), State);
 	    {vhndl,_Delta} ->
 		epx:window_disable_events(State#state.window, [motion]),
 		set_motion(State, undefined);
@@ -457,18 +635,18 @@ epx_event(Event={button_release, _Buttons, _Pos3D}, State) ->
 
 
 epx_event(Event={enter, _Pos3D}, State) ->
-    State1 = user_event(Event, enter, State),
+    State1 = user_event(Event, ?CALLBACK(State,enter), State),
     {noreply, State1};
 epx_event(Event={leave, _Pos3D}, State) ->
-    State1 = user_event(Event, leave, State),
+    State1 = user_event(Event, ?CALLBACK(State,leave), State),
     {noreply, State1};
 epx_event(close, State) ->
-    case erlang:function_exported(State#state.user_mod, close, 1) of
-	true ->
-	    put(epx_server_state, State),
-	    apply(State#state.user_mod, close, [State#state.user_state]),
+    case ?CALLBACK(State, close) of
+	undefined ->
 	    {stop, normal, State};
-	false ->
+	Cb ->
+	    put(epx_server_state, State),
+	    Cb(State#state.user_state),
 	    {stop, normal, State}
     end;
 epx_event(_Event, State) ->
@@ -618,8 +796,14 @@ flush_motion(Win) ->
 %%--------------------------------------------------------------------
 -spec terminate(Reason :: normal | shutdown | {shutdown, term()} | term(),
 		State :: term()) -> any().
-terminate(_Reason, _State) ->
-    ok.
+terminate(Reason, State) ->
+    case ?CALLBACK(State, terminate) of
+	undefined ->
+	    ok;
+	Terminate ->
+	    put(epx_server_state, State),
+	    Terminate(Reason, State#state.user_state)
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -631,39 +815,31 @@ terminate(_Reason, _State) ->
 		  State :: term(),
 		  Extra :: term()) -> {ok, NewState :: term()} |
 				      {error, Reason :: term()}.
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called for changing the form and appearance
-%% of gen_server status when it is returned from sys:get_status/1,2
-%% or when it appears in termination error logs.
-%% @end
-%%--------------------------------------------------------------------
--spec format_status(Opt :: normal | terminate,
-		    Status :: list()) -> Status :: term().
-format_status(_Opt, Status) ->
-    Status.
+code_change(OldVsn, State, Extra) ->
+    case erlang:function_exported(State#state.user_mod, code_change, 3) of
+	true ->
+	    put(epx_server_state, State),
+	    case apply(State#state.user_mod, code_change,
+		       [OldVsn, State#state.user_state, Extra]) of
+		{ok,UState} ->
+		    {ok, State#state { user_state = UState }};
+		Error ->
+		    Error
+	    end;
+	false ->
+	    {ok, State}
+    end.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-configure(E, State) ->
-    user_event(E, configure, State).
-
-user_event(E, Name, State) ->
-    case erlang:function_exported(State#state.user_mod, Name, 2) of    
-	true ->
-	    put(epx_server_state, State),
-	    UserState = apply(State#state.user_mod, Name,
-			      [E, State#state.user_state]),
-	    State#state { user_state = UserState };
-	false ->
-	    State
-    end.
+user_event(_E, undefined, State) ->
+    State;
+user_event(E, Callback, State) ->
+    put(epx_server_state, State),
+    UserState = Callback(E, State#state.user_state),
+    State#state { user_state = UserState }.
 
 draw(State) ->
     draw(State, undefined).
@@ -932,21 +1108,20 @@ set_motion(S=#state { content = WD }, Motion) ->
     S#state { content = WD#window_content { motion = Motion }}.
 
 draw_content(Pixmap, Dirty, State) ->
-    case erlang:function_exported(State#state.user_mod, draw, 3) of
-	true ->
+    case ?CALLBACK(State, draw) of
+	undefined ->
+	    io:format("warning: no draw/3 function for module ~s\n", 
+		      [State#state.user_mod]),
+	    State;
+	Draw ->
 	    Rect = if Dirty =:= undefined -> {0,0,State#state.width,
 					      State#state.height};
 		      tuple_size(Dirty) =:= 4 -> Dirty
 		   end,
 	    %% fixme: pixmap_set_clip to shield pixmap
 	    put(epx_server_state, State),
-	    UserState = apply(State#state.user_mod, draw, 
-			      [Pixmap,Rect,State#state.user_state]),
-	    State#state { user_state = UserState };
-	false ->
-	    io:format("warning: no draw/3 function for module ~s\n", 
-		      [State#state.user_mod]),
-	    State
+	    UserState = Draw(Pixmap,Rect,State#state.user_state),
+	    State#state { user_state = UserState }
     end.
 
 %% top & bottom bar has priority over left and right...
@@ -1016,14 +1191,11 @@ draw_text(Pixels, X0, Y0, _W, _H, Text, S) ->
 
 %% check for various callback functions and return corresponding event-mask
 
-init_event_mask(Mod, EventMask, [{EventFlag,Func,Arity}|Fs]) ->
-    case erlang:function_exported(Mod, Func, Arity) of
-	true ->
-	    init_event_mask(Mod, [EventFlag|EventMask], Fs);
-	false ->
-	    init_event_mask(Mod, EventMask, Fs)
-    end;
-init_event_mask(_, Mask, []) ->
+init_event_mask(EventMask, [{EventFlag,Fun}|Fs]) when is_function(Fun) ->
+    init_event_mask([EventFlag|EventMask], Fs);
+init_event_mask(EventMask, [_|Fs]) ->
+    init_event_mask(EventMask, Fs);
+init_event_mask(Mask, []) ->
     Mask.
 
 %% load #profile from environment
