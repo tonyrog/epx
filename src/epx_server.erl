@@ -3,21 +3,31 @@
 %%% @copyright (C) 2020, Tony Rogvall
 %%% @doc
 %%%    Generic epx server behaviour
-%%%    Possible user module callbacks are:
-%%%
-%%%    button_press(Event, UsertState) -> UserState'
-%%%    button_release(Event, UsertState) -> UserState'
-%%%    key_press(Event, UsertState) -> UserState'
-%%%    key_release(Event, UsertState) -> UserState'
-%%%
-%%%  any event:
-%%%     event(Event, UsertState) -> UserState'
 %%% @end
 %%% Created : 31 Jan 2020 by Tony Rogvall <tony@rogvall.se>
 %%%-------------------------------------------------------------------
 -module(epx_server).
 
 -behaviour(gen_server).
+
+%%% Possible user module callbacks are:
+%%%
+%%%    configure(Event, State) -> State'
+%%%    key_press(Event, State) -> State'
+%%%    key_release(Event, State) -> State'
+%%%    button_press(Event, State) -> State'
+%%%    button_release(Event, State) -> State'
+%%%    enter(Event, State) -> State'
+%%%    leave(Event, State) -> State'
+%%%    close(State) -> State'
+%%%    draw(Pixmap,Rect,State) -> State'
+%%%    
+%%%  general events
+%%     handle_call(Request, From, State) -> Reply
+%%     handle_cast(Request, From, State) -> Reply
+%%     handle_info(Info, From, State) -> Reply
+%%%  any event:
+%%%     event(Event, UsertState) -> UserState'
 
 %% API
 -export([start_link/3, start/3]).
@@ -29,6 +39,8 @@
 
 %% api callable from callbacks
 -export([window/0, screen/0, pixels/0, width/0, height/0]).
+-export([content_pos/0, content_pos/2, pixmap_pos/2]).
+-export([content_width/0, content_height/0, content_rect/0]).
 -export([invalidate/0, invalidate/1]).
 -export([set_status_text/1]).
  
@@ -154,6 +166,16 @@ screen() -> (get(epx_server_state))#state.screen.  %% temporary config change
 pixels() -> (get(epx_server_state))#state.pixels.  %% temporary config change
 width()  -> (get(epx_server_state))#state.width.   %% temporary config change
 height() -> (get(epx_server_state))#state.height.  %% temporary config change
+content_pos() -> get_view_pos(get(epx_server_state), 0, 0).
+content_pos(X,Y) -> get_view_pos(get(epx_server_state), X, Y).
+content_width() -> get_view_width(get(epx_server_state)).
+content_height() -> get_view_height(get(epx_server_state)).
+content_rect() ->
+    S = get(epx_server_state),
+    {get_view_xpos(S),get_view_ypos(S),get_view_width(S),get_view_height(S)}.
+    
+pixmap_pos(X,Y) -> get_rview_pos(get(epx_server_state), X, Y).
+    
 
 invalidate() -> self() ! {'INVALIDATE',all}.
 invalidate(Area={_X,_Y,_W,_H}) -> self() ! {'INVALIDATE',Area}.
@@ -192,7 +214,6 @@ init([UserMod,UserOpts,Opts]) when is_atom(UserMod),
 
     epx_gc:set_font(Font),
     {W,H}  = epx_font:dimension(Font,"0"),
-
 
     WInfo = #window_info {
 	       glyph_width  = W,

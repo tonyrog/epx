@@ -297,7 +297,7 @@ show(Fun, {X,Y,W,H}, Events) ->
 		 {epx_event,Win,{configure, _Rect}} ->
 		     flush_configure(Win),
 		     DRAW();
-		 %% fixme: handle zoom(+/-) scroll(arrows)
+		 %% fixme: use epxw? handle zoom(+/-) scroll(arrows)
 		 Event ->
 		     io:format("epx_view: got ~w\n", [Event]),
 		     DRAW()
