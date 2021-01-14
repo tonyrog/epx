@@ -1438,10 +1438,7 @@ static int get_event_flags(ErlNifEnv* env, const ERL_NIF_TERM term,
 static ERL_NIF_TERM make_event_flags(ErlNifEnv* env, uint32_t mask)
 {
     ERL_NIF_TERM list;
-    if (mask == 0)
-	return ATOM(none);
-    else if (mask == EPX_EVENT_ALL)
-	return ATOM(all);
+
     list = enif_make_list(env, 0);
 
     if (mask & EPX_EVENT_KEY_PRESS)
