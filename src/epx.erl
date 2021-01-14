@@ -260,18 +260,23 @@
 
 
 -type epx_window_event_flag() ::
-	key_press |
-	key_release |
-	motion |
+	key_press | key_release | motion |
 	button_press | button_release |
 	focus_in | focus_out |
-	focos | enter | leave |
-	configure | resize | crossing |
-	button | left | middle | right | wheel | wheel_up | wheel_down |
-	wheel_left | wheel_right | close | destroyed | all | none.
+	enter | leave |
+	configure | resize |
+	left | middle | right | wheel_up | wheel_down |
+	wheel_left | wheel_right | close | destroyed.
+
+-type epx_window_xevent_flag() ::
+	epx_window_event_flag() | wheel | button | all | none.
+
 
 -type epx_window_event_flags() :: epx_window_event_flag() |
 				 [epx_window_event_flag()].
+
+-type epx_window_xevent_flags() :: epx_window_xevent_flag() |
+				   [epx_window_xevent_flag()].
 
 -define(nif_stub(),
 	erlang:nif_error({nif_not_loaded,module,?MODULE,line,?LINE})).
@@ -1278,7 +1283,7 @@ window_create(_X,_Y,_Width,_Height,_Mask) ->
 %%      | width    unsigned()
 %%      | height   unsigned()
 %%      | backend  epx_backend()
-%%      | event_mask all|none|[event_flag]
+%%      | event_mask [event_flag]
 %%
 -type epx_window_info_key() ::
 	'x' | 'y' | 'width' | 'height' | 'backend' | 'event_mask'.
@@ -1331,15 +1336,15 @@ window_set_event_mask(_Window, _Events) ->
     ?nif_stub().
 
 -spec window_enable_events(Window::epx_window(),
-			   Events::epx_window_event_flags()) ->
-				  void().
+			   Events::epx_window_xevent_flags()) ->
+	  void().
 
 window_enable_events(_Window, _Events) ->
     ?nif_stub().
 
 -spec window_disable_events(Window::epx_window(),
-			    Events::epx_window_event_flags()) ->
-				   void().
+			    Events::epx_window_xevent_flags()) ->
+	  void().
 
 window_disable_events(_Window, _Events) ->
     ?nif_stub().

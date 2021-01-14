@@ -23,6 +23,7 @@
 -export([window/0, screen/0, pixels/0, width/0, height/0]).
 -export([content_pos/0, content_pos/2, pixmap_pos/2]).
 -export([content_width/0, content_height/0, content_rect/0]).
+-export([set_content_size/2, set_content_rect/1]).
 -export([invalidate/0, invalidate/1]).
 -export([set_status_text/1]).
  
@@ -83,12 +84,7 @@
 -callback code_change(OldVsn :: (term() | {down, term()}), State :: term(),
                       Extra :: term()) ->
     {ok, NewState :: term()} | {error, Reason :: term()}.
-%% -callback format_status(Opt, StatusData) -> Status when
-%%      Opt :: 'normal' | 'terminate',
-%%      StatusData :: [PDict | State],
-%%      PDict :: [{Key :: term(), Value :: term()}],
-%%      State :: term(),
-%%      Status :: term().
+
 
 -optional_callbacks(
    [handle_call/3, 
@@ -174,7 +170,7 @@
 	 handle_cast :: undefined | fun(),
          handle_info :: undefined | fun(),
          handle_continue :: undefined | fun(),
-         code_changed :: undefined | fun(),
+         code_change :: undefined | fun(),
          terminate :: undefined | fun(),
 	 configure :: undefined |
 		      fun((Event::term(), State::term()) -> NewState::term()),
@@ -198,6 +194,8 @@
  }).
 
 -define(CALLBACK(S,Name), (((S)#state.user_cb)#callbacks.Name)).
+
+-define(STATE_KEY, 'EPXW_STATE').
 
 -record(state, 
 	{
@@ -259,23 +257,44 @@ start(User, UserOpts, Opts) when
       is_list(UserOpts), is_list(Opts) ->
     gen_server:start(?MODULE, [User,UserOpts,Opts], []).
 
-%% dictionary ugly api
-window() -> (get(epx_server_state))#state.window.
-screen() -> (get(epx_server_state))#state.screen.  %% temporary config change
-pixels() -> (get(epx_server_state))#state.pixels.  %% temporary config change
-width()  -> (get(epx_server_state))#state.width.   %% temporary config change
-height() -> (get(epx_server_state))#state.height.  %% temporary config change
-content_pos() -> get_view_pos(get(epx_server_state), 0, 0).
-content_pos(X,Y) -> get_view_pos(get(epx_server_state), X, Y).
-content_width() -> get_view_width(get(epx_server_state)).
-content_height() -> get_view_height(get(epx_server_state)).
-content_rect() ->
-    S = get(epx_server_state),
-    {get_view_xpos(S),get_view_ypos(S),get_view_width(S),get_view_height(S)}.
-    
-pixmap_pos(X,Y) -> get_rview_pos(get(epx_server_state), X, Y).
-    
+export_state(State) ->
+    put(?STATE_KEY, State).
 
+state() ->
+    get(?STATE_KEY).
+
+%% dictionary ugly api
+window() -> (state())#state.window.
+screen() -> (state())#state.screen.  %% temporary config change
+pixels() -> (state())#state.pixels.  %% temporary config change
+width()  -> (state())#state.width.   %% temporary config change
+height() -> (state())#state.height.  %% temporary config change
+content_pos() -> get_view_pos(state(), 0, 0).
+content_pos(X,Y) -> get_view_pos(state(), X, Y).
+content_width() -> get_view_width(state()).
+content_height() -> get_view_height(state()).
+content_rect() ->
+    S = state(),
+    {get_view_xpos(S),get_view_ypos(S),get_view_width(S),get_view_height(S)}.
+set_content_size(W, H) when W >= 0, H >= 0 ->
+    S0 = state(),
+    #state { content = WD } = S0,
+    WD1 = WD#window_content { view_right = WD#window_content.view_left + W - 1,
+			      view_bottom = WD#window_content.view_top + H - 1 },
+    S1 = S0#state { content = WD1 },
+    export_state(S1).
+set_content_rect({X, Y, W, H}) when X >= 0, Y >= 0, W >= 0, H >= 0 ->
+    S0 = state(),
+    #state { content = WD } = S0,
+    WD1 = WD#window_content { view_left = X,
+			      view_right = X + W - 1,
+			      view_top   = Y,
+			      view_bottom = Y + H - 1 },
+    S1 = S0#state { content = WD1 },
+    export_state(S1).
+%% view position in pixmap
+pixmap_pos(X,Y) -> get_rview_pos(state(), X, Y).
+    
 invalidate() -> self() ! {'INVALIDATE',all}.
 invalidate(Area={_X,_Y,_W,_H}) -> self() ! {'INVALIDATE',Area}.
 set_status_text(Text) -> self() ! {'SET_STATUS_TEXT', lists:flatten(Text)}.
@@ -349,10 +368,6 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
     epx:window_attach(Window),
     epx:pixmap_attach(Screen),
     epx:window_adjust(Window, [{name, Title}]),
-    UserState = case UserCb#callbacks.init of
-		    undefined -> undefined;
-		    Init -> Init(Window, Screen, UserOpts)
-		end,
     State0 = #state {
 		window = Window,
 		screen = Screen,
@@ -368,14 +383,22 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 		content = WContent,
 		user_mod = UserMod,
 		user_cb  = UserCb,
-		user_state = UserState
+		user_state = undefined
 	       },
     State1 = set_view_rect(State0, 0, Width-scroll_bar_size(State0)-1,
 			   0, (1.5)*Height),
+    State2 = case UserCb#callbacks.init of
+		 undefined ->
+		     State1;
+		 Init ->
+		     export_state(State1),
+		     UserState = Init(Window, Screen, UserOpts),
+		     State11 = state(),
+		     State11#state { user_state = UserState}
+	     end,
     Rect = {0, 0, Width, Height},
-    State2 = user_event({configure,Rect}, ?CALLBACK(State1,configure), State1),
+    State2 = user_event({configure,Rect},?CALLBACK(State2,configure),State2),
     {ok, draw(State2, Rect)}.
-
 
 load_callbacks(UserMod) when is_atom(UserMod) ->
     {module,_} = code:ensure_loaded(UserMod),
@@ -399,7 +422,7 @@ load_callbacks_(UserMod, UserMap) ->
 	handle_cast = load_callback_(UserMod, UserMap, handle_cast, 2),
 	handle_info = load_callback_(UserMod, UserMap,handle_info, 2),
 	handle_continue = load_callback_(UserMod, UserMap, handle_continue, 2),
-	code_changed = load_callback_(UserMod, UserMap, code_change, 3),
+	code_change = load_callback_(UserMod, UserMap, code_change, 3),
 	terminate = load_callback_(UserMod, UserMap, close, 2),
 	close = load_callback_(UserMod, UserMap, close, 1),
 	configure = load_callback_(UserMod, UserMap, configure, 2),
@@ -441,15 +464,14 @@ load_callback_(UserMod, UserMap, Func, Arity) ->
 			 {stop, Reason :: term(), Reply :: term(), NewState :: term()} |
 			 {stop, Reason :: term(), NewState :: term()}.
 handle_call(Request, From, State) ->
-    case erlang:function_exported(State#state.user_mod, handle_call, 3) of
-	true ->
-	    put(epx_server_state, State),
-	    Reply = apply(State#state.user_mod, handle_call,
-			  [Request, From, State#state.user_state]),
-	    reply(Reply, State);
-	false ->
-	    {stop, missing_handle_call, State}
-    end.
+    case ?CALLBACK(State, handle_call) of
+	undefined ->
+	    {stop, missing_handle_call, State};
+	HandleCall ->
+	    export_state(State),
+	    Reply = HandleCall(Request, From, State#state.user_state),
+	    reply(Reply)
+	end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -463,14 +485,13 @@ handle_call(Request, From, State) ->
 			 {noreply, NewState :: term(), hibernate} |
 			 {stop, Reason :: term(), NewState :: term()}.
 handle_cast(Request, State) ->
-    case erlang:function_exported(State#state.user_mod, handle_cast, 2) of
-	true ->
-	    put(epx_server_state, State),
-	    Reply = apply(State#state.user_mod, handle_cast,
-			  [Request, State#state.user_state]),
-	    reply(Reply, State);
-	false ->
-	    {noreply, State}
+    case ?CALLBACK(State, handle_cast) of
+	undefined ->
+	    {noreply, State};
+	HandleCast ->
+	    export_state(State),
+	    Reply = HandleCast(Request, State#state.user_state),
+	    reply(Reply)
     end.
 
 %%--------------------------------------------------------------------
@@ -499,26 +520,30 @@ handle_info('REDRAW',State) ->
 handle_info({'SET_STATUS_TEXT', Text}, State) ->
     {noreply, State#state { status = Text }};
 handle_info(Info, State) ->
-    case erlang:function_exported(State#state.user_mod, handle_info, 2) of
-	true ->
-	    put(epx_server_state, State),
-	    Reply = apply(State#state.user_mod, handle_info,
-			  [Info, State#state.user_state]),
-	    reply(Reply, State);
-	false ->
+    case ?CALLBACK(State, handle_info) of
+	undefined ->
 	    ?dbg("handle_info: unhandled event ~p", [Info]),
-	    {noreply, State}
+	    {noreply, State};
+	HandleInfo ->
+	    export_state(State),
+	    Reply = HandleInfo(Info, State#state.user_state),
+	    reply(Reply)
     end.
 
-reply({reply,Reply,UState},State) ->
+reply({reply,Reply,UState}) ->
+    State = state(),
     {reply, Reply, State#state { user_state = UState }};
-reply({reply,Reply,UState,Arg},State) ->
+reply({reply,Reply,UState,Arg}) ->
+    State = state(),
     {reply, Reply, State#state { user_state = UState }, Arg};
-reply({noreply,UState}, State) ->
+reply({noreply,UState}) ->
+    State = state(),
     {noreply, State#state { user_state = UState }};
-reply({noreply,UState,Arg}, State) ->
+reply({noreply,UState,Arg}) ->
+    State = state(),
     {noreply, State#state { user_state = UState },Arg};
-reply({stop, Reason, UState}, State) ->
+reply({stop, Reason, UState}) ->
+    State = state(),
     {stop, Reason, State#state { user_state = UState }}.
 
 -spec handle_continue(Info :: term(), State :: term()) ->
@@ -527,17 +552,15 @@ reply({stop, Reason, UState}, State) ->
 	  {stop, Reason :: term(), NewState :: term()}.
 
 handle_continue(Info, State) ->
-    case erlang:function_exported(State#state.user_mod, handle_info, 2) of
-	true ->
-	    put(epx_server_state, State),
-	    Reply = apply(State#state.user_mod, handle_continue,
-			  [Info, State#state.user_state]),
-	    reply(Reply, State);
-	false ->
+    case ?CALLBACK(State, handle_continue) of
+	undefined ->
 	    ?dbg("handle_continue: unhandled event ~p", [Info]),
-	    {noreply, State}
+	    {noreply, State};
+	HandleContinue ->
+	    export_state(State),
+	    Reply = HandleContinue(Info, State#state.user_state),
+	    reply(Reply)
     end.
-
 
 
 collect_invalidate(all, All, _Invalid) ->
@@ -645,16 +668,17 @@ epx_event(close, State) ->
 	undefined ->
 	    {stop, normal, State};
 	Cb ->
-	    put(epx_server_state, State),
+	    export_state(State),
 	    Cb(State#state.user_state),
-	    {stop, normal, State}
+	    {stop, normal, state()}
     end;
 epx_event(_Event, State) ->
     ?dbg("unhandled epx event: ~p\n", [_Event]),
     {noreply,State}.
 
 scroll_hit(Pos, State) ->
-    case epx_rect:contains(get_hscroll(State), Pos) of
+    HScroll = get_hscroll(State),
+    case epx_rect:contains(HScroll, Pos) of
 	true ->
 	    epx:window_enable_events(State#state.window, [motion]),
 	    case epx_rect:contains(get_hhndl(State), Pos) of
@@ -677,7 +701,8 @@ scroll_hit(Pos, State) ->
 		    draw(State2)
 	    end;
 	false ->
-	    case epx_rect:contains(get_vscroll(State), Pos) of
+	    VScroll = get_vscroll(State),
+	    case epx_rect:contains(VScroll, Pos) of
 		true ->
 		    epx:window_enable_events(State#state.window, [motion]),
 		    case epx_rect:contains(get_vhndl(State), Pos) of
@@ -726,13 +751,11 @@ step_down(State, Step) ->
     Y = min(get_view_ypos(State) + Step, B),
     set_view_ypos(State, Y).
 
-
 clamp(Value, Min, Max) ->
     if Value < Min -> Min;
        Value > Max -> Max;
        true -> Value
     end.
-
 
 %% update mod keys
 set_mod(M, [shift|Mod]) ->  set_mod(M#keymod {shift = true}, Mod);
@@ -801,7 +824,7 @@ terminate(Reason, State) ->
 	undefined ->
 	    ok;
 	Terminate ->
-	    put(epx_server_state, State),
+	    export_state(State),
 	    Terminate(Reason, State#state.user_state)
     end.
 
@@ -816,18 +839,18 @@ terminate(Reason, State) ->
 		  Extra :: term()) -> {ok, NewState :: term()} |
 				      {error, Reason :: term()}.
 code_change(OldVsn, State, Extra) ->
-    case erlang:function_exported(State#state.user_mod, code_change, 3) of
-	true ->
-	    put(epx_server_state, State),
-	    case apply(State#state.user_mod, code_change,
-		       [OldVsn, State#state.user_state, Extra]) of
+    case ?CALLBACK(State, code_change) of
+	undefined ->
+	    {ok, State};
+	CodeChange ->
+	    export_state(State),
+	    case CodeChange(OldVsn, State#state.user_state, Extra) of
 		{ok,UState} ->
-		    {ok, State#state { user_state = UState }};
+		    State1 = state(),
+		    {ok, State1#state { user_state = UState }};
 		Error ->
 		    Error
-	    end;
-	false ->
-	    {ok, State}
+	    end
     end.
 
 %%%===================================================================
@@ -837,9 +860,10 @@ code_change(OldVsn, State, Extra) ->
 user_event(_E, undefined, State) ->
     State;
 user_event(E, Callback, State) ->
-    put(epx_server_state, State),
+    export_state(State),
     UserState = Callback(E, State#state.user_state),
-    State#state { user_state = UserState }.
+    State1 = state(),
+    State1#state { user_state = UserState }.
 
 draw(State) ->
     draw(State, undefined).
@@ -994,12 +1018,50 @@ get_vscroll(#state { content = WD }) -> WD#window_content.vscroll.
 get_vhndl(#state { content = WD }) -> WD#window_content.vhndl.
 
 set_hscroll(S=#state { content = WD }, Rect, Hndl) ->
-    io:format("set_hscroll rect=~w, hndl=~w\n", [Rect,Hndl]),
+    if Rect =:= undefined ->
+	    disable_scroll_events(S);
+       true ->
+	    enable_scroll_events(S)
+    end,
     S#state { content = WD#window_content { hscroll = Rect,
 					    hhndl = Hndl }}.
 set_vscroll(S=#state { content = WD }, Rect, Hndl) ->
+    if Rect =:= undefined ->
+	    disable_scroll_events(S);
+       true ->
+	    enable_scroll_events(S)
+    end,
     S#state { content = WD#window_content { vscroll = Rect,
 					    vhndl = Hndl }}.
+
+enable_scroll_events(State) ->
+    epx:window_enable_events(State#state.window,
+			     [key_press, key_release,
+			      button_press, button_release]).
+
+disable_scroll_events(State) ->
+    disable_scroll_events_(State,
+			   [key_press, key_release,
+			    button_press, button_release], []).
+
+disable_scroll_events_(State, [Event|Events], Acc) ->
+    case Event of
+	button_press when ?CALLBACK(State,button_press) =:= undefined ->
+	    disable_scroll_events_(State, Events, [button_press|Acc]);
+	button_release when ?CALLBACK(State,button_release) =:= undefined ->
+	    disable_scroll_events_(State, Events, [button_release|Acc]);
+	key_press when ?CALLBACK(State,key_press) =:= undefined ->
+	    disable_scroll_events_(State, Events, [key_press|Acc]);
+	key_release when ?CALLBACK(State,key_release) =:= undefined ->
+	    disable_scroll_events_(State, Events, [key_release|Acc]);
+	_ ->
+	    disable_scroll_events_(State, Events, Acc)
+    end;
+disable_scroll_events_(State, [], []) ->
+    ok;
+disable_scroll_events_(State, [], Events) ->
+    epx:window_disable_events(State#state.window,Events).
+
 
 bar(#state { winfo = WI }) ->
     #window_info { left_bar = L, right_bar = R,
@@ -1104,7 +1166,6 @@ set_view_rect(S=#state { content = WD }, L, R, T, B) ->
 get_motion(#state { content = WD }) -> WD#window_content.motion.
 
 set_motion(S=#state { content = WD }, Motion) ->
-    io:format("set_motion: ~w\n", [Motion]),
     S#state { content = WD#window_content { motion = Motion }}.
 
 draw_content(Pixmap, Dirty, State) ->
@@ -1119,9 +1180,10 @@ draw_content(Pixmap, Dirty, State) ->
 		      tuple_size(Dirty) =:= 4 -> Dirty
 		   end,
 	    %% fixme: pixmap_set_clip to shield pixmap
-	    put(epx_server_state, State),
+	    export_state(State),
 	    UserState = Draw(Pixmap,Rect,State#state.user_state),
-	    State#state { user_state = UserState }
+	    State1 = state(),
+	    State1#state { user_state = UserState }
     end.
 
 %% top & bottom bar has priority over left and right...
