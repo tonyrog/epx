@@ -15,6 +15,9 @@
 
 -include("../include/epx_menu.hrl").
 
+-type epx_menu() :: #menu_state{}.
+-export_type([epx_menu/0]).
+
 create(MenuProfile,MenuItems) ->
     MenuInfo = load_menu_info(MenuProfile),
     epx_gc:set_font(MenuInfo#menu_info.font),

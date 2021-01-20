@@ -29,6 +29,9 @@
  
 -define(DEBUG, true).
 
+-define(USE_OFF_SCREEN, true).
+-define(USE_EXPOSURE, false).
+
 -include_lib("epx/include/epx.hrl").
 -include_lib("epx/include/epx_menu.hrl").
 -include_lib("epx/include/epx_window_content.hrl").
@@ -199,11 +202,12 @@
 
 -record(state, 
 	{
-	 window :: #epx_window{},
-	 screen :: #epx_pixmap{},   %% on-screen pixels
-	 pixels :: #epx_pixmap{},   %% off-screen pixels
+	 window :: epx:epx_window(),
+	 screen :: epx:epx_pixmap(),   %% on-screen pixels
+	 pixels :: epx:epx_pixmap(),   %% off-screen pixels
+	 font   :: epx:epx_font(),
 	 width  :: integer(),      %% window width
-	 height :: integer(),      %% window height
+	 height :: integer(),      %% window height	 
 	 invalid :: undefined | epx:epx_rect(),
 	 status = "" :: string(),  %% bottom status text
 	 profile :: #profile{},
@@ -212,8 +216,10 @@
 	 content :: #window_content{},
 	 keymod :: #keymod{}, %% modifiers
 	 esc    :: boolean(), %% escape modifier
-	 menu,                %% global menu state
+	 menu   :: epx_menu:epx_menu(),
 	 winfo :: #window_info{},
+	 pt1   :: undefine | {X::integer(),Y::integer()}, %% menu right pos
+	 operation = none :: none | menu,
 	 user_mod :: atom(),       %% user module
 	 user_cb  :: #callbacks{}, %% user callbacks
 	 user_state :: term(),     %% user state
@@ -263,7 +269,7 @@ export_state(State) ->
 state() ->
     get(?STATE_KEY).
 
-%% dictionary ugly api
+%% CALLBACK API
 window() -> (state())#state.window.
 screen() -> (state())#state.screen.  %% temporary config change
 pixels() -> (state())#state.pixels.  %% temporary config change
@@ -298,7 +304,20 @@ pixmap_pos(X,Y) -> get_rview_pos(state(), X, Y).
 invalidate() -> self() ! {'INVALIDATE',all}.
 invalidate(Area={_X,_Y,_W,_H}) -> self() ! {'INVALIDATE',Area}.
 set_status_text(Text) -> self() ! {'SET_STATUS_TEXT', lists:flatten(Text)}.
-    
+
+%% global menu
+menu(global) ->
+    [
+     {"Cut", "Ctrl+X"},
+     {"Copy", "Ctrl+C"},
+     {"Paste", "Ctrl+V"},
+     {"Delete", "Del"},
+     {"---", ""},
+     {"Save",  "Ctrl+S"},
+     {"---", ""},
+     {"Quit",  "Ctrol+Q"}
+    ].
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -313,6 +332,9 @@ set_status_text(Text) -> self() ! {'SET_STATUS_TEXT', lists:flatten(Text)}.
 
 init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 				is_list(UserOpts) ->
+    %% application:load(epx),
+    %% application:set_env(epx, use_off_screen, ?USE_OFF_SCREEN),
+    %% application:set_env(epx, use_exposure, ?USE_EXPOSURE),
     application:ensure_all_started(epx),
     {UserMod,UserCb} = load_callbacks(User),
     process_flag(trap_exit, true),
@@ -358,7 +380,9 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 				 {leave,
 				  UserCb#callbacks.leave}
 				]),
-    Window = epx:window_create(50, 50, Width, Height, EventMask),
+    ScrollEvents = [key_press, key_release, button_press, button_release],
+    Window = epx:window_create(50, 50, Width, Height, EventMask++ScrollEvents),
+
     Screen = epx:pixmap_create(Width, Height, argb),
     Pixels = undefined, %% epx:pixmap_create(Width, Height, argb),
     ScreenColor = epx_profile:color(WProfile#window_profile.scheme,
@@ -368,12 +392,17 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
     epx:window_attach(Window),
     epx:pixmap_attach(Screen),
     epx:window_adjust(Window, [{name, Title}]),
+
+    Menu = epx_menu:create(MProfile, menu(global)),
+
     State0 = #state {
 		window = Window,
 		screen = Screen,
 		pixels = Pixels,  %% (off-screen = true)
+		font   = Font,    %% window font
 		width  = Width,
 		height = Height,
+		menu   = Menu,
 		winfo  = WInfo,
 		profile = Profile,
 		keymod = #keymod{},
@@ -385,8 +414,14 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 		user_cb  = UserCb,
 		user_state = undefined
 	       },
-    State1 = set_view_rect(State0, 0, Width-scroll_bar_size(State0)-1,
-			   0, (1.5)*Height),
+
+    ViewWidth = proplists:get_value(view_width, Env, 
+				    Width-scroll_bar_size(State0)),
+    ViewHeight = proplists:get_value(view_height, Env, 
+				     Height-scroll_bar_size(State0)),
+
+    State1 = set_view_rect(State0, 0, ViewWidth-1, 0, ViewHeight-1),
+
     State2 = case UserCb#callbacks.init of
 		 undefined ->
 		     State1;
@@ -607,10 +642,11 @@ epx_event(Event={key_press, Sym, Mod, _code}, State) ->
        true ->
 	    M = set_mod(State#state.keymod, Mod),
 	    State1 = State#state { keymod=M },
-	    State2 = user_event(Event,
+	    State2 = command(Sym, M, State),
+	    State3 = user_event(Event,
 				?CALLBACK(State1,key_press),
-				State1),
-	    {noreply, State2#state { esc = false }}
+				State2),
+	    {noreply, State3#state { esc = false }}
     end;
 epx_event(Event={key_release, _Sym, Mod, _code}, State) ->
     M = clr_mod(State#state.keymod, Mod),
@@ -618,17 +654,52 @@ epx_event(Event={key_release, _Sym, Mod, _code}, State) ->
     State2 = user_event(Event,?CALLBACK(State1,key_release), State1),
     {noreply, State2};
 
+epx_event({button_press,[wheel_down],{_X,_Y,_}},State) ->
+    {noreply, State};
 epx_event(Event={button_release, [wheel_down], _Pos3D}, State) ->
     flush_wheel(State#state.window),
     State1 = user_event(Event, ?CALLBACK(State,button_release), State),
     {noreply, scroll_down(State1)};
+
+epx_event({button_press,[wheel_up],{_X,_Y,_}},State) ->
+    {noreply, State};
 epx_event(Event={button_release, [wheel_up], _Pos3D}, State) ->
     flush_wheel(State#state.window),
     State1 = user_event(Event, ?CALLBACK(State,button_release), State),
     {noreply, scroll_up(State1)};
 
+epx_event({button_press,[wheel_left],{_X,_Y,_}}, State) ->
+    {noreply, State};
+epx_event({button_release,[wheel_left],{_X,_Y,_}},State={S,_D}) ->
+    flush_wheel(S#state.window),
+    {noreply, scroll_left(State)};
+
+epx_event({button_press,[wheel_right],{_X,_Y,_}}, State) ->
+    {noreply, State};    
+epx_event({button_release,[wheel_right],{_X,_Y,_}},State={S,_D}) ->
+    flush_wheel(S#state.window),
+    {noreply, scroll_right(State)};
+
+
 epx_event(Event={button_press, _Buttons, _Pos3D={X0,Y0,_}}, State) ->
     case lists:member(left, _Buttons) of
+	true when State#state.operation =:= menu ->
+	    case epx_menu:find_row(State#state.menu, 
+				   State#state.pt1,
+				   {X0,Y0}) of
+		{-1, _Menu} ->
+		    {noreply, State#state { operation = none }};
+		{_Row, Menu} ->
+		    case epx_menu:command(Menu) of
+			none ->
+			    {noreply, State#state { menu=Menu }};
+			{Cmd,Mod} ->
+			    State1 = State#state { menu=Menu },
+			    State2 = command(Cmd,Mod,State1),
+			    invalidate(),
+			    {noreply, State2}
+		    end
+	    end;
 	true ->
 	    case scroll_hit({X0,Y0}, State) of
 		false ->
@@ -638,8 +709,21 @@ epx_event(Event={button_press, _Buttons, _Pos3D={X0,Y0,_}}, State) ->
 		    {noreply, State1}
 	    end;
 	false ->
-	    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
-	    {noreply, State1}
+	    case lists:member(right, _Buttons) of
+		true ->
+		    epx:window_enable_events(State#state.window,[motion]),
+		    Menu = epx_menu:set_row(State#state.menu, -1),
+		    io:format("Menu = ~w\n", [Menu]),
+		    State1 = State#state { pt1 = {X0,Y0}, 
+					   operation = menu,
+					   menu = Menu },		    
+		    invalidate(),
+		    {noreply, State1};
+		false ->
+		    State1 = user_event(Event, ?CALLBACK(State,button_press), 
+					State),
+		    {noreply, State1}
+	    end
     end;
 epx_event(Event={button_release, _Buttons, _Pos3D}, State) ->
     flush_motion(State#state.window),
@@ -654,9 +738,57 @@ epx_event(Event={button_release, _Buttons, _Pos3D}, State) ->
 		epx:window_disable_events(State#state.window, [motion]),
 		set_motion(State, undefined)
 	end,
-    {noreply, State1};
+    {noreply, State1#state{pt1 = undefioned, operation = none}};
 
-
+epx_event({motion,_Button,{X1,Y1,_}},State) ->
+    flush_motion(State#state.window),
+    if State#state.operation =:= menu ->
+	    %% check menu row
+	    {Row,Menu} = epx_menu:find_row(State#state.menu,
+					   State#state.pt1,
+					   {X1,Y1}),
+	    if Row =:= -1 ->
+		    invalidate(),
+		    {noreply, State#state { menu=Menu }};
+	       true ->
+		    State1 = State#state { menu=Menu },
+		    invalidate(),
+		    {noreply, State1}
+	    end;
+       true ->
+	    case get_motion(State) of
+		{vhndl,{_DX,Dy}} ->
+		    BottomOffset = bottom_offset(State),
+		    {_,_,_,H} = get_vscroll(State),
+		    %%VH = (D#d.view_bottom - D#d.view_top),
+		    VH = get_view_height(State),
+		    Y2  = trunc((Y1-Dy)*(VH/H)),
+		    B = max(0,(get_view_bottom(State) + BottomOffset)-H),
+		    Y  = if Y2 < 0 -> 0;
+			    Y2 > B -> B;
+			    true -> Y2
+			 end,
+		    %% State1 = {S, D#d { view_ypos = Y }},
+		    State1 = set_view_ypos(State, Y),
+		    {noreply,draw(State1)};
+		{hhndl,{Dx,_Dy}} ->
+		    RightOffset = right_offset(State),
+		    {_,_,W,_} = get_hscroll(State),
+		    %% VW = (D#d.view_right - D#d.view_left),
+		    VW = get_view_width(State),
+		    X2  = trunc((X1-Dx)*(VW/W)),
+		    R = max(0, (get_view_right(State)-RightOffset)-W),
+		    X = if X2 < 0 -> 0;
+			   X2 > R -> R;
+			   true -> X2
+			end,
+		    %% State1 = {S, D#d { view_xpos = X }},
+		    State1 = set_view_xpos(State, X),
+		    {noreply,draw(State1)}; 
+		_ ->
+		    {noreply,State}
+	    end
+    end;
 epx_event(Event={enter, _Pos3D}, State) ->
     State1 = user_event(Event, ?CALLBACK(State,enter), State),
     {noreply, State1};
@@ -678,8 +810,10 @@ epx_event(_Event, State) ->
 
 scroll_hit(Pos, State) ->
     HScroll = get_hscroll(State),
+    %% io:format("scroll_hit ~w hscroll=~w\n", [Pos,HScroll]),
     case epx_rect:contains(HScroll, Pos) of
 	true ->
+	    %% io:format("hscroll\n"),
 	    epx:window_enable_events(State#state.window, [motion]),
 	    case epx_rect:contains(get_hhndl(State), Pos) of
 		true ->
@@ -689,7 +823,7 @@ scroll_hit(Pos, State) ->
 		    set_motion(State,{hhndl,Delta});
 		false ->
 		    RightOffset = right_offset(State),
-		    {_,_,W,_} = get_hscroll(State),
+		    {_,_,W,_} = HScroll,
 		    {_,_,Vw,_} = get_hhndl(State),
 		    {Xp,_Yp} = Pos,
 		    VW = get_view_width(State),
@@ -704,6 +838,7 @@ scroll_hit(Pos, State) ->
 	    VScroll = get_vscroll(State),
 	    case epx_rect:contains(VScroll, Pos) of
 		true ->
+		    %% io:format("vscroll\n"),
 		    epx:window_enable_events(State#state.window, [motion]),
 		    case epx_rect:contains(get_vhndl(State), Pos) of
 			true ->
@@ -713,7 +848,7 @@ scroll_hit(Pos, State) ->
 			    set_motion(State,{vhndl,Delta});
 			false ->
 			    BottomOffset = bottom_offset(State),
-			    {_,_,_,H} = get_vscroll(State),
+			    {_,_,_,H} = VScroll,
 			    {_,_,_,Vh} = get_vhndl(State),
 			    {_Xp,Yp} = Pos,
 			    VH = get_view_height(State),
@@ -729,12 +864,93 @@ scroll_hit(Pos, State) ->
 	    end
     end.
 
+%% default handling on key up/down left/right pageup/pagedown home/end
+command(up, _Mod, State) ->
+    scroll_up(State);
+command(down, _Mod, State) ->
+    scroll_down(State);
+command(left, _Mod, State) ->
+    scroll_left(State);
+command(right, _Mod, State) ->
+    scroll_right(State);
+command(pageup, _Mod, State) ->
+    page_up(State);
+command(pagedown, _Mod, State) ->
+    page_down(State);
+command(home, _Mod, State) ->
+    scroll_home(State);
+command('end', _Mod, State) ->
+    scroll_end(State);
+command(_Symbol, _Mod, State) ->
+    %% io:format("unhandled command ~p\n", [_Symbol]),
+    State.
+
 scroll_up(State) ->
     State1 = step_up(State, scroll_ystep(State)),
     draw(State1).
 
 scroll_down(State) ->
     State1 = step_down(State, scroll_ystep(State)),
+    draw(State1).
+
+scroll_home(State) ->
+    State1 = set_view_ypos(State, 0),
+    draw(State1).
+
+scroll_end(State) ->
+    Y0 = get_view_bottom(State),
+    Y1 = adjust_bottom_pos(Y0, State),
+    State1 = set_view_ypos(State, Y1),
+    draw(State1).
+
+adjust_bottom_pos(Y, State) ->
+    BottomOffset = bottom_offset(State),
+    H = case get_hscroll(State) of
+	    undefined -> State#state.height;
+	    _ -> State#state.height - scroll_bar_size(State)
+	end,
+    B = max(0, (get_view_bottom(State)+BottomOffset) - H),
+    min(Y, B).
+
+%% move a page up
+page_up(State) ->
+    case get_vscroll(State) of
+	undefined ->
+	    State;
+	{_,_,_,H} ->
+	    {_,_,_,VH} = get_vhndl(State), %% page size in window coords
+	    R = VH/H,  %% page ratio
+	    Step = trunc(R*get_view_height(State)),
+	    State1 = step_up(State, Step),
+	    draw(State1)
+    end.
+
+page_down(State) ->
+    case get_vscroll(State) of
+	undefined ->
+	    State;
+	{_,_,_,H} ->
+	    {_,_,_,VH} = get_vhndl(State),  %% page size in window coords
+	    R = VH/H,  %% page ratio
+	    Step = trunc(R*get_view_height(State)),
+	    State1 = step_down(State, Step),
+	    draw(State1)
+    end.
+
+scroll_left(State) ->
+    X = max(0, get_view_xpos(State) - scroll_xstep(State)),
+    State1 = set_view_xpos(State, X),
+    draw(State1).
+
+scroll_right(State) ->
+    RightOffset = right_offset(State),
+    W = case get_vscroll(State) of
+	    undefined -> State#state.width;
+	    _ ->  State#state.width - scroll_bar_size(State)
+	end,
+    R = max(0, (get_view_right(State) - RightOffset) - W),
+    X = min(get_view_xpos(State) + scroll_xstep(State), R),
+    State1 = set_view_xpos(State, X),
     draw(State1).
 
 step_up(State, Step) ->
@@ -750,6 +966,7 @@ step_down(State, Step) ->
     B = max(0, (get_view_bottom(State)+BottomOffset) - H),
     Y = min(get_view_ypos(State) + Step, B),
     set_view_ypos(State, Y).
+
 
 clamp(Value, Min, Max) ->
     if Value < Min -> Min;
@@ -882,16 +1099,24 @@ draw(State = #state { profile = Profile }, Dirty) ->
     State5 = draw_left_bar(Pixels,State4),
     State6 = draw_right_bar(Pixels,State5),
     State7 = draw_bottom_bar(Pixels,State6),
-    if State7#state.pixels =/= undefined ->
-	    copy_area(State1#state.pixels,Dirty,State1#state.screen);
+    if State#state.pt1 =/= undefined, State#state.operation =:= menu ->
+	    epx_menu:draw(State#state.menu, Pixels, State#state.pt1);
        true ->
 	    ok
     end,
-    epx:pixmap_draw(State2#state.screen, State2#state.window,
+    update_window(State7, Dirty).
+
+update_window(State, Dirty) ->
+    if State#state.pixels =/= undefined ->
+	    copy_area(State#state.pixels,Dirty,State#state.screen);
+       true ->
+	    ok
+    end,
+    epx:pixmap_draw(State#state.screen, State#state.window,
 		    0, 0, 0, 0,
-		    State2#state.width, State2#state.height),    
-    epx:sync(State2#state.screen,State2#state.window),
-    State2.
+		    State#state.width, State#state.height),
+    epx:sync(State#state.screen,State#state.window),
+    State.
 
 pixels(State) ->
     if State#state.pixels =/= undefined ->
@@ -1018,50 +1243,14 @@ get_vscroll(#state { content = WD }) -> WD#window_content.vscroll.
 get_vhndl(#state { content = WD }) -> WD#window_content.vhndl.
 
 set_hscroll(S=#state { content = WD }, Rect, Hndl) ->
-    if Rect =:= undefined ->
-	    disable_scroll_events(S);
-       true ->
-	    enable_scroll_events(S)
-    end,
+    %% io:format("hscroll = ~w\n", [Rect]),
     S#state { content = WD#window_content { hscroll = Rect,
 					    hhndl = Hndl }}.
+
 set_vscroll(S=#state { content = WD }, Rect, Hndl) ->
-    if Rect =:= undefined ->
-	    disable_scroll_events(S);
-       true ->
-	    enable_scroll_events(S)
-    end,
+    %% io:format("vscroll = ~w\n", [Rect]),
     S#state { content = WD#window_content { vscroll = Rect,
 					    vhndl = Hndl }}.
-
-enable_scroll_events(State) ->
-    epx:window_enable_events(State#state.window,
-			     [key_press, key_release,
-			      button_press, button_release]).
-
-disable_scroll_events(State) ->
-    disable_scroll_events_(State,
-			   [key_press, key_release,
-			    button_press, button_release], []).
-
-disable_scroll_events_(State, [Event|Events], Acc) ->
-    case Event of
-	button_press when ?CALLBACK(State,button_press) =:= undefined ->
-	    disable_scroll_events_(State, Events, [button_press|Acc]);
-	button_release when ?CALLBACK(State,button_release) =:= undefined ->
-	    disable_scroll_events_(State, Events, [button_release|Acc]);
-	key_press when ?CALLBACK(State,key_press) =:= undefined ->
-	    disable_scroll_events_(State, Events, [key_press|Acc]);
-	key_release when ?CALLBACK(State,key_release) =:= undefined ->
-	    disable_scroll_events_(State, Events, [key_release|Acc]);
-	_ ->
-	    disable_scroll_events_(State, Events, Acc)
-    end;
-disable_scroll_events_(State, [], []) ->
-    ok;
-disable_scroll_events_(State, [], Events) ->
-    epx:window_disable_events(State#state.window,Events).
-
 
 bar(#state { winfo = WI }) ->
     #window_info { left_bar = L, right_bar = R,
@@ -1199,23 +1388,25 @@ draw_top_bar(Pixels, S) ->
 	    S
     end.
 
-draw_bottom_bar(Pixels, S) ->
-    case bar(S) of
+draw_bottom_bar(Pixels, State) ->
+    case bar(State) of
 	{_Left,_Right,_Top,0} ->
-	    S;
+	    State;
 	{_Left,_Right,_Top,Bottom} ->
 	    epx_gc:set_fill_style(solid),
-	    epx_gc:set_fill_color(bottom_bar_color(S)), 
+	    epx_gc:set_fill_color(bottom_bar_color(State)), 
 	    X0 = 0,
-	    Y0 = S#state.height-Bottom,
-	    DrawRect = {X0,Y0,S#state.width,Bottom},
+	    Y0 = State#state.height-Bottom,
+	    DrawRect = {X0,Y0,State#state.width,Bottom},
 	    epx:draw_rectangle(Pixels, DrawRect),
 	    epx_gc:set_foreground_color({0,0,0}),
 	    epx_gc:set_fill_style(none),
 	    epx:draw_rectangle(Pixels, DrawRect),
+	    epx_gc:set_font(State#state.font),
+	    epx_gc:set_foreground_color((State#state.window_profile)#window_profile.font_color),
 	    draw_text(Pixels, X0+10, Y0, 100, Bottom-2, 
-		      S#state.status, S),
-	    S
+		      State#state.status, State),
+	    State
     end.
 
 draw_left_bar(Pixels, S) ->
