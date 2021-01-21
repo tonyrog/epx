@@ -354,6 +354,9 @@ invalidate() ->
     S1 = set_dirty_area(S0),
     export_state(S1),
     S1#state.dirty.
+
+invalidate(undefined) ->
+    undefined;
 invalidate(Area={_X,_Y,_W,_H}) ->
     S0 = state(),
     S1 = set_dirty_area(Area,S0),
