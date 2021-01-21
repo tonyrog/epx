@@ -25,6 +25,8 @@
 	 bottom_offset = 5
 	}).
 
+-type epx_menu_info() :: #menu_info{}.
+
 -record(menu_profile,
 	{
 	 scheme :: atom(),
@@ -34,6 +36,8 @@
 	 background_color        = greay10,
 	 border_color            = green
 	}).
+
+-type epx_menu_profile() :: #menu_profile{}.
 
 -record(menu_state, 
 	{
@@ -45,12 +49,16 @@
 	 row  :: integer()    %% current row <0 = none
 	}).
 
+-type epx_menu_state() :: #menu_state{}.
+
 -record(keymod,
 	{
 	 shift = false,   %% add to selection
 	 ctrl  = false,   %% add vertex
 	 alt   = false    %% add edge
 	}).
+
+-type epx_keymod() :: #keymod{}.
 
 -endif.
 
