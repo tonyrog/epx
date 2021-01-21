@@ -34,8 +34,8 @@
 	 scroll_hndl_size  = 10,
 	 scroll_xstep      = 4,
 	 scroll_ystep      = 4,
-	 scroll_horizontal = bottom,
-	 scroll_vertical   = right
+	 scroll_horizontal = bottom  :: none | top | bottom,
+	 scroll_vertical   = right   :: none | left | right
 	}).
 
 %%
@@ -54,8 +54,8 @@
 	 left_bar_color          = green,
 	 right_bar_color         = blue,
 	 bottom_bar_color        = grey5,
-	 scroll_horizontal       = right,
-	 scroll_vertical         = bottom
+	 scroll_horizontal       = bottom :: none | top | bottom,
+	 scroll_vertical         = right  :: none | left | right
 	}).
 
 -record(window_content,
