@@ -249,7 +249,7 @@
 	 font   :: epx:epx_font(),
 	 width  :: integer(),      %% window width
 	 height :: integer(),      %% window height	 
-	 invalid :: undefined | epx:epx_rect(),
+	 dirty  :: undefined | epx:epx_rect(),
 	 status = "" :: string(),  %% bottom status text
 	 profile :: #profile{},
 	 menu_profile :: #menu_profile{},
@@ -322,9 +322,7 @@ content_pos() -> get_view_pos(state(), 0, 0).
 content_pos(X,Y) -> get_view_pos(state(), X, Y).
 content_width() -> get_view_width(state()).
 content_height() -> get_view_height(state()).
-content_rect() ->
-    S = state(),
-    {get_view_xpos(S),get_view_ypos(S),get_view_width(S),get_view_height(S)}.
+content_rect() -> get_view_rect(state()).
 set_content_size(W, H) when W >= 0, H >= 0 ->
     S0 = state(),
     #state { content = WD } = S0,
@@ -351,8 +349,16 @@ set_status_text(Text) ->
     export_state(S1),
     ok.
     
-invalidate() -> self() ! {'INVALIDATE',all}.
-invalidate(Area={_X,_Y,_W,_H}) -> self() ! {'INVALIDATE',Area}.
+invalidate() ->
+    S0 = state(),
+    S1 = set_dirty_area(S0),
+    export_state(S1),
+    S1#state.dirty.
+invalidate(Area={_X,_Y,_W,_H}) ->
+    S0 = state(),
+    S1 = set_dirty_area(Area,S0),
+    export_state(S1),
+    S1#state.dirty.
 
 %% global menu
 menu(global) ->
@@ -616,15 +622,18 @@ handle_cast(Request, State) ->
 
 handle_info(#epx_event{win=Win,data=Event}, State) when 
       Win =:= State#state.window ->
-    epx_event(Event, State);
-handle_info({'INVALIDATE',Area},State) ->
-    All = {0,0,State#state.width,State#state.height},
-    Invalid = collect_invalidate(Area, All, State#state.invalid),
-    self() ! 'REDRAW',
-    {noreply, State#state { invalid = Invalid} };
+    case epx_event(Event, State) of
+	{noreply, State1} ->
+	    if State1#state.dirty =:= undefined ->
+		    {noreply,State1};
+	       true ->
+		    {noreply,draw(State1)}
+	    end;
+	Reply ->
+	    Reply
+    end;
 handle_info('REDRAW',State) ->
-    State1 = draw(State),
-    {noreply, State1#state { invalid = undefined }};
+    {noreply, draw(State)};
 handle_info(Info, State) ->
     case ?CALLBACK(State, handle_info) of
 	undefined ->
@@ -669,20 +678,6 @@ handle_continue(Info, State) ->
     end.
 
 
-collect_invalidate(all, All, _Invalid) ->
-    collect_invalidate(All,All);
-collect_invalidate(Area, All, Invalid) ->
-    collect_invalidate(epx_rect:union(Area,Invalid),All).
-
-collect_invalidate(Invalid,All) ->
-    receive
-	{'INVALIDATE',all} ->
-	    collect_invalidate(All,All);
-	{'INVALIDATE',Area} ->
-	    collect_invalidate(epx_rect:union(Area, Invalid),All)
-    after 10 ->
-	    Invalid
-    end.
 
 epx_event(_Event={configure,Rect0}, State) ->
     Rect1 = {_X,_Y,W,H} = flush_configure(State#state.window, Rect0),
@@ -702,7 +697,7 @@ epx_event(_Event={configure,Rect0}, State) ->
 	    State3 = adjust_view_xpos(get_view_xpos(State2), false, State2),
 	    State4 = adjust_view_ypos(get_view_ypos(State3), false, State3),
 
-	    {noreply, draw(State4)};
+	    {noreply, set_dirty_area(State4)};
        true ->
 	    {noreply, State}
     end;
@@ -777,8 +772,8 @@ epx_event(Event={button_press, [left], _Pos3D={X0,Y0,_}}, State) ->
 			    State1 = State#state { menu=Menu },
 			    %% FIXME: avoid button_release?
 			    State2 = command(Cmd,Mod,State1),
-			    invalidate(),
-			    {noreply, State2}
+			    State3 = set_dirty_area(State2),
+			    {noreply, State3}
 		    end
 	    end;
        true ->
@@ -786,10 +781,11 @@ epx_event(Event={button_press, [left], _Pos3D={X0,Y0,_}}, State) ->
 		false ->
 		    Window = State#state.window,
 		    epx:window_enable_events(Window,[motion]),
-		    invalidate(),
-		    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
+		    State1 = user_event(Event, ?CALLBACK(State,button_press),
+					State),
 		    %% FIXME: select callback!
-		    {noreply, State1#state { operation=select, pt1=XY,pt2=XY }};
+		    State2 = set_dirty_area(State1),
+		    {noreply, State2#state { operation=select, pt1=XY,pt2=XY }};
 		State1 ->
 		    {noreply, State1}
 	    end
@@ -811,11 +807,10 @@ epx_event(Event={button_release, [left], _Pos3D}, State) ->
 				Area = {min(X1,X2),min(Y1,Y2),
 					abs(X2-X1)+1, abs(Y2-Y1)+1},
 				State0 = user_event(Area,?CALLBACK(State,select),State),
-				invalidate(),
-				State0;
+				set_dirty_area(State0);
 			    _ ->
-				invalidate(),
-				user_event(Event, ?CALLBACK(State,button_release), State)
+				State0 = set_dirty_area(State),
+				user_event(Event, ?CALLBACK(State0,button_release), State0)
 			end
 		end;
 	    {vhndl,_Delta} ->
@@ -837,11 +832,10 @@ epx_event(Event={button_press, [right], _Pos3D={X0,Y0,_}}, State) ->
 				State),
 	    {noreply, State1};
 	Menu ->
-	    invalidate(),
 	    State1 = State#state { pt1 = XY, pt2 = XY,
 				   operation = menu,
 				   menu = Menu },
-	    {noreply, State1}
+	    {noreply, set_dirty_area(State1)}
     end;
 
     
@@ -861,8 +855,7 @@ epx_event({motion,[],{X1,Y1,_}},State) ->
 		    {noreply, State#state { menu=Menu }};
 	       true ->
 		    State1 = State#state { menu=Menu },
-		    invalidate(),
-		    {noreply, State1}
+		    {noreply,set_dirty_area(State1)}
 	    end;
        true ->
 	    {noreply, State}
@@ -873,10 +866,10 @@ epx_event({motion,[left],{X,Y,_}},State) ->
     case get_motion(State) of
 	{vhndl,{_DX,Dy}} ->
 	    State1 = adjust_view_ypos(Y-Dy, true, State),
-	    {noreply,draw(State1)};
+	    {noreply,set_dirty_area(State1)};
 	{hhndl,{Dx,_Dy}} ->
 	    State1 = adjust_view_xpos(X-Dx, true, State),
-	    {noreply,draw(State1)}; 
+	    {noreply,set_dirty_area(State1)}; 
 	_ ->
 	    {X1,Y1} = State#state.pt1,
 	    Area = {min(X1,X),min(Y1,Y),
@@ -910,6 +903,12 @@ epx_event(_Event, State) ->
     io:format("unhandled epx event: ~p\n", [_Event]),
     {noreply,State}.
 
+set_dirty_area(State) -> 
+    set_dirty_area(get_view_rect(State),State).
+set_dirty_area(Area={_X,_Y,_W,_H},State) ->
+    Dirty = epx_rect:union(Area,State#state.dirty),
+    State#state { dirty = Dirty }.
+
 scroll_hit(Pos, State) ->
     HScroll = get_hscroll(State),
     %%io:format("scroll_hit ~w hscroll=~w\n", [Pos,HScroll]),
@@ -933,7 +932,7 @@ scroll_hit(Pos, State) ->
 		    Delta = {Dx, 0},
 		    %% io:format("hscroll, motion2=~w\n", [Delta]),
 		    State2 = set_motion(State1,{hhndl,Delta}),
-		    draw(State2)
+		    set_dirty_area(State2)
 	    end;
 	false ->
 	    VScroll = get_vscroll(State),
@@ -958,7 +957,7 @@ scroll_hit(Pos, State) ->
 			    Delta = {0,Dy},
 			    %% io:format("vscroll, motion2=~w\n", [Delta]),
 			    State2 = set_motion(State1,{vhndl,Delta}),
-			    draw(State2)
+			    set_dirty_area(State2)
 		    end;
 		false ->
 		    false
@@ -1005,21 +1004,21 @@ command_(_Symbol, _Mod, State) ->
 
 scroll_up(State) ->
     State1 = step_up(State, scroll_ystep(State)),
-    draw(State1).
+    set_dirty_area(State1).
 
 scroll_down(State) ->
     State1 = step_down(State, scroll_ystep(State)),
-    draw(State1).
+    set_dirty_area(State1).
 
 scroll_home(State) ->
     State1 = set_view_ypos(State, 0),
-    draw(State1).
+    set_dirty_area(State1).
 
 scroll_end(State) ->
     Y0 = get_view_bottom(State),
     Y1 = adjust_bottom_pos(Y0, State),
     State1 = set_view_ypos(State, Y1),
-    draw(State1).
+    set_dirty_area(State1).
 
 %% Width of horizontal scrollbar
 scroll_bar_width(State, _Bar={LeftBar,RightBar,_,_}) ->
@@ -1093,7 +1092,7 @@ page_up(State) ->
 	    R = VH/H,  %% page ratio
 	    Step = trunc(R*get_view_height(State)),
 	    State1 = step_up(State, Step),
-	    draw(State1)
+	    set_dirty_area(State1)
     end.
 
 page_down(State) ->
@@ -1105,16 +1104,16 @@ page_down(State) ->
 	    R = VH/H,  %% page ratio
 	    Step = trunc(R*get_view_height(State)),
 	    State1 = step_down(State, Step),
-	    draw(State1)
+	    set_dirty_area(State1)
     end.
 
 scroll_left(State) ->
     State1 = step_left(State, scroll_xstep(State)),
-    draw(State1).
+    set_dirty_area(State1).
 
 scroll_right(State) ->
     State1 = step_right(State, scroll_xstep(State)),
-    draw(State1).
+    set_dirty_area(State1).
 
 step_up(State, Step) ->
     Y = max(0, get_view_ypos(State) - Step),
@@ -1241,7 +1240,7 @@ user_event(E, Callback, State) ->
     State1#state { user_state = UserState }.
 
 draw(State) ->
-    draw(State, undefined).
+    draw(State, State#state.dirty).
     
 draw(State = #state { profile = Profile }, Dirty) ->
     Scheme = Profile#profile.scheme,
@@ -1273,7 +1272,7 @@ update_window(State, Dirty) ->
 		    0, 0, 0, 0,
 		    State#state.width, State#state.height),
     epx:sync(State#state.screen,State#state.window),
-    State.
+    State#state { dirty = undefined }.
 
 pixels(State) ->
     if State#state.pixels =/= undefined ->
@@ -1513,6 +1512,10 @@ get_view_width(#state { content = WD }) ->
     (WD#window_content.view_right - WD#window_content.view_left)+1.
 get_view_height(#state { content = WD }) ->
     (WD#window_content.view_bottom - WD#window_content.view_top)+1.
+get_view_rect(#state { content = WD }) ->
+    #window_content { view_left = L, view_right = R, 
+		      view_top  = T, view_bottom = B } = WD,
+    { L, T, (R - L)+1, (B - T)+1 }.
 
 set_view_rect(S=#state { content = WD }, L, R, T, B) ->    
     S#state { content = WD#window_content { view_left = L,
@@ -1532,9 +1535,10 @@ draw_content(Pixmap, Dirty, State) ->
 		      [State#state.user_mod]),
 	    State;
 	Draw ->
-	    Rect = if Dirty =:= undefined -> {0,0,State#state.width,
-					      State#state.height};
-		      tuple_size(Dirty) =:= 4 -> Dirty
+	    Rect = if Dirty =:= undefined ->
+			   {0,0,State#state.width,State#state.height};
+		      tuple_size(Dirty) =:= 4 ->
+			   Dirty
 		   end,
 	    %% fixme: pixmap_set_clip to shield pixmap
 	    export_state(State),
