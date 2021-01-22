@@ -21,9 +21,11 @@
 
 %% api callable from callbacks
 -export([window/0, screen/0, pixels/0, width/0, height/0, keymod/0]).
--export([content_pos/0, content_pos/2, pixmap_pos/2]).
--export([content_width/0, content_height/0, content_rect/0]).
--export([set_content_size/2, set_content_rect/1]).
+-export([view_pos/0, view_pos/2]).
+-export([view_width/0, view_height/0, view_rect/0]).
+-export([set_view_size/2, set_view_rect/1]).
+-export([content_pos/0, content_rect/0]).
+-export([content_width/0, content_height/0]).
 -export([invalidate/0, invalidate/1]).
 -export([set_status_text/1]).
  
@@ -318,19 +320,19 @@ pixels() -> (state())#state.pixels.
 width()  -> (state())#state.width.
 height() -> (state())#state.height.
 keymod() -> (state())#state.keymod.
-content_pos() -> get_view_pos(state(), 0, 0).
-content_pos(X,Y) -> get_view_pos(state(), X, Y).
-content_width() -> get_view_width(state()).
-content_height() -> get_view_height(state()).
-content_rect() -> get_view_rect(state()).
-set_content_size(W, H) when W >= 0, H >= 0 ->
+view_pos() -> get_view_pos(state(), 0, 0).
+view_pos(X,Y) -> get_view_pos(state(), X, Y).
+view_width() -> get_view_width(state()).
+view_height() -> get_view_height(state()).
+view_rect() -> get_view_rect(state()).
+set_view_size(W, H) when W >= 0, H >= 0 ->
     S0 = state(),
     #state { content = WD } = S0,
     WD1 = WD#window_content { view_right = WD#window_content.view_left + W - 1,
 			      view_bottom = WD#window_content.view_top + H - 1 },
     S1 = S0#state { content = WD1 },
     export_state(S1).
-set_content_rect({X, Y, W, H}) when X >= 0, Y >= 0, W >= 0, H >= 0 ->
+set_view_rect({X, Y, W, H}) when X >= 0, Y >= 0, W >= 0, H >= 0 ->
     S0 = state(),
     #state { content = WD } = S0,
     WD1 = WD#window_content { view_left = X,
@@ -339,6 +341,11 @@ set_content_rect({X, Y, W, H}) when X >= 0, Y >= 0, W >= 0, H >= 0 ->
 			      view_bottom = Y + H - 1 },
     S1 = S0#state { content = WD1 },
     export_state(S1).
+
+content_pos() -> content_pos(state()).
+content_width() -> content_width(state()).
+content_height() -> content_height(state()).
+content_rect() -> content_rect(state()).
 
 %% view position in pixmap
 pixmap_pos(X,Y) -> get_rview_pos(state(), X, Y).
@@ -459,10 +466,19 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 				  UserCb#callbacks.focus_out}
 				]),
     ScrollEvents = [key_press, key_release, button_press, button_release],
-    Window = epx:window_create(50, 50, Width, Height, EventMask++ScrollEvents),
+    Window = epx:window_create(50,50,Width,Height,EventMask++ScrollEvents),
 
-    Screen = epx:pixmap_create(Width, Height, argb),
-    Pixels = undefined, %% epx:pixmap_create(Width, Height, argb),
+    Width1 = Width +
+	WInfo#window_info.left_bar +
+	WInfo#window_info.right_bar +
+	WInfo#window_info.scroll_bar_size,
+    Height1 = Height +
+	WInfo#window_info.top_bar +
+	WInfo#window_info.bottom_bar +
+	WInfo#window_info.scroll_bar_size,
+
+    Screen = epx:pixmap_create(Width1, Height1, argb),
+    Pixels = undefined, %% epx:pixmap_create(Width1, Height1, argb),
     ScreenColor = epx_profile:color(WProfile#window_profile.scheme,
 				    WProfile#window_profile.background_color),
     epx:pixmap_fill(Screen, ScreenColor),
@@ -493,10 +509,8 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 		user_state = undefined
 	       },
 
-    ViewWidth = proplists:get_value(view_width, Env, 
-				    Width-scroll_bar_size(State0)),
-    ViewHeight = proplists:get_value(view_height, Env, 
-				     Height-scroll_bar_size(State0)),
+    ViewWidth = proplists:get_value(view_width, Env, Width),
+    ViewHeight = proplists:get_value(view_height, Env, Height),
 
     State1 = set_view_rect(State0, 0, ViewWidth-1, 0, ViewHeight-1),
 
@@ -680,26 +694,30 @@ handle_continue(Info, State) ->
 	    reply(Reply)
     end.
 
-
-
 epx_event(_Event={configure,Rect0}, State) ->
     Rect1 = {_X,_Y,W,H} = flush_configure(State#state.window, Rect0),
-    if W =/= State#state.width; 
+    if W =/= State#state.width;
        H =/= State#state.height ->
-	    Screen = resize_pixmap(State#state.screen, W, H, true),
+	    WInfo = State#state.winfo,
+	    W1 = W +
+		WInfo#window_info.left_bar +
+		WInfo#window_info.right_bar +
+		WInfo#window_info.scroll_bar_size,
+	    H1 = H +
+		WInfo#window_info.top_bar +
+		WInfo#window_info.bottom_bar +
+		WInfo#window_info.scroll_bar_size,
+	    Screen = resize_pixmap(State#state.screen, W1, H1, true),
 	    Pixels = if State#state.pixels =:= undefined -> undefined;
-			true -> resize_pixmap(State#state.pixels, W, H, false)
+			true -> resize_pixmap(State#state.pixels, W1, H1, false)
 		     end,
-	    State1 = State#state { screen = Screen, 
-				   pixels = Pixels,
+	    State1 = State#state { screen = Screen, pixels = Pixels,
 				   width=W, height=H },
 	    State2 = user_event({configure,Rect1},
 				?CALLBACK(State1,configure),
 				State1),
-
 	    State3 = adjust_view_xpos(get_view_xpos(State2), false, State2),
 	    State4 = adjust_view_ypos(get_view_ypos(State3), false, State3),
-
 	    {noreply, set_dirty_area(State4)};
        true ->
 	    {noreply, State}
@@ -906,6 +924,25 @@ epx_event(_Event, State) ->
     io:format("unhandled epx event: ~p\n", [_Event]),
     {noreply,State}.
 
+%% width of the area where content is drawn
+content_pos(State) ->
+    {LeftBar,_,TopBar,_} = bar(State),
+    {LeftBar,TopBar}.
+    
+content_width(State) ->
+    {LeftBar,RightBar,_,_} = bar(State),
+    State#state.width - (LeftBar+RightBar).
+
+content_height(State) ->
+    {_,_,TopBar,BottomBar} = bar(State),
+    State#state.height - (TopBar+BottomBar).
+
+content_rect(State) ->
+    {LeftBar,RightBar,TopBar,BottomBar} = bar(State),
+    {LeftBar,TopBar,
+     State#state.width - (LeftBar+RightBar),
+     State#state.height - (TopBar+BottomBar)}.
+
 set_dirty_area(State) -> 
     set_dirty_area(get_view_rect(State),State).
 set_dirty_area(Area={_X,_Y,_W,_H},State) ->
@@ -1024,23 +1061,19 @@ scroll_end(State) ->
     set_dirty_area(State1).
 
 %% Width of horizontal scrollbar
-scroll_bar_width(State, _Bar={LeftBar,RightBar,_,_}) ->
-    case get_vscroll(State) of
-	undefined ->
-	    State#state.width - (LeftBar+RightBar);
-	_ ->  
-	    ScrollBarSize = scroll_bar_size(State),
-	    State#state.width - (ScrollBarSize+LeftBar+RightBar)
-    end.
+scroll_bar_width(State) ->
+    scroll_bar_width(get_vscroll(State), State).
+    
+scroll_bar_width(none, State) -> content_width(State);
+scroll_bar_width(undefined, State) -> content_width(State);
+scroll_bar_width(_VBar, State) -> content_width(State)-scroll_bar_size(State).
 
-scroll_bar_height(State, _Bar={_,_,TopBar,BottomBar}) ->
-    case get_hscroll(State) of
-	undefined -> 
-	    State#state.height - (TopBar+BottomBar);
-	_ -> 
-	    ScrollBarSize = scroll_bar_size(State),
-	    State#state.height - (ScrollBarSize+TopBar+BottomBar)
-    end.
+scroll_bar_height(State) ->
+    scroll_bar_height(get_hscroll(State), State).
+
+scroll_bar_height(none, State) -> content_height(State);
+scroll_bar_height(undefined, State) -> content_height(State);
+scroll_bar_height(_VBar, State) -> content_height(State)-scroll_bar_size(State).
 
 %% adjust view ypos, if needed, after configure etc
 adjust_view_ypos(Y, Set, State) ->
@@ -1076,12 +1109,12 @@ adjust_view_xpos(X, Set, State) ->
     end.
 
 adjust_bottom_pos(Y, State) ->
-    ScrollBarHeight = scroll_bar_height(State, bar(State)),
+    ScrollBarHeight = scroll_bar_height(State),
     Ymax = max(0, get_view_bottom(State)-ScrollBarHeight-1),
     min(Y, Ymax).
 
 adjust_right_pos(X, State) ->
-    ScrollBarWidth = scroll_bar_width(State, bar(State)),
+    ScrollBarWidth = scroll_bar_width(State),
     Xmax = max(0, get_view_right(State)-ScrollBarWidth-1),
     min(X, Xmax).
 
@@ -1133,6 +1166,8 @@ step_left(State, Step) ->
 step_right(State, Step) ->
     X = adjust_right_pos(get_view_xpos(State) + Step, State),
     set_view_xpos(State, X).
+
+    
 
 %% update mod keys
 set_mod(M, [shift|Mod]) ->  set_mod(M#keymod {shift = true}, Mod);
@@ -1250,10 +1285,14 @@ draw(State = #state { profile = Profile }, Dirty) ->
     ScreenColor = epx_profile:color(Scheme, Profile#profile.screen_color),
     {HBar,VBar} = scrollbars(State),
     Pixels = pixels(State),
-    fill_area(Pixels,Dirty,ScreenColor),
+    %% FIXME Dirty! fill new areas when doing resize,
+    %% internal mark toolbars and scrollbars
+    %% fill_area(Pixels,Dirty,ScreenColor),
+    fill_area(Pixels,undefined,ScreenColor),
     State1 = draw_content(Pixels,Dirty,State),
-    State2 = draw_scrollbar(Pixels,scroll_vertical(State1),HBar,State1),
-    State3 = draw_scrollbar(Pixels,scroll_horizontal(State2),VBar,State2),
+    epx_gc:set_border_width(0), %% FIXME: use special gc for user content
+    State2 = draw_vscroll(Pixels,VBar,HBar,State1),
+    State3 = draw_hscroll(Pixels,HBar,VBar,State2),
     State4 = draw_top_bar(Pixels,State3),
     State5 = draw_left_bar(Pixels,State4),
     State6 = draw_right_bar(Pixels,State5),
@@ -1295,117 +1334,138 @@ fill_area(Pixmap, {X,Y,W,H}, Color) ->
     %% io:format("fill Pixmap: ~w\n", [epx:pixmap_info(Pixmap)]),
     epx:pixmap_fill_area(Pixmap,X,Y,W,H,Color).
 
-
 %% scrollbar
-
-draw_scrollbar(Pixels, left, HBar, State) ->
-    LeftBar = left_bar(State),
-    X0 = LeftBar,
-    draw_vertical_scrollbar(Pixels,X0,HBar,State);
-
-draw_scrollbar(Pixels, right, HBar, State) ->
-    Size = scroll_bar_size(State),
-    RightBar = right_bar(State),
-    X0 = State#state.width-Size-RightBar,
-    draw_vertical_scrollbar(Pixels,X0,HBar,State);
-
-draw_scrollbar(Pixels, top, VBar, State) ->
-    TopBar = top_bar(State),
-    Y0 = TopBar,
-    draw_horizontal_scrollbar(Pixels, Y0, VBar, State);
-
-draw_scrollbar(Pixels, bottom, VBar, State) ->
-    Size = scroll_bar_size(State),
-    BottomBar = bottom_bar(State),
-    Y0 = State#state.height-Size-BottomBar,
-    draw_horizontal_scrollbar(Pixels,Y0,VBar,State).
-
 scrollbars(State) ->
     ScrollBarSize = scroll_bar_size(State),
-    {Left,Right,Top,Bottom} = bar(State),
-    BarWidth = Left+Right,
-    BarHeight = Top+Bottom,
-    WindowWidth = State#state.width,
-    WindowHeight = State#state.height,
+    ContentWidth = content_width(State),
+    ContentHeight = content_height(State),
     ViewWidth = get_view_width(State),
     ViewHeight = get_view_height(State),
-    if ViewWidth > (WindowWidth-BarWidth) ->
-	    if ViewHeight > (WindowHeight-BarHeight-ScrollBarSize) ->
+    if ViewWidth > ContentWidth ->
+	    if ViewHeight > (ContentHeight-ScrollBarSize) ->
 		    {scroll_horizontal(State), scroll_vertical(State)};
 	       true ->
 		    {scroll_horizontal(State), none}
 	    end;
-       ViewHeight > (WindowHeight-BarHeight) ->
-	    if ViewWidth > (WindowWidth-BarWidth-ScrollBarSize) ->
+       ViewHeight > ContentHeight ->
+	    if ViewWidth > (ContentWidth-ScrollBarSize) ->
 		    {scroll_horizontal(State), scroll_vertical(State)};
 	       true ->
-		    {none, scroll_vertical(State)}
+		    {none,                     scroll_vertical(State)}
 	    end;
        true ->
 	    {none, none}
     end.
        
 
-draw_vertical_scrollbar(Pixels, X0, HBar, State) ->
-    ScrollBarSize = scroll_bar_size(State),
-    HndlSize = scroll_hndl_size(State),
-    Bar = {_,_,TopBar,BottomBar} = bar(State),
-    ScrollBarHeight = scroll_bar_height(State, Bar),
-    ViewHeight = get_view_height(State),
-    if ViewHeight > ScrollBarHeight -> %% State#state.height ->
-	    epx_gc:set_fill_style(solid),
-	    epx_gc:set_fill_color(scroll_bar_color(State)),
-	    Y0 = case HBar of
-		     none   -> TopBar;
-		     bottom -> TopBar;
-		     top    -> TopBar+ScrollBarSize
-		 end,
-	    Rect = {X0,Y0,ScrollBarSize,ScrollBarHeight},
-	    epx_gc:set_border_width(0),
-	    epx:draw_rectangle(Pixels, Rect),
-	    epx_gc:set_fill_color(scroll_hndl_color(State)),
-	    ViewToWindow = ScrollBarHeight / ViewHeight,
-	    Top = get_view_ypos(State),
-	    HandleLength = trunc(ViewToWindow*ScrollBarHeight),
-	    HandlePos = Y0+trunc(ViewToWindow*Top),
-	    Pad = (ScrollBarSize-HndlSize) div 2,
-	    HRect = {X0+Pad,HandlePos,HndlSize,HandleLength},
-	    epx:draw_roundrect(Pixels,HRect,5,5),
-	    set_vscroll(State, Rect, HRect);
+draw_vscroll(Pixels,left,HBar,State) ->
+    X0 = left_bar(State),
+    draw_vscroll_(Pixels,X0,HBar,State);
+draw_vscroll(Pixels,right,HBar,State) ->
+    Size = scroll_bar_size(State),
+    RightBar = right_bar(State),
+    X0 = State#state.width-Size-RightBar,
+    draw_vscroll_(Pixels,X0,HBar,State);
+draw_vscroll(_Pixels,none,_OtherBar,State) ->
+    set_vscroll(State, undefined, undefined).
+
+draw_vscroll_(Pixels, X0, HBar, State) ->
+    ScrollBarHeight = scroll_bar_height(HBar,State),
+    if ScrollBarHeight > 0 ->
+	    draw_vscroll__(Pixels, X0, ScrollBarHeight, HBar, State);
        true ->
 	    set_vscroll(State, undefined, undefined)
     end.
 
-%% fixme remove vertical scrollbar if present!
-draw_horizontal_scrollbar(Pixels, Y0, VBar, State) ->
+draw_vscroll__(Pixels, X0, ScrollBarHeight, HBar, State) ->
     ScrollBarSize = scroll_bar_size(State),
     HndlSize = scroll_hndl_size(State),
-    Bar = {LeftBar,RightBar,_,_} = bar(State),
-    ScrollBarWidth = scroll_bar_width(State, Bar),
-    ViewWidth = get_view_width(State),
-    if ViewWidth > State#state.width ->
-	    epx_gc:set_fill_style(solid),
-	    epx_gc:set_fill_color(scroll_bar_color(State)),
-	    X0 = case VBar of
-		     none -> LeftBar;
-		     left -> LeftBar+ScrollBarSize;
-		     right -> LeftBar
-		 end,
-	    Rect = {X0,Y0,ScrollBarWidth,ScrollBarSize},
-	    epx_gc:set_border_width(0),
-	    epx:draw_rectangle(Pixels, Rect),
-	    epx_gc:set_fill_color(scroll_hndl_color(State)),
-	    ViewToWindow = ScrollBarWidth / ViewWidth,
-	    Left = get_view_xpos(State),
-	    HandleLength = trunc(ViewToWindow*ScrollBarWidth),
-	    HandlePos = X0+trunc(ViewToWindow*Left),
-	    Pad = (ScrollBarSize-HndlSize) div 2,
-	    HRect = {HandlePos,Y0+Pad,HandleLength,HndlSize},
-	    epx:draw_roundrect(Pixels,HRect,5,5),
-	    set_hscroll(State, Rect, HRect);
+    TopBar = top_bar(State),
+    ViewHeight = get_view_height(State),
+    epx_gc:set_fill_style(solid),
+    ScrollBarColor = scroll_bar_color(State),
+    epx_gc:set_fill_color(ScrollBarColor),
+    Y0 = case HBar of
+	     none   -> TopBar;
+	     bottom -> TopBar;
+	     top    -> TopBar+ScrollBarSize
+	 end,
+    Rect = {X0,Y0,ScrollBarSize,ScrollBarHeight},
+    epx_gc:set_border_width(0),
+    epx:draw_rectangle(Pixels, Rect),
+    epx_gc:set_fill_color(scroll_hndl_color(State)),
+    ViewToWindow = ScrollBarHeight / ViewHeight,
+    Top = get_view_ypos(State),
+    HandleLength = trunc(ViewToWindow*ScrollBarHeight),
+    HandlePos = Y0+trunc(ViewToWindow*Top),
+    Pad = (ScrollBarSize-HndlSize) div 2,
+    HRect = {X0+Pad,HandlePos,HndlSize,HandleLength},
+    epx:draw_roundrect(Pixels,HRect,5,5),
+    set_vscroll(State, Rect, HRect).
+
+draw_hscroll(Pixels,top,VBar,State) ->
+    Y0 = top_bar(State),
+    draw_hscroll_(Pixels,Y0,VBar,State);
+draw_hscroll(Pixels,bottom,VBar,State) ->
+    Size = scroll_bar_size(State),
+    BottomBar = bottom_bar(State),
+    Y0 = State#state.height-Size-BottomBar,
+    draw_hscroll_(Pixels,Y0,VBar,State);
+draw_hscroll(_Pixels,none,_OtherBar,State) ->
+    set_hscroll(State, undefined, undefined).
+
+draw_hscroll_(Pixels, Y0, VBar, State) ->
+    ScrollBarWidth = scroll_bar_width(VBar,State),
+    if ScrollBarWidth > 0 ->
+	    draw_hscroll__(Pixels, Y0, ScrollBarWidth, VBar, State);
        true ->
 	    set_hscroll(State, undefined, undefined)
     end.
+
+draw_hscroll__(Pixels, Y0, ScrollBarWidth, VBar, State) ->
+    ScrollBarSize = scroll_bar_size(State),
+    HndlSize = scroll_hndl_size(State),
+    ViewWidth = get_view_width(State),
+    epx_gc:set_fill_style(solid),
+    ScrollBarColor = scroll_bar_color(State),
+    epx_gc:set_fill_color(ScrollBarColor),
+    LeftBar = left_bar(State),
+    X0 = case VBar of
+	     none -> LeftBar;
+	     left -> LeftBar+ScrollBarSize;
+	     right -> LeftBar
+	 end,
+    Rect = {X0,Y0,ScrollBarWidth,ScrollBarSize},
+    epx_gc:set_border_width(0),
+    epx:draw_rectangle(Pixels, Rect),
+    %% Fill the square between vertical & horizonal
+    case VBar of
+	none -> 
+	    ok;
+	left ->
+	    Square = {LeftBar,Y0,ScrollBarSize-2,ScrollBarSize-2},
+	    epx_gc:set_border_width(1),
+	    ScrollBarColor1 = darken(ScrollBarColor,20),
+	    epx_gc:set_border_color(ScrollBarColor1),
+	    epx:draw_rectangle(Pixels, Square);
+	right ->
+	    Square = {X0+ScrollBarWidth,Y0,
+		      ScrollBarSize-2,ScrollBarSize-2},
+	    epx_gc:set_border_width(1),
+	    ScrollBarColor1 = darken(ScrollBarColor,20),
+	    epx_gc:set_border_color(ScrollBarColor1),
+	    epx:draw_rectangle(Pixels, Square)
+    end,
+    epx_gc:set_border_width(0),
+    epx_gc:set_fill_color(scroll_hndl_color(State)),
+    ViewToWindow = ScrollBarWidth / ViewWidth,
+    Left = get_view_xpos(State),
+    HandleLength = trunc(ViewToWindow*ScrollBarWidth),
+    HandlePos = X0+trunc(ViewToWindow*Left),
+    Pad = (ScrollBarSize-HndlSize) div 2,
+    HRect = {HandlePos,Y0+Pad,HandleLength,HndlSize},
+    epx:draw_roundrect(Pixels,HRect,5,5),
+    set_hscroll(State, Rect, HRect).
 
 get_hscroll(#state { content = WD }) -> WD#window_content.hscroll.
 get_hhndl(#state { content = WD }) -> WD#window_content.hhndl.
@@ -1491,6 +1551,9 @@ scroll_hndl_color(#state { content = WD }) ->
     epx_profile:color(P#window_profile.scheme,
 		      P#window_profile.scroll_hndl_color).
 
+darken({R,G,B},N) ->
+    {max(0,R-N), max(0,G-N), max(0, B-N)}.
+
 get_view_xpos(#state { content = WD }) -> WD#window_content.view_xpos.
 get_view_ypos(#state { content = WD }) -> WD#window_content.view_ypos.
 
@@ -1551,23 +1614,24 @@ draw_content(Pixmap, Dirty, State) ->
     end.
 
 %% top & bottom bar has priority over left and right...
-draw_top_bar(Pixels, S) ->
-    case bar(S) of
-	{_Left,_Right,0,_Bottom} ->
-	    S;
-	{_Left,_Right,Top,_Bottom} ->
+draw_top_bar(Pixels, State) ->
+    case bar(State) of
+	{_Left,_Right,Top,_Bottom}
+	  when Top > 0 ->
 	    epx_gc:set_fill_style(solid),
-	    epx_gc:set_fill_color(top_bar_color(S)), 
-	    DrawRect = {0,0,S#state.width,Top},
+	    epx_gc:set_fill_color(top_bar_color(State)), 
+	    DrawRect = {0,0,State#state.width,Top},
 	    epx:draw_rectangle(Pixels, DrawRect),
-	    S
+	    State;
+	_ ->
+	    State
     end.
 
 draw_bottom_bar(Pixels, State) ->
     case bar(State) of
-	{_Left,_Right,_Top,0} ->
-	    State;
-	{_Left,_Right,_Top,Bottom} ->
+	{_Left,_Right,_Top,Bottom}  
+	  when Bottom > 0,
+	       State#state.height >= Bottom ->
 	    epx_gc:set_fill_style(solid),
 	    epx_gc:set_fill_color(bottom_bar_color(State)), 
 	    X0 = 0,
@@ -1581,32 +1645,38 @@ draw_bottom_bar(Pixels, State) ->
 	    epx_gc:set_foreground_color((State#state.window_profile)#window_profile.font_color),
 	    draw_text(Pixels, X0+10, Y0, 100, Bottom-2, 
 		      State#state.status, State),
+	    State;
+	_ ->
 	    State
     end.
 
-draw_left_bar(Pixels, S) ->
-    case bar(S) of
-	{0,_,_,_} ->
-	    S;
-	{Left,_Right,Top,Bottom} ->
+draw_left_bar(Pixels, State) ->
+    case bar(State) of
+	{Left,_Right,Top,Bottom} when
+	      Left > 0, State#state.height >= (Top+Bottom) ->
 	    epx_gc:set_fill_style(solid),
-	    epx_gc:set_fill_color(left_bar_color(S)),
-	    DrawRect = {0,Top,Left, S#state.height-(Top+Bottom)},
+	    epx_gc:set_fill_color(left_bar_color(State)),
+	    DrawRect = {0,Top,Left,State#state.height-(Top+Bottom)},
 	    epx:draw_rectangle(Pixels, DrawRect),
-	    S
+	    State;
+	_ ->
+	    State
     end.
 
-draw_right_bar(Pixels, S) ->
-    case bar(S) of
-	{_Left,0,_Top,_Bottom} -> 
-	    S;
-	{_Left,Right,Top,Bottom} ->
+draw_right_bar(Pixels, State) ->
+    case bar(State) of
+	{_Left,Right,Top,Bottom} when 
+	      Right > 0,
+	      State#state.width >= Right,
+	      State#state.height >= (Top+Bottom)->
 	    epx_gc:set_fill_style(solid),
-	    epx_gc:set_fill_color(right_bar_color(S)),
-	    DrawRect = {S#state.width-Right,Top,Right,
-			S#state.height-(Top+Bottom)},
+	    epx_gc:set_fill_color(right_bar_color(State)),
+	    DrawRect = {State#state.width-Right,Top,Right,
+			State#state.height-(Top+Bottom)},
 	    epx:draw_rectangle(Pixels, DrawRect),
-	    S
+	    State;
+	_ ->
+	    State
     end.
 
 draw_text(Pixels, X0, Y0, _W, _H, Text, S) ->
