@@ -25,6 +25,7 @@
 #include "epx_geometry.h"
 #include "epx_object.h"
 #include "epx_pixel.h"
+#include "epx_t2d.h"
 #include "epx_simd.h"
 
 typedef struct _epx_filter_ {
@@ -77,6 +78,10 @@ typedef struct _epx_pixmap_t {
     struct _epx_backend_t* backend;  /* backend pointer if attached */
     struct _epx_pixmap_t* parent;         // parent pixmap (for sub_pixmap)
     void* user;                           // extra user data
+    /*! Current transform matrix */
+    epx_t2d_t* ctm;
+    /*! Local transform matrix (ctm may point here) */
+    epx_t2d_t  ltm;
     /*! Clip rectangle restrict pixels drawn within boundary */
     epx_rect_t clip;
     /*! Width of pixmap in pixels  */

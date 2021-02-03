@@ -1617,6 +1617,8 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
 	return -1;
 
     epx_rect_set(&dst->clip, 0, 0, width, height);
+    epx_t2d_identity(&dst->ltm);
+    dst->ctm            = &dst->ltm;
     dst->width          = width;
     dst->bytes_per_row  = bytes_per_row;
     dst->height         = height;

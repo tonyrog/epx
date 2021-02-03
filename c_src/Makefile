@@ -249,6 +249,7 @@ LIB_OBJS = \
 	epx_debug.o \
 	epx_hash.o \
 	epx_dict.o \
+	epx_t2d.o \
 	epx_pixel.o \
 	epx_pixmap.o \
 	epx_canvas.o \

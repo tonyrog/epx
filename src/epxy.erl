@@ -161,6 +161,7 @@
 	  %% widgets :: ?DICT_T   %% term => #widget{}
 	 }).
 
+%% FIXME: rewrite with map!
 -define(MEMBER(X,E1,E2), 
 	case X of E1->true;E2->true;_->false end).
 -define(MEMBER(X,E1,E2,E3), 

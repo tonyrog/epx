@@ -72,7 +72,10 @@
 -export([pixmap_draw_strip/3]).
 -export([pixmap_draw_ellipse/6]).
 -export([pixmap_draw_roundrect/8]).
-
+-export([pixmap_ltm_translate/3]).
+-export([pixmap_ltm_scale/3]).
+-export([pixmap_ltm_rotate/2]).
+-export([pixmap_ltm_reset/1]).
 %% Animation
 -export([animation_open/1]).
 -export([animation_copy/6]).
@@ -907,6 +910,18 @@ pixmap_draw_fan(_Pixmap, _Gc, _Points, _Closed) ->
 -spec pixmap_draw_strip(Pixmap::epx_pixmap(), Gc::epx_gc(), [{X::coord(),Y::coord()}]) -> void().
 			   
 pixmap_draw_strip(_Pixmap, _Gc, _Points) ->
+    ?nif_stub().
+
+pixmap_ltm_translate(_Pixmap, _Tx, _Ty) ->
+    ?nif_stub().
+
+pixmap_ltm_scale(_Pixmap, _Sx, _Sy) ->
+    ?nif_stub().
+
+pixmap_ltm_rotate(_Pixmap, _Radians) ->
+    ?nif_stub().
+
+pixmap_ltm_reset(_Pixmap) ->
     ?nif_stub().
 
 %%

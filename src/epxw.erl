@@ -261,6 +261,8 @@
 	 esc    :: boolean(), %% escape modifier
 	 menu   :: epx_menu:epx_menu(),
 	 winfo :: #window_info{},
+	 zoom  = 0 :: integer(),  %% [-20...20 step2]?
+	 scale = 1 :: number(),
 	 pt1   :: undefine | {X::integer(),Y::integer()}, %% start pos
 	 pt2   :: undefine | {X::integer(),Y::integer()}, %% cur pos
 	 operation = none :: none | menu,
@@ -744,7 +746,7 @@ epx_event(Event={key_release, _Sym, Mod, _code}, State) ->
     State1 = State#state { keymod = M },
     State2 = user_event(Event,?CALLBACK(State1,key_release), State1),
     {noreply, State2};
-
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={button_press,[wheel_down],{_X,_Y,_}},State) ->
     State1 = user_event(Event, ?CALLBACK(State,button_press), State),
     {noreply, State1};
@@ -752,7 +754,7 @@ epx_event(Event={button_release, [wheel_down], _Pos3D}, State) ->
     flush_wheel(State#state.window),  %% optional?
     State1 = user_event(Event, ?CALLBACK(State,button_release), State),
     {noreply, scroll_down(State1)};
-
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={button_press,[wheel_up],{_X,_Y,_}},State) ->
     State1 = user_event(Event, ?CALLBACK(State,button_press), State),
     {noreply, State1};
@@ -760,23 +762,25 @@ epx_event(Event={button_release, [wheel_up], _Pos3D}, State) ->
     flush_wheel(State#state.window),
     State1 = user_event(Event, ?CALLBACK(State,button_release), State),
     {noreply, scroll_up(State1)};
-
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={button_press,[wheel_left],{_X,_Y,_}}, State) ->
     State1 = user_event(Event, ?CALLBACK(State,button_press), State),
     {noreply, State1};
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={button_release,[wheel_left],{_X,_Y,_}},State) ->
     flush_wheel(State#state.window),
     State1 = user_event(Event, ?CALLBACK(State,button_release), State),
     {noreply, scroll_left(State1)};
-
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={button_press,[wheel_right],{_X,_Y,_}}, State) ->
     State1 = user_event(Event, ?CALLBACK(State,button_press), State),
     {noreply, State1};    
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={button_release,[wheel_right],{_X,_Y,_}},State) ->
     flush_wheel(State#state.window),
     State1 = user_event(Event, ?CALLBACK(State,button_release), State),
     {noreply, scroll_right(State1)};
-
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={button_press, [left], _Pos3D={X0,Y0,_}}, State) ->
     XY = {X0,Y0},
     if State#state.operation =:= menu ->
@@ -811,7 +815,7 @@ epx_event(Event={button_press, [left], _Pos3D={X0,Y0,_}}, State) ->
 		    {noreply, State1}
 	    end
     end;
-
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={button_release, [left], _Pos3D}, State) ->
     flush_motion(State#state.window),
     State1 =
@@ -823,11 +827,7 @@ epx_event(Event={button_release, [left], _Pos3D}, State) ->
 		    Pt1 ->
 			case State#state.operation of
 			    select ->
-				{X1,Y1} = Pt1,
-				{X2,Y2} = State#state.pt2,
-				Area = {min(X1,X2),min(Y1,Y2),
-					abs(X2-X1)+1, abs(Y2-Y1)+1},
-				State0 = user_event(Area,?CALLBACK(State,select),State),
+				State0 = select(Pt1, State#state.pt2, State),
 				set_dirty_area(State0);
 			    _ ->
 				State0 = set_dirty_area(State),
@@ -843,7 +843,7 @@ epx_event(Event={button_release, [left], _Pos3D}, State) ->
 	end,
     {noreply, State1#state{pt1 = undefined, pt2 = undefined, operation = none}};
 
-
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={button_press, [right], _Pos3D={X0,Y0,_}}, State) ->
     XY = {X0,Y0},
     epx:window_enable_events(State#state.window,[motion]),
@@ -859,12 +859,12 @@ epx_event(Event={button_press, [right], _Pos3D={X0,Y0,_}}, State) ->
 	    {noreply, set_dirty_area(State1)}
     end;
 
-    
+%% Fixme: transform X,Y into view coordinates before callback    
 epx_event(Event={button_release, _Buttons, _Pos3D}, State) ->
     flush_motion(State#state.window),
     State1 = user_event(Event, ?CALLBACK(State,button_release), State),
     {noreply, State1};
-
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event({motion,[],{X1,Y1,_}},State) ->
     flush_motion(State#state.window),
     if State#state.operation =:= menu ->
@@ -881,7 +881,7 @@ epx_event({motion,[],{X1,Y1,_}},State) ->
        true ->
 	    {noreply, State}
     end;
-
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event({motion,[left],{X,Y,_}},State) ->
     flush_motion(State#state.window),
     case get_motion(State) of
@@ -892,16 +892,15 @@ epx_event({motion,[left],{X,Y,_}},State) ->
 	    State1 = adjust_view_xpos(X-Dx, true, State),
 	    {noreply,set_dirty_area(State1)}; 
 	_ ->
-	    {X1,Y1} = State#state.pt1,
-	    Area = {min(X1,X),min(Y1,Y),
-		    abs(X-X1)+1, abs(Y-Y1)+1},
-	    State1 = user_event(Area,?CALLBACK(State,select),State),
-	    {noreply,State1#state { pt2 = {X,Y} }}
+	    Pt2 = {X,Y}, 
+	    State1 = select(State#state.pt1, Pt2, State#state{ pt2 = Pt2 }),
+	    {noreply,State1}
     end;
-
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={enter, _Pos3D}, State) ->
     State1 = user_event(Event, ?CALLBACK(State,enter), State),
     {noreply, State1};
+%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={leave, _Pos3D}, State) ->
     State1 = user_event(Event, ?CALLBACK(State,leave), State),
     {noreply, State1};
@@ -1038,9 +1037,20 @@ command_(home, _Mod, State) ->
     scroll_home(State);
 command_('end', _Mod, State) ->
     scroll_end(State);
+command_($+, _Mod, State) ->
+    Zoom = max(10, State#state.zoom + 1),
+    State1 = State#state { zoom = Zoom, scale = zscale(Zoom) },
+    set_dirty_area(State1);
+command_($-, _Mod, State) ->
+    Zoom = min(-10, State#state.zoom - 1),
+    State1 = State#state { zoom = Zoom, scale = zscale(Zoom) },
+    set_dirty_area(State1);
 command_(_Symbol, _Mod, State) ->
     io:format("unhandled command ~p\n", [_Symbol]),
     State.
+
+zscale(Z) ->
+    math:pow(1.07, 2*(Z)).
 
 scroll_up(State) ->
     State1 = step_up(State, scroll_ystep(State)),
@@ -1081,7 +1091,8 @@ adjust_view_ypos(Y, Set, State) ->
 	undefined -> State;
 	{_,_,_,ScrollBarHeight} ->
 	    ViewHeight = get_view_height(State),
-	    WindowToView = ViewHeight/ScrollBarHeight,
+	    ViewInPixels = ViewHeight*State#state.scale,
+	    WindowToView = ViewInPixels/ScrollBarHeight,
 	    Y1 = trunc(WindowToView*Y),
 	    Y2 = max(0, Y1),
 	    Y3 = adjust_bottom_pos(Y2, State),
@@ -1097,7 +1108,8 @@ adjust_view_xpos(X, Set, State) ->
 	undefined -> State;
 	{_,_,ScrollBarWidth,_} ->
 	    ViewWidth = get_view_width(State),
-	    WindowToView = ViewWidth/ScrollBarWidth,
+	    ViewInPixels = ViewWidth*State#state.scale,
+	    WindowToView = ViewInPixels/ScrollBarWidth,
 	    X1 = trunc(WindowToView*X),
 	    X2  = max(0, X1),
 	    X3  = adjust_right_pos(X2, State),
@@ -1269,6 +1281,13 @@ code_change(OldVsn, State, Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+select({X1,Y1},{X2,Y2}, State) ->
+    #state { content = #window_content { view_xpos = Tx, view_ypos = Ty }} =
+	State,
+    Area = {min(X1,X2)+Tx,min(Y1,Y2)+Ty,
+	    abs(X2-X1)+1, abs(Y2-Y1)+1},
+    user_event(Area,?CALLBACK(State,select),State).
+
 user_event(_E, undefined, State) ->
     State;
 user_event(E, Callback, State) ->
@@ -1288,8 +1307,21 @@ draw(State = #state { profile = Profile }, Dirty) ->
     %% FIXME Dirty! fill new areas when doing resize,
     %% internal mark toolbars and scrollbars
     %% fill_area(Pixels,Dirty,ScreenColor),
+    #state { content = #window_content { view_xpos = Tx, view_ypos = Ty }} =
+	State,
+    {LeftBar,RightBar,TopBar,BottomBar} = bar(State),
+    W = State#state.width - (LeftBar+RightBar),
+    H = State#state.height - (TopBar+BottomBar),
+    Scale = State#state.scale,
+    
     fill_area(Pixels,undefined,ScreenColor),
-    State1 = draw_content(Pixels,Dirty,State),
+    epx:pixmap_ltm_reset(Pixels),
+    epx:pixmap_ltm_scale(Pixels, Scale, Scale),
+    epx:pixmap_ltm_translate(Pixels, -Tx, -Ty),
+    %% set clip rect!
+    VisibleRect = {Tx, Ty, W/Scale, H/Scale},  %% in view coordinated
+    State1 = draw_content(Pixels,VisibleRect,State),
+    epx:pixmap_ltm_reset(Pixels),
     epx_gc:set_border_width(0), %% FIXME: use special gc for user content
     State2 = draw_vscroll(Pixels,VBar,HBar,State1),
     State3 = draw_hscroll(Pixels,HBar,VBar,State2),
@@ -1394,7 +1426,8 @@ draw_vscroll__(Pixels, X0, ScrollBarHeight, HBar, State) ->
     epx_gc:set_border_width(0),
     epx:draw_rectangle(Pixels, Rect),
     epx_gc:set_fill_color(scroll_hndl_color(State)),
-    ViewToWindow = ScrollBarHeight / ViewHeight,
+    ViewInPixels = ViewHeight*State#state.scale,
+    ViewToWindow = ScrollBarHeight / ViewInPixels,
     Top = get_view_ypos(State),
     HandleLength = trunc(ViewToWindow*ScrollBarHeight),
     HandlePos = Y0+trunc(ViewToWindow*Top),
@@ -1458,7 +1491,8 @@ draw_hscroll__(Pixels, Y0, ScrollBarWidth, VBar, State) ->
     end,
     epx_gc:set_border_width(0),
     epx_gc:set_fill_color(scroll_hndl_color(State)),
-    ViewToWindow = ScrollBarWidth / ViewWidth,
+    ViewInPixels = ViewWidth*State#state.scale,
+    ViewToWindow = ScrollBarWidth / ViewInPixels,
     Left = get_view_xpos(State),
     HandleLength = trunc(ViewToWindow*ScrollBarWidth),
     HandlePos = X0+trunc(ViewToWindow*Left),
