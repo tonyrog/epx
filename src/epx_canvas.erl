@@ -9,9 +9,9 @@
 
 -export([create/0]). %% clear/0, copy/1]).
 %% primitives
--export([line/4]).
+-export([line/4, line_params/2]).
 -export([ellipse/3, ellipse/4]).
--export([set_color/3, set_operation/3]).
+-export([set_color/3, set_operation/3, set_params/5, set_params/8]).
 %% composite
 -export([intersect/4, intersect/5, intersect/6, intersect/3]).
 -export([union/4, union/5, union/6, union/3]).
@@ -19,6 +19,7 @@
 -export([triangle/5, rectangle/6, polygon/3]).
 -export([ellipse_r/5]).
 -export([circle/4]).
+-export([circle_arc/6]).
 -export([circle_border/5]).
 -export([ellipse_border/5]).
 -export([ellipse_border_r/6]).
@@ -34,6 +35,11 @@ set_color(Canvas, Elem, Color) ->
 set_operation(Canvas, Elem, Operation) ->
     epx:canvas_set_operation(Canvas, Elem, Operation).
 
+set_params(Canvas, Elem, D, E, F) ->
+    epx:canvas_set_params(Canvas, Elem, D, E, F).
+
+set_params(Canvas, Elem, A, B, C, D, E, F) ->
+    epx:canvas_set_params(Canvas, Elem, A, B, C, D, E, F).
 
 %% Ax + By = C
 %% S(x,y) = Ax + By - C = 0
@@ -52,12 +58,26 @@ set_operation(Canvas, Elem, Operation) ->
 %%  F = (x1y2 - x2y1)
 %%
 
-line(Canvas,{X1,Y1},{X2,Y2},Opts) ->
+line(Canvas,P1,P2,Opts) ->
+    {D,E,F} = line_params(P1,P2),
+    line_(Canvas, D, E, F, Opts).
+
+line_params({X1,Y1},{X2,Y2}) ->
     D = (Y1-Y2),
     E = (X2-X1),
-    F1 = (X1*Y2 - X2*Y1),
+    F = (X1*Y2 - X2*Y1),
+    {D, E, F};
+line_params({X1,Y1},A) when is_number(A) ->  %% A in radians
+    X2 = X1 + math:cos(A),
+    Y2 = Y1 + math:sin(A),
+    D = (Y1-Y2),
+    E = (X2-X1),
+    F = (X1*Y2 - X2*Y1),
+    {D, E, F}.
+
+line_(Canvas,D,E,F,Opts) ->
     Color = get_color(Opts),
-    I = epx:canvas_line(Canvas, D, E, F1),
+    I = epx:canvas_line(Canvas,D,E,F),
     set_color(Canvas, I, Color),
     I.
 
@@ -188,6 +208,13 @@ ellipse_r(Canvas,P0,P1,R,Opts) ->
 
 circle(Canvas,Pc,R,Opts) ->
     ellipse(Canvas,Pc,{R,R},Opts).
+
+circle_arc(Canvas,Pc,R,A1,A2,Opts) ->
+    C1 = ellipse(Canvas,Pc,{R,R},Opts),
+    L1 = line(Canvas,Pc,A1,Opts),
+    L2 = line(Canvas,Pc,A2,Opts),
+    intersect(Canvas, C1, L1, L2, Opts).
+    
 
 circle_border(Canvas,Pc,R,W,Opts) ->
     BorderColor = get_argb(border_color, Opts, black),

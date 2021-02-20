@@ -1039,11 +1039,15 @@ command_('end', _Mod, State) ->
     scroll_end(State);
 command_($+, _Mod, State) ->
     Zoom = max(10, State#state.zoom + 1),
-    State1 = State#state { zoom = Zoom, scale = zscale(Zoom) },
+    Scale = zscale(Zoom),
+    io:format("zoom: ~w, scale: ~w\n", [Zoom, Scale]),
+    State1 = State#state { zoom = Zoom, scale = Scale },
     set_dirty_area(State1);
 command_($-, _Mod, State) ->
     Zoom = min(-10, State#state.zoom - 1),
-    State1 = State#state { zoom = Zoom, scale = zscale(Zoom) },
+    Scale = zscale(Zoom),
+    io:format("zoom: ~w, scale: ~w\n", [Zoom, Scale]),
+    State1 = State#state { zoom = Zoom, scale = Scale },
     set_dirty_area(State1);
 command_(_Symbol, _Mod, State) ->
     io:format("unhandled command ~p\n", [_Symbol]),

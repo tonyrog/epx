@@ -41,9 +41,8 @@ typedef struct {
 typedef struct {
     epx_canvas_op_t op;
     epx_pixel_operation_t pixop;
-    int         pixel_is_set;
-    epx_pixel_t color;  // param 
-    epx_pixel_t pixel;  // calculated
+    epx_pixel_t color;  // param
+    int u;              // use counter
     int i;              // OP=LINE|QUAD then i is index to param and state
     int j;              // OP!=LINE|QUAD then i,j are index into elem
 } epx_canvas_elem_t;
@@ -79,6 +78,8 @@ extern int epx_canvas_set_color(epx_canvas_t* canvas, int a,
 				epx_pixel_t color);
 extern int epx_canvas_set_operation(epx_canvas_t* canvas, int a,
 				    epx_pixel_operation_t pixop);
+extern int epx_canvas_set_param(epx_canvas_t* canvas, int i, int k,
+				double param);
 extern int epx_canvas_draw(epx_canvas_t* canvas, epx_pixmap_t* pixmap);
 
 #endif

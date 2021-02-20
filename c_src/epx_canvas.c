@@ -90,9 +90,13 @@ int epx_canvas_elem(epx_canvas_t* canvas, epx_canvas_op_t op, int i, int j)
     else
 	canvas->elem[k].pixop = EPX_PIXEL_OP_ADD;
     canvas->elem[k].color = (epx_pixel_t) EPX_PIXEL_TRANSPARENT;
-    canvas->elem[k].pixel_is_set = 0;
+    canvas->elem[k].u = 0;
     canvas->elem[k].i = i;
     canvas->elem[k].j = j;
+    if ((op != CANVAS_OP_LINE) && (op != CANVAS_OP_QUAD)) {
+	canvas->elem[i].u++;  // mark use
+	canvas->elem[j].u++;  // mark use
+    }
     return k;
 }
 
@@ -186,15 +190,34 @@ int epx_canvas_set_operation(epx_canvas_t* canvas, int a,
     return 1;
 }
 
+int epx_canvas_set_param(epx_canvas_t* canvas, int i, int k, double param)
+{
+    if (i >= (int)canvas->nparams)
+	return 0;    
+    switch(k) {
+    case 0: canvas->param[i].A = param; break;
+    case 1: canvas->param[i].B = param; break;
+    case 2: canvas->param[i].C = param; break;
+    case 3: canvas->param[i].D = param; break;
+    case 4: canvas->param[i].E = param; break;
+    case 5: canvas->param[i].F = param; break;
+    default: return 0;
+    }
+    return 1;
+}
+
 // Fixme rectangle and flags!
 int epx_canvas_draw(epx_canvas_t* canvas, epx_pixmap_t* pixmap)
 {
     int y;
     epx_flags_t flags = EPX_FLAG_BLEND;
-    
+    size_t n = canvas->nelems;
+    int is_set[n];
+    epx_pixel_t pixel[n];
+
     for (y = 0; y < (int)pixmap->height; y++) {
 	int x = 0;
-	int k;
+	int k;	
 	
 	// start_x, FIXME: make a step function for y!
 	// in this case x=0 so compiler should optimise that!
@@ -213,70 +236,82 @@ int epx_canvas_draw(epx_canvas_t* canvas, epx_pixmap_t* pixmap)
 	}
 	
 	for (x = 0; x < (int)pixmap->width; x++) {
-	    // evaluate the tree structure from the leaves to the root
+	    epx_pixel_t p0 = (epx_pixel_t) EPX_PIXEL_TRANSPARENT;
+	    // evaluate the "tree" structure from the leaves to the root
 	    // FIXME eval this only for pixels in object bounding box!
-	    for (k = 0; k < (int)canvas->nelems; k++) {
-		epx_pixel_t c = canvas->elem[k].color;
-		epx_pixel_t p = (epx_pixel_t) EPX_PIXEL_TRANSPARENT;
-		int i = canvas->elem[k].i;
-		int j = canvas->elem[k].j;
-		canvas->elem[k].pixel_is_set = 0;
+	    for (k = 0; k < (int)n; k++) {
+		int i, j;
+
+		i = canvas->elem[k].i;
+		j = canvas->elem[k].j;		    
+		is_set[k] = 0;
 		switch(canvas->elem[k].op) {
 		case CANVAS_OP_LINE:
-		    p = c;
-		    canvas->elem[k].pixel_is_set = (canvas->state[i].S <= 0);
-		    break;
 		case CANVAS_OP_QUAD:
-		    p = c;
-		    canvas->elem[k].pixel_is_set = (canvas->state[i].S <= 0);
+		    if (canvas->state[i].S <= 0) {
+			is_set[k]++;
+			pixel[k] = canvas->elem[k].color;
+		    }
 		    break;
 		case CANVAS_OP_AND:
-		    if (canvas->elem[i].pixel_is_set &&
-			canvas->elem[j].pixel_is_set) {
+		    if (is_set[i] && is_set[j]) {
+			epx_pixel_t p;
+			epx_pixel_t c = canvas->elem[k].color;
 			p = epx_pixel_operation(canvas->elem[k].pixop,
-						canvas->elem[i].pixel,
-						canvas->elem[j].pixel);
+						pixel[i], pixel[j]);
 			p = epx_pixel_operation(canvas->elem[k].pixop, c, p);
-			canvas->elem[k].pixel_is_set = 1;
+			is_set[k]++;
+			pixel[k] = p;
 		    }
 		    break;
 		case CANVAS_OP_OR:
-		    if (canvas->elem[i].pixel_is_set &&
-			canvas->elem[j].pixel_is_set) {
+		    if (is_set[i] && is_set[j]) {
+			epx_pixel_t p;
+			epx_pixel_t c = canvas->elem[k].color;
 			p = epx_pixel_operation(canvas->elem[k].pixop,
-						canvas->elem[i].pixel,
-						canvas->elem[j].pixel);
+						pixel[i], pixel[j]);
 			p = epx_pixel_operation(canvas->elem[k].pixop, c, p);
-			canvas->elem[k].pixel_is_set = 1;
+			is_set[k]++;
+			pixel[k] = p;			
 			break;
 		    }
 		    // fall through
 		case CANVAS_OP_OVER:
-		    if (canvas->elem[i].pixel_is_set) {
-			p = canvas->elem[i].pixel;
+		    if (is_set[i]) {
+			epx_pixel_t p = pixel[i];
+			epx_pixel_t c = canvas->elem[k].color;
 			p = epx_pixel_operation(canvas->elem[k].pixop,c,p);
-			canvas->elem[k].pixel_is_set = 1;
+			is_set[k]++;
+			pixel[k] = p;
 		    }
-		    else if (canvas->elem[j].pixel_is_set) {
-			p = canvas->elem[j].pixel;
+		    else if (is_set[j]) {
+			epx_pixel_t p = pixel[j];
+			epx_pixel_t c = canvas->elem[k].color;
 			p = epx_pixel_operation(canvas->elem[k].pixop,c,p);
-			canvas->elem[k].pixel_is_set = 1;
+			is_set[k]++;
+			pixel[k] = p;
 		    }
 		    break;    
 		case CANVAS_OP_NOT:
-		    if (!canvas->elem[i].pixel_is_set) {
-			p = canvas->elem[i].pixel;
+		    if (!is_set[i]) {
+			epx_pixel_t p = pixel[i];
+			epx_pixel_t c = canvas->elem[k].color;
 			p = epx_pixel_operation(canvas->elem[k].pixop,c,p);
-			canvas->elem[k].pixel_is_set = 1;
+			is_set[k]++;
+			pixel[k] = p;
 		    }
 		    break;
 		default:
 		    break;
 		}
-		canvas->elem[k].pixel = p;
+		if (canvas->elem[k].u == 0) { // top element
+		    if (is_set[k]) {
+			p0 = epx_pixel_blend(127, p0, pixel[k]);
+		    }
+		}
 	    }
-	    // the top node containes the pixel we render
-	    epx_pixmap_put_pixel(pixmap, x, y, flags, canvas->elem[k-1].pixel);
+	    
+	    epx_pixmap_put_pixel(pixmap, x, y, flags, p0);
 	    
 	    // step_x, advance all states
 	    for (k = 0; k < (int)canvas->nparams; k++) {

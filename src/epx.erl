@@ -151,6 +151,8 @@
 -export([canvas_not/2]).
 -export([canvas_set_color/3]).
 -export([canvas_set_operation/3]).
+-export([canvas_set_params/5]).
+-export([canvas_set_params/8]).
 -export([canvas_draw/2]).
 
 %% Utils
@@ -954,12 +956,12 @@ animation_info_(_Anim, _Key) ->
 -spec canvas_create() -> epx_canvas().
 canvas_create() ->
     ?nif_stub().
--spec canvas_line(Canvas::epx_canvas(), D::float(), E::float(), F::float()) ->
+-spec canvas_line(Canvas::epx_canvas(),D::number(),E::number(),F::number()) ->
 	  canvas_elem().
 canvas_line(_Cancas,_D,_E,_F) ->
     ?nif_stub().
--spec canvas_quad(Canvas::epx_canvas(), A::float(), B::float(), C::float(),
-		  D::float(), E::float(), F::float()) -> canvas_elem().
+-spec canvas_quad(Canvas::epx_canvas(),A::number(),B::number(),C::number(),
+		  D::number(), E::number(), F::number()) -> canvas_elem().
 canvas_quad(_Cancas,_A,_B,_C,_D,_E,_F) ->
     ?nif_stub().
 -spec canvas_and(Canvas::epx_canvas(), I::canvas_elem(), J::canvas_elem()) -> 
@@ -990,6 +992,18 @@ canvas_set_operation(_Canvas,_I,_Operation) ->
     ?nif_stub().
 -spec canvas_draw(Canvas::epx_canvas(),Pixmap::epx_pixmap()) ->
 	  ok.
+
+-spec canvas_set_params(Canvas::epx_canvas(),I::canvas_elem(),
+			D::number(), E::number(), F::number()) -> ok.
+canvas_set_params(_Cancas,_I,_D,_E,_F) ->
+    ?nif_stub().
+
+-spec canvas_set_params(Canvas::epx_canvas(),I::canvas_elem(),
+			A::number(),B::number(),C::number(),
+			D::number(), E::number(), F::number()) -> ok.
+canvas_set_params(_Cancas,_I,_A,_B,_C,_D,_E,_F) ->
+    ?nif_stub().
+
 canvas_draw(_Canvas,_Pixmap) ->
     ?nif_stub().
 

@@ -150,6 +150,8 @@ static void epx_unload(ErlNifEnv* env, void* priv_data);
     NIF("canvas_not",  2, canvas_not)				\
     NIF("canvas_set_color", 3, canvas_set_color)		\
     NIF("canvas_set_operation", 3, canvas_set_operation)	\
+    NIF("canvas_set_params", 5, canvas_set_params)		\
+    NIF("canvas_set_params", 8, canvas_set_params)		\
     NIF("canvas_draw", 2, canvas_draw)
 
 // Declare all nif functions
@@ -3832,7 +3834,7 @@ static ERL_NIF_TERM animation_info(ErlNifEnv* env, int argc,
 static ERL_NIF_TERM canvas_create(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
+    (void) argv;    
     epx_canvas_t* canvas;
     ERL_NIF_TERM t;
     
@@ -3849,7 +3851,6 @@ static ERL_NIF_TERM canvas_create(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
 static ERL_NIF_TERM canvas_line(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
     epx_canvas_t* canvas;
     double D, E, F;
     int k;
@@ -3870,7 +3871,6 @@ static ERL_NIF_TERM canvas_line(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
 static ERL_NIF_TERM canvas_quad(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
     epx_canvas_t* canvas;
     double A, B, C, D, E, F;
     int k;
@@ -3897,7 +3897,6 @@ static ERL_NIF_TERM canvas_quad(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
 static ERL_NIF_TERM canvas_and(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
     epx_canvas_t* canvas;
     int i, j, k;
 
@@ -3915,7 +3914,6 @@ static ERL_NIF_TERM canvas_and(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
 static ERL_NIF_TERM canvas_or(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
     epx_canvas_t* canvas;
     int i, j, k;
 
@@ -3933,7 +3931,6 @@ static ERL_NIF_TERM canvas_or(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[
 static ERL_NIF_TERM canvas_over(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
     epx_canvas_t* canvas;
     int i, j, k;
 
@@ -3951,7 +3948,6 @@ static ERL_NIF_TERM canvas_over(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
 static ERL_NIF_TERM canvas_not(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
     epx_canvas_t* canvas;
     int i, k;
 
@@ -3968,7 +3964,6 @@ static ERL_NIF_TERM canvas_not(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
 static ERL_NIF_TERM canvas_set_color(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
     epx_canvas_t* canvas;
     int i;
     epx_pixel_t color;
@@ -3987,7 +3982,6 @@ static ERL_NIF_TERM canvas_set_color(ErlNifEnv* env, int argc, const ERL_NIF_TER
 static ERL_NIF_TERM canvas_set_operation(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    (void) argv;
     epx_canvas_t* canvas;
     int i;
     epx_pixel_operation_t op;    
@@ -4002,6 +3996,43 @@ static ERL_NIF_TERM canvas_set_operation(ErlNifEnv* env, int argc, const ERL_NIF
 	return enif_make_badarg(env);
     return ATOM(ok);
 }
+
+static ERL_NIF_TERM canvas_set_params(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    epx_canvas_t* canvas;
+    int i, j, k;
+    double P[6];
+    
+    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[1], &i))
+	return enif_make_badarg(env);
+    j = 2;
+    k = 0;
+    while((j < argc) && (k < 6)) {
+	if (!get_number(env, argv[j], &P[k]))
+	    return enif_make_badarg(env);
+	j++;
+	k++;
+    }
+    if (argc == 5) { // set "linear" params only D,E,F
+	for (k = 3; k < 6; k++) {
+	    if (!epx_canvas_set_param(canvas, i, k, P[k-3]))
+		return enif_make_badarg(env);
+	}	
+	return ATOM(ok);
+    }
+    else if (argc == 8) {  // set "all" params A,B,C,D,E,F
+	for (k = 0; k < 6; k++) {
+	    if (!epx_canvas_set_param(canvas, i, k, P[k]))
+		return enif_make_badarg(env);
+	}
+	return ATOM(ok);
+    }
+    else
+	return enif_make_badarg(env);
+}
+
 
 static ERL_NIF_TERM canvas_draw(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[])

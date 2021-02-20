@@ -282,14 +282,18 @@ show(Fun, {X,Y,W,H}, Events) ->
     epx:pixmap_fill(Pix, white),
     epx:pixmap_attach(Pix),
     epx:pixmap_draw(Pix,Win,0,0,0,0,W, H),
+    Pixels = epx:pixmap_create(W,H,argb),  %% double buffer
+    epx:pixmap_fill(Pixels, white),
     %%  prepare epx_view
-    identity(Pix),
-    %% draw(Pix, fun() -> Fun(Pix) end),
+    identity(Pixels),
+    epx:pixmap_copy_to(Pixels, Pix),
+
     epx:pixmap_draw(Pix,Win,0,0,0,0,W,H),
     (fun DRAW() ->
-	     epx:pixmap_fill(Pix, white),
-	     identity(Pix),
-	     draw(Pix, fun() -> Fun(Pix) end),
+	     epx:pixmap_fill(Pixels, white),
+	     identity(Pixels),
+	     draw(Pix, fun() -> Fun(Pixels) end),
+	     epx:pixmap_copy_to(Pixels, Pix),
 	     epx:pixmap_draw(Pix,Win,0,0,0,0,W, H),
 	     receive
 		 {epx_event,Win, close} ->
@@ -298,8 +302,8 @@ show(Fun, {X,Y,W,H}, Events) ->
 		     flush_configure(Win),
 		     DRAW();
 		 %% fixme: use epxw? handle zoom(+/-) scroll(arrows)
-		 Event ->
-		     io:format("epx_view: got ~w\n", [Event]),
+		 _Event ->
+		     %% io:format("epx_view: got ~w\n", [_Event]),
 		     DRAW()
 	     end
      end)(),
