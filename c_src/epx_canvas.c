@@ -212,6 +212,7 @@ int epx_canvas_draw(epx_canvas_t* canvas, epx_pixmap_t* pixmap)
 {
     int y;
     epx_flags_t flags = EPX_FLAG_BLEND;
+    // FIXME: stack arrays can not be trusted (use thread cache?)
     size_t n = canvas->nelems;
     int is_set[n];
     epx_pixel_t pixel[n];

@@ -1308,20 +1308,29 @@ draw(State = #state { profile = Profile }, Dirty) ->
     ScreenColor = epx_profile:color(Scheme, Profile#profile.screen_color),
     {HBar,VBar} = scrollbars(State),
     Pixels = pixels(State),
-    %% FIXME Dirty! fill new areas when doing resize,
-    %% internal mark toolbars and scrollbars
-    %% fill_area(Pixels,Dirty,ScreenColor),
     #state { content = #window_content { view_xpos = Tx, view_ypos = Ty }} =
 	State,
+    ScrollBarSize = scroll_bar_size(State),
+    {HBar,VBar} = scrollbars(State),
     {LeftBar,RightBar,TopBar,BottomBar} = bar(State),
     W = State#state.width - (LeftBar+RightBar),
     H = State#state.height - (TopBar+BottomBar),
+    X0 = case VBar of
+	     none -> LeftBar;
+	     left -> LeftBar+ScrollBarSize;
+	     right -> LeftBar
+	 end,
+    Y0 = case HBar of
+	     none   -> TopBar;
+	     bottom -> TopBar;
+	     top    -> TopBar+ScrollBarSize
+	 end,
     Scale = State#state.scale,
     
     fill_area(Pixels,undefined,ScreenColor),
     epx:pixmap_ltm_reset(Pixels),
     epx:pixmap_ltm_scale(Pixels, Scale, Scale),
-    epx:pixmap_ltm_translate(Pixels, -Tx, -Ty),
+    epx:pixmap_ltm_translate(Pixels, -(Tx-X0), -(Ty-Y0)),
     %% set clip rect!
     VisibleRect = {Tx, Ty, W/Scale, H/Scale},  %% in view coordinated
     State1 = draw_content(Pixels,VisibleRect,State),
