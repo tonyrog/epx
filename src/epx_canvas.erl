@@ -210,9 +210,9 @@ circle(Canvas,Pc,R,Opts) ->
     ellipse(Canvas,Pc,{R,R},Opts).
 
 circle_arc(Canvas,Pc,R,A1,A2,Opts) ->
-    C1 = ellipse(Canvas,Pc,{R,R},Opts),
-    L1 = line(Canvas,Pc,A1,Opts),
-    L2 = line(Canvas,Pc,A2,Opts),
+    C1 = ellipse(Canvas,Pc,{R,R},#{}),
+    L1 = line(Canvas,Pc,A1,#{}),
+    L2 = line(Canvas,Pc,A2,#{}),
     intersect(Canvas, C1, L1, L2, Opts).
     
 

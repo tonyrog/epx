@@ -54,6 +54,7 @@ typedef struct {
 
 typedef struct _epx_canvas_t {
     EPX_OBJECT_MEMBERS(struct _epx_canvas_t);
+    epx_pixel_operation_t topop;  // top level mixing
     size_t nparams;
     size_t nparams_allocated;
     epx_canvas_param_t* param; // [nparams]
