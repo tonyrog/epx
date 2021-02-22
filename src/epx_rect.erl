@@ -71,13 +71,17 @@ is_subrect({Xa,Ya,Wa,Ha}, {Xb,Yb,Wb,Hb}) ->
 
 %% Add Point P to rectangle A = union(A, {Px,Py,1,1})
 add_point(undefined, {Xp,Yp}) -> {Xp,Yp,1,1};
-add_point(A, {Xp,Yp}) -> union(A, {Xp,Yp,1,1}).
+add_point(undefined, {Xp,Yp,_Zp}) -> {Xp,Yp,1,1};
+add_point(A, {Xp,Yp}) -> union(A, {Xp,Yp,1,1});
+add_point(A, {Xp,Yp,_Zp}) -> union(A, {Xp,Yp,1,1}).
 
 %% return true if Point is inside the Rect, false otherwise
 -spec contains(Rect::undefined|epx:epx_rect(), 
-	       Point::epx:epx_point()) -> boolean.
+	       Point::epx:epx_point2d()|epx:epx_point3d()) -> boolean.
 
 contains({X,Y,W,H}, {Xp,Yp}) ->
     (Xp >= X) andalso (Xp < X+W) andalso (Yp >= Y) andalso (Yp < Y+H);
-contains(undefined, {_Xp,_Yp}) ->
+contains({X,Y,W,H}, {Xp,Yp,_Zp}) ->
+    (Xp >= X) andalso (Xp < X+W) andalso (Yp >= Y) andalso (Yp < Y+H);
+contains(undefined, _) ->
     false.

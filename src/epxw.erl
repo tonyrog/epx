@@ -21,15 +21,14 @@
 
 %% api callable from callbacks
 -export([window/0, screen/0, pixels/0, width/0, height/0, keymod/0]).
--export([view_pos/0, view_pos/2]).
--export([view_width/0, view_height/0, view_rect/0]).
+-export([zoom/0, scale/0]).
+-export([view_origin/0, view_width/0, view_height/0, view_rect/0]).
 -export([set_view_size/2, set_view_rect/1]).
--export([content_pos/0, content_rect/0]).
--export([content_width/0, content_height/0]).
 -export([invalidate/0, invalidate/1]).
 -export([set_status_text/1]).
+-export([file_menu/0, edit_menu/0]).
  
--define(DEBUG, true).
+%% -define(DEBUG, true).
 
 -define(USE_OFF_SCREEN, true).
 -define(USE_EXPOSURE, false).
@@ -206,7 +205,7 @@
 	 handle_cast :: undefined | fun(),
          handle_info :: undefined | fun(),
          handle_continue :: undefined | fun(),
-         code_change :: undefined | fun(),
+	 code_change :: undefined | fun(),
          terminate :: undefined | fun(),
 	 configure :: undefined |
 		      fun((Event::term(), State::term()) -> NewState::term()),
@@ -226,17 +225,20 @@
 		      fun((Event::term(), State::term()) -> NewState::term()),
          focus_out :: undefined |
 		      fun((Event::term(), State::term()) -> NewState::term()),
-         close  :: undefined |
-		      fun((State::term()) -> NewState::term()),
+	 close  :: undefined |
+		   fun((State::term()) -> NewState::term()),
 	 draw  :: undefined |
-		      fun((Pixmap::epx:epx_pixmap(),Rect::epx:epx_rect(),
+		  fun((Pixmap::epx:epx_pixmap(),Rect::epx:epx_rect(),
 			   State::term()) -> NewState::term()),
 	 select :: undefined |
-		      fun((Rect::epx:epx_rect(),State::term())
-			  -> NewState::term()),
+		   fun((Rect::epx:epx_rect(),State::term())
+		       -> NewState::term()),
          command :: undefined |
-		      fun((Command::term(), Mod::epx_keymod(), State::term()) ->
-				 NewState::term())
+		    fun((Command::term(), Mod::epx_keymod(), State::term()) ->
+			       NewState::term()),
+	 menu :: undefined |
+		 fun((Event::term(), State::term()) ->
+			    undefined | epx_menu:epx_menu())
  }).
 
 -define(CALLBACK(S,Name), (((S)#state.user_cb)#callbacks.Name)).
@@ -259,10 +261,13 @@
 	 content :: #window_content{},
 	 keymod :: epx_keymod(), %% modifiers
 	 esc    :: boolean(), %% escape modifier
-	 menu   :: epx_menu:epx_menu(),
+	 context_menu :: epx_menu:epx_menu(),
+	 edit_menu    :: epx_menu:epx_menu(),
+	 file_menu    :: epx_menu:epx_menu(),
+	 menu         :: epx_menu:epx_menu(),  %% current menu
 	 winfo :: #window_info{},
 	 zoom  = 0 :: integer(),  %% [-20...20 step2]?
-	 scale = 1 :: number(),
+	 scale = {1,1} :: {number(),number()},
 	 pt1   :: undefine | {X::integer(),Y::integer()}, %% start pos
 	 pt2   :: undefine | {X::integer(),Y::integer()}, %% cur pos
 	 operation = none :: none | menu,
@@ -322,36 +327,32 @@ pixels() -> (state())#state.pixels.
 width()  -> (state())#state.width.
 height() -> (state())#state.height.
 keymod() -> (state())#state.keymod.
-view_pos() -> get_view_pos(state(), 0, 0).
-view_pos(X,Y) -> get_view_pos(state(), X, Y).
+view_origin() -> get_view_origin(state()).
 view_width() -> get_view_width(state()).
 view_height() -> get_view_height(state()).
 view_rect() -> get_view_rect(state()).
+zoom() -> (state())#state.zoom.
+scale() -> (state())#state.scale.
+file_menu() -> (state())#state.file_menu.
+edit_menu() -> (state())#state.edit_menu.
+    
+     
 set_view_size(W, H) when W >= 0, H >= 0 ->
     S0 = state(),
-    #state { content = WD } = S0,
-    WD1 = WD#window_content { view_right = WD#window_content.view_left + W - 1,
-			      view_bottom = WD#window_content.view_top + H - 1 },
-    S1 = S0#state { content = WD1 },
-    export_state(S1).
-set_view_rect({X, Y, W, H}) when X >= 0, Y >= 0, W >= 0, H >= 0 ->
-    S0 = state(),
-    #state { content = WD } = S0,
-    WD1 = WD#window_content { view_left = X,
-			      view_right = X + W - 1,
-			      view_top   = Y,
-			      view_bottom = Y + H - 1 },
-    S1 = S0#state { content = WD1 },
+    X = get_view_left(S0),
+    Y = get_view_left(S0),
+    S1 = set_view_rect(S0, {X,Y,W,H}),
     export_state(S1).
 
-%% content_pos = start of content in window coordinate
-content_pos() -> content_pos(state()).
-content_width() -> content_width(state()).
-content_height() -> content_height(state()).
-content_rect() -> content_rect(state()).
+set_view_rect(R={X, Y, W, H}) when X >= 0, Y >= 0, W >= 0, H >= 0 ->
+    S0 = state(),
+    S1 = set_view_rect(S0, R),
+    export_state(S1).
 
 %% view position in pixmap
-pixmap_pos(X,Y) -> get_rview_pos(state(), X, Y).
+pixmap_pos(X,Y) -> 
+    {Wx,Wy,_} = view_to_window_pos({X,Y,0}, state()),
+    {Wx,Wy}.
 
 set_status_text(Text) ->
     S0 = state(),
@@ -373,17 +374,34 @@ invalidate(Area={_X,_Y,_W,_H}) ->
     export_state(S1),
     S1#state.dirty.
 
-%% global menu
-menu(global) ->
+%% "standard" menus
+menu(edit) ->
+    [
+     {"Undo", "Ctrl+Z"},
+     {"Redo", "Ctrl+Shift+Z"},
+     {"---", ""},
+     {"Cut", "Ctrl+X"},
+     {"Copy", "Ctrl+C"},
+     {"Paste", "Ctrl+V"},
+     {"Delete", "Del"},
+     {"---", ""},
+     {"Select All", "Ctrl+A"}
+    ];
+menu(file) ->
+    [
+     {"Open File...",  "Ctrl+O"},
+     {"Save",  "Ctrl+S"},
+     {"---", ""},
+     {"Quit",  "Ctrl+Q"}
+    ];
+menu(context) ->
     [
      {"Cut", "Ctrl+X"},
      {"Copy", "Ctrl+C"},
      {"Paste", "Ctrl+V"},
      {"Delete", "Del"},
      {"---", ""},
-     {"Save",  "Ctrl+S"},
-     {"---", ""},
-     {"Quit",  "Ctrl+Q"}
+     {"Select All", "Ctrl+A"}
     ].
 
 %%--------------------------------------------------------------------
@@ -490,7 +508,9 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
     epx:pixmap_attach(Screen),
     epx:window_adjust(Window, [{name, Title}]),
 
-    Menu = epx_menu:create(MProfile, menu(global)),
+    EditMenu = epx_menu:create(MProfile, menu(edit)),
+    FileMenu = epx_menu:create(MProfile, menu(file)),
+    ContextMenu = epx_menu:create(MProfile, menu(context)),
 
     State0 = #state {
 		window = Window,
@@ -499,7 +519,9 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 		font   = Font,    %% window font
 		width  = Width,
 		height = Height,
-		menu   = Menu,
+		edit_menu   = EditMenu,
+		file_menu   = FileMenu,
+		context_menu = ContextMenu,
 		winfo  = WInfo,
 		profile = Profile,
 		keymod = #keymod{},
@@ -515,7 +537,7 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
     ViewWidth = proplists:get_value(view_width, Env, Width),
     ViewHeight = proplists:get_value(view_height, Env, Height),
 
-    State1 = set_view_rect(State0, 0, ViewWidth-1, 0, ViewHeight-1),
+    State1 = set_view_rect(State0, {0,0,ViewWidth,ViewHeight}),
 
     State2 = case UserCb#callbacks.init of
 		 undefined ->
@@ -566,7 +588,8 @@ load_callbacks_(UserMod, UserMap) ->
 	focus_out = load_callback_(UserMod, UserMap, focus_out, 2),
 	draw  = load_callback_(UserMod, UserMap, draw, 3),
 	select = load_callback_(UserMod, UserMap, select, 2),
-	command = load_callback_(UserMod, UserMap, command, 3)
+	command = load_callback_(UserMod, UserMap, command, 3),
+	menu = load_callback_(UserMod, UserMap, menu, 2)
        }}.
 
 load_callback_(UserMod, UserMap, Func, Arity) ->
@@ -837,19 +860,40 @@ epx_event(Event={button_release, [left], _Pos}, State) ->
 	end,
     {noreply, State1#state{pt1 = undefined, pt2 = undefined, operation = none}};
 
-epx_event(Event={button_press, [right], _Pos3D={X0,Y0,_}}, State) ->
-    XY = {X0,Y0},
-    epx:window_enable_events(State#state.window,[motion]),
-    case epx_menu:set_row(State#state.menu, -1) of
+epx_event(Event={button_press, [right], Pos={X0,Y0,_}}, State) ->
+    %% check for context menu
+    Pos1 = window_to_view_pos(Pos,State),
+    case ?CALLBACK(State, menu) of
 	undefined ->
 	    State1 = user_event(Event, ?CALLBACK(State,button_press), 
 				State),
 	    {noreply, State1};
 	Menu ->
-	    State1 = State#state { pt1 = XY, pt2 = XY,
-				   operation = menu,
-				   menu = Menu },
-	    {noreply, set_dirty_area(State1)}
+	    case Menu({menu,Pos1},State#state.user_state) of
+		{noreply,UserState} ->
+		    State1 = user_event(Event, ?CALLBACK(State,button_press), 
+					State#state { user_state = UserState}),
+		    {noreply, State1};
+		{reply,undefined,UserState} ->
+		    State1 = user_event(Event, ?CALLBACK(State,button_press), 
+					State#state { user_state = UserState}),
+		    {noreply, State1};
+		{reply,Menu0,UserState} ->
+		    epx:window_enable_events(State#state.window,[motion]),
+		    case epx_menu:set_row(Menu0, -1) of
+			undefined ->
+			    State1 = user_event(Event,
+						?CALLBACK(State,button_press),
+						State#state { user_state = UserState}),
+			    {noreply, State1};
+			Menu1 ->
+			    XY = {X0,Y0},
+			    State1 = State#state { pt1 = XY, pt2 = XY,
+						   operation = menu,
+						   menu = Menu1 },
+			    {noreply, set_dirty_area(State1)}
+		    end
+	    end
     end;
 epx_event(Event={button_release, _Buttons, _Pos3D}, State) ->
     flush_motion(State#state.window),
@@ -885,11 +929,9 @@ epx_event({motion,[left],{X,Y,_}},State) ->
 	    State1 = select(State#state.pt1, Pt2, State#state{ pt2 = Pt2 }),
 	    {noreply,State1}
     end;
-%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={enter, _Pos3D}, State) ->
     State1 = user_event(Event, ?CALLBACK(State,enter), State),
     {noreply, State1};
-%% Fixme: transform X,Y into view coordinates before callback
 epx_event(Event={leave, _Pos3D}, State) ->
     State1 = user_event(Event, ?CALLBACK(State,leave), State),
     {noreply, State1};
@@ -913,13 +955,14 @@ epx_event(_Event, State) ->
     {noreply,State}.
 
 
-content_pos(State) ->
-    content_pos_(State,scrollbars(State)).
+%% Get drawing area top left corner in window coordinates
+drawing_origin(State) ->
+    drawing_origin_(State,scrollbars(State)).
 
-content_pos_(State,ScrollBars) ->
-    content_pos_(State,ScrollBars,toolbars(State)).
+drawing_origin_(State,ScrollBars) ->
+    drawing_origin_(State,ScrollBars,toolbars(State)).
 
-content_pos_(State,{HBar,VBar},{LeftBar,_RightBar,TopBar,_BottomBar}) ->
+drawing_origin_(State,{HBar,VBar},{LeftBar,_RightBar,TopBar,_BottomBar}) ->
     ScrollBarSize = scroll_bar_size(State),
     X0 = case VBar of
 	     none -> LeftBar;
@@ -933,21 +976,15 @@ content_pos_(State,{HBar,VBar},{LeftBar,_RightBar,TopBar,_BottomBar}) ->
 	 end,
     {X0,Y0}.
     
-%% content width taking toolbars into account but wo scrollbar
-content_width0(State) ->
+%% Get drawing area width taking toolbars into account but wo scrollbar
+drawing_width0(State) ->
     {LeftBar,RightBar,_,_} = toolbars(State),
     State#state.width - (LeftBar+RightBar).
 
-%% content height taking toolbars into account but wo scrollbar
-content_height0(State) ->
+%% Get drawing area height taking toolbars into account but wo scrollbar
+drawing_height0(State) ->
     {_,_,TopBar,BottomBar} = toolbars(State),
     State#state.height - (TopBar+BottomBar).
-
-content_rect(State) ->
-    {X,Y} = content_pos(State),
-    W = content_width(State),
-    H = content_height(State),
-    {X,Y,W,H}.
 
 set_dirty_area(State) -> 
     set_dirty_area(get_view_rect(State),State).
@@ -973,7 +1010,7 @@ scroll_hit(Pos, State) ->
 		false ->
 		    {_,_,Vw,_} = HHndl,
 		    {Xp,_Yp} = Pos,
-		    Dx = Vw div 2,
+		    Dx = Vw / 2,
 		    State1 = adjust_view_xpos(Xp-Dx, true, State),
 		    Delta = {Dx, 0},
 		    %% io:format("hscroll, motion2=~w\n", [Delta]),
@@ -998,7 +1035,7 @@ scroll_hit(Pos, State) ->
 			false ->
 			    {_,_,_,Vh} = VHndl,
 			    {_Xp,Yp} = Pos,
-			    Dy = Vh div 2,
+			    Dy = Vh / 2,
 			    State1 = adjust_view_ypos(Yp-Dy, true, State),
 			    Delta = {0,Dy},
 			    %% io:format("vscroll, motion2=~w\n", [Delta]),
@@ -1028,6 +1065,7 @@ command(Symbol,Mod,State) ->
     end.
 
 %% default handling on key up/down left/right pageup/pagedown home/end
+ %% FIXME configure this
 command_(up, _Mod, State) ->
     scroll_up(State);
 command_(down, _Mod, State) ->
@@ -1044,14 +1082,16 @@ command_(home, _Mod, State) ->
     scroll_home(State);
 command_('end', _Mod, State) ->
     scroll_end(State);
-command_($+, _Mod, State) ->
-    Zoom = max(10, State#state.zoom + 1),
+ %% zoom in - FIXME configure this
+command_($-, _Mod, State) ->
+    Zoom = min(10, State#state.zoom + 1),
     Scale = zscale(Zoom),
     io:format("zoom: ~w, scale: ~w\n", [Zoom, Scale]),
     State1 = State#state { zoom = Zoom, scale = Scale },
     set_dirty_area(State1);
-command_($-, _Mod, State) ->
-    Zoom = min(-10, State#state.zoom - 1),
+ %% zoom out - FIXME configure this
+command_($+, _Mod, State) ->
+    Zoom = max(-10, State#state.zoom - 1),
     Scale = zscale(Zoom),
     io:format("zoom: ~w, scale: ~w\n", [Zoom, Scale]),
     State1 = State#state { zoom = Zoom, scale = Scale },
@@ -1060,8 +1100,10 @@ command_(_Symbol, _Mod, State) ->
     io:format("unhandled command ~p\n", [_Symbol]),
     State.
 
+%% calculate scale from zoom (Sx=Sy) now
 zscale(Z) ->
-    math:pow(1.07, 2*(Z)).
+    Sx = Sy = math:pow(1.07, 2*(Z)),
+    {Sx,Sy}.
 
 scroll_up(State) ->
     State1 = step_up(State, scroll_ystep(State)),
@@ -1081,31 +1123,30 @@ scroll_end(State) ->
     State1 = set_view_ypos(State, Y1),
     set_dirty_area(State1).
 
-%% Content width when scrollbar is taken into account
-content_width(State) ->
-    content_width_(get_vscroll(State), State).
+%% Drawing area width when scrollbar is taken into account
+drawing_width(State) ->
+    drawing_width_(get_vscroll(State), State).
     
-content_width_(none, State) -> content_width0(State);
-content_width_(undefined, State) -> content_width0(State);
-content_width_(_VBar,State) -> content_width0(State)-scroll_bar_size(State).
+drawing_width_(none, State) -> drawing_width0(State);
+drawing_width_(undefined, State) -> drawing_width0(State);
+drawing_width_(_VBar,State) -> drawing_width0(State)-scroll_bar_size(State).
 
-%% Content height when scrollbar is taken into account
-content_height(State) ->
-    content_height_(get_hscroll(State), State).
+%% Drawing area height when scrollbar is taken into account
+drawing_height(State) ->
+    drawing_height_(get_hscroll(State), State).
 
-content_height_(none, State) -> content_height0(State);
-content_height_(undefined, State) -> content_height0(State);
-content_height_(_VBar,State) -> content_height0(State)-scroll_bar_size(State).
+drawing_height_(none, State) -> drawing_height0(State);
+drawing_height_(undefined, State) -> drawing_height0(State);
+drawing_height_(_VBar,State) -> drawing_height0(State)-scroll_bar_size(State).
 
 %% adjust view ypos, if needed, after configure etc
 adjust_view_ypos(Y, Set, State) ->
     case get_vscroll(State) of
 	undefined -> State;
 	{_,_,_,ScrollBarHeight} ->
-	    ViewHeight = get_view_height(State),
-	    ViewInPixels = ViewHeight*State#state.scale,
-	    WindowToView = ViewInPixels/ScrollBarHeight,
-	    Y1 = trunc(WindowToView*Y),
+	    Height = get_scaled_view_height(State),
+	    WindowToView = Height/ScrollBarHeight,
+	    Y1 = WindowToView*Y,
 	    Y2 = max(0, Y1),
 	    Y3 = adjust_bottom_pos(Y2, State),
 	    if Set; Y3 < Y ->
@@ -1119,10 +1160,9 @@ adjust_view_xpos(X, Set, State) ->
     case get_hscroll(State) of
 	undefined -> State;
 	{_,_,ScrollBarWidth,_} ->
-	    ViewWidth = get_view_width(State),
-	    ViewInPixels = ViewWidth*State#state.scale,
-	    WindowToView = ViewInPixels/ScrollBarWidth,
-	    X1 = trunc(WindowToView*X),
+	    Width = get_scaled_view_width(State),
+	    WindowToView = Width/ScrollBarWidth,
+	    X1 = WindowToView*X,
 	    X2  = max(0, X1),
 	    X3  = adjust_right_pos(X2, State),
 	    if Set; X3 < X ->
@@ -1132,15 +1172,22 @@ adjust_view_xpos(X, Set, State) ->
 	    end
     end.
 
+%% adjust view coordinate 
 adjust_bottom_pos(Y, State) ->
-    ScrollBarHeight = content_height(State),
-    Ymax = max(0, get_view_bottom(State)-ScrollBarHeight-1),
+    DrawingHeight = drawing_height(State),
+    Ymax = max(0, get_view_bottom(State)-DrawingHeight),
     min(Y, Ymax).
 
+adjust_top_pos(Y, _State) ->
+    max(0, Y).
+
 adjust_right_pos(X, State) ->
-    ScrollBarWidth = content_width(State),
-    Xmax = max(0, get_view_right(State)-ScrollBarWidth-1),
+    DrawingWidth = drawing_width(State),
+    Xmax = max(0, get_view_right(State)-DrawingWidth),
     min(X, Xmax).
+
+adjust_left_pos(X, _State) ->
+    max(0, X).
 
 %% move a page up
 page_up(State) ->
@@ -1150,8 +1197,8 @@ page_up(State) ->
 	{_,_,_,H} ->
 	    {_,_,_,VH} = get_vhndl(State), %% page size in window coords
 	    R = VH/H,  %% page ratio
-	    Step = trunc(R*get_view_height(State)),
-	    State1 = step_up(State, Step),
+	    Page = trunc(R*get_view_height(State)), %% scaled?
+	    State1 = step_up(State, Page),
 	    set_dirty_area(State1)
     end.
 
@@ -1162,8 +1209,8 @@ page_down(State) ->
 	{_,_,_,H} ->
 	    {_,_,_,VH} = get_vhndl(State),  %% page size in window coords
 	    R = VH/H,  %% page ratio
-	    Step = trunc(R*get_view_height(State)),
-	    State1 = step_down(State, Step),
+	    Page = trunc(R*get_view_height(State)), %% scaled?
+	    State1 = step_down(State, Page),
 	    set_dirty_area(State1)
     end.
 
@@ -1176,7 +1223,7 @@ scroll_right(State) ->
     set_dirty_area(State1).
 
 step_up(State, Step) ->
-    Y = max(0, get_view_ypos(State) - Step),
+    Y = adjust_top_pos(get_view_ypos(State) - Step, State),
     set_view_ypos(State, Y).
 
 step_down(State, Step) ->
@@ -1184,7 +1231,7 @@ step_down(State, Step) ->
     set_view_ypos(State, Y).
 
 step_left(State, Step) ->
-    X = max(0, get_view_xpos(State) - Step),
+    X = adjust_left_pos(get_view_xpos(State) - Step, State),
     set_view_xpos(State, X).
 
 step_right(State, Step) ->
@@ -1294,8 +1341,14 @@ code_change(OldVsn, State, Extra) ->
 %%%===================================================================
 
 select({X1,Y1},{X2,Y2}, State) ->
-    Area = {min(X1,X2),min(Y1,Y2),abs(X2-X1)+1,abs(Y2-Y1)+1},
-    user_event(Area,?CALLBACK(State,select),State).
+    {X11,X22}=minmax(X1,X2),
+    {Y11,Y22}=minmax(Y1,Y2),
+    Area = {X11,Y11,(X22-X11)+1,(Y22-Y11)+1},
+    user_event({select,Area},?CALLBACK(State,select),State).
+
+minmax(A, B) when A < B -> {A,B};
+minmax(A, B) -> {B,A}.
+
 
 user_event(_E, undefined, State) ->
     State;
@@ -1308,35 +1361,64 @@ user_event(E, Callback, State) ->
 
 
 transform_event(Event={button_press,_,Pos}, State) ->
-    Pos1 = transform_pos(Pos,State),
+    Pos1 = window_to_view_pos(Pos,State),
     setelement(3, Event, Pos1);
 transform_event(Event={button_release,_,Pos}, State) ->
-    Pos1 = transform_pos(Pos,State),
+    Pos1 = window_to_view_pos(Pos,State),
     setelement(3, Event, Pos1);
 transform_event(Event={motion,_,Pos}, State) ->
-    Pos1 = transform_pos(Pos,State),
+    Pos1 = window_to_view_pos(Pos,State),
     setelement(3, Event, Pos1);
 transform_event(Event={enter,Pos},State) ->
-    Pos1 = transform_pos(Pos,State),
+    Pos1 = window_to_view_pos(Pos,State),
     setelement(2, Event, Pos1);
 transform_event(Event={leave,Pos},State) ->
-    Pos1 = transform_pos(Pos,State),
+    Pos1 = window_to_view_pos(Pos,State),
     setelement(2, Event, Pos1);
-transform_event({X,Y,W,H},State) when is_number(X), is_number(Y),
-				      is_number(W), is_number(H) ->
-    {X1,Y1,_} = transform_pos({X,Y,0},State),
-    {X1,Y1,W,H};
+transform_event({select,{X,Y,W,H}},State) when is_number(X), is_number(Y),
+					       is_number(W), is_number(H) ->
+    {X1,Y1,_} = window_to_view_pos({X,Y,0},State),
+    {W1,H1} = window_to_view_dim({W,H},State),
+    {select,{X1,Y1,W1,H1}};
 transform_event(Event, _State) ->
     Event.
 
-transform_pos({X,Y,Z}, State) ->
-    #state { content=#window_content{view_xpos=Tx,view_ypos=Ty}} = State,
-    {Cx,Cy} = content_pos(State),
-    %% adjust window coordinate to top level content position
-    X1 = X - Cx,
-    Y1 = Y - Cy,
-    %% now translate into view coordinates
-    {X1+Tx,Y1+Ty,Z}.
+%% Wx = (Vx - Tx)/Sx + Cx
+%% Vx = (Wx - Cx)*Sx + Tx
+
+window_to_view_pos({Wx,Wy,Wz}, State) ->
+    #state { scale = {Sx,Sy},
+	     content=#window_content{view_xpos=Tx,view_ypos=Ty}} = State,
+    {Cx,Cy} = drawing_origin(State),
+    { (Wx-Cx)*Sx + Tx, (Wy-Cy)*Sy + Ty, Wz}.
+
+window_to_view_dim({Ww,Wh}, #state { scale={Sx,Sy}}) ->
+    { Ww*Sx, Wh*Sy }.
+
+window_to_view_height(Wh, #state { scale={_,Sy}}) ->
+    Wh * Sy.
+
+window_to_view_width(Ww, #state { scale={Sx,_}}) ->
+    Ww * Sx.
+
+%% translate a coordinate from view position to window position
+view_to_window_pos({Vx,Vy,Vz}, State) ->
+    #state { scale = {Sx,Sy},
+	     content=#window_content{view_xpos=Tx,view_ypos=Ty}} = State,
+    {Cx,Cy} = drawing_origin(State),
+    { (Vx - Tx)/Sx + Cx, (Vy - Ty)/Sy + Cy, Vz}.
+
+view_to_window_height(Vh, #state { scale={_,Sy}}) ->
+    Vh / Sy.
+
+view_to_window_width(Vw, #state { scale={Sx,_}}) ->
+    Vw / Sx.
+
+get_scaled_view_width(S) ->
+    view_to_window_width(get_view_width(S), S).
+
+get_scaled_view_height(S) ->
+    view_to_window_height(get_view_height(S), S).
 
 draw(State) ->
     draw(State, State#state.dirty).
@@ -1346,23 +1428,21 @@ draw(State = #state { profile = Profile }, Dirty) ->
     ScreenColor = epx_profile:color(Scheme, Profile#profile.screen_color),
     {HBar,VBar} = scrollbars(State),
     Pixels = pixels(State),
-    #state { content = #window_content { view_xpos = Tx, view_ypos = Ty }} =
-	State,
-    %% ScrollBarSize = scroll_bar_size(State),
+    {Tx,Ty} = get_view_origin(State),
     ScrollBars={HBar,VBar} = scrollbars(State),
-    ToolBars={LeftBar,RightBar,TopBar,BottomBar} = toolbars(State),
-    W = State#state.width - (LeftBar+RightBar),
-    H = State#state.height - (TopBar+BottomBar),
-
-    {X0,Y0} = content_pos_(State,ScrollBars,ToolBars),
-    Scale = State#state.scale,
+    W = drawing_width0(State),
+    H = drawing_height0(State),
+    {Cx,Cy} = drawing_origin_(State,ScrollBars),
+    {Sx,Sy} = State#state.scale,
     
     fill_area(Pixels,undefined,ScreenColor),
     epx:pixmap_ltm_reset(Pixels),
-    epx:pixmap_ltm_scale(Pixels, Scale, Scale),
-    epx:pixmap_ltm_translate(Pixels, -(Tx-X0), -(Ty-Y0)),
+    epx:pixmap_ltm_translate(Pixels, Cx, Cy),
+    epx:pixmap_ltm_scale(Pixels, 1/Sx, 1/Sy),
+    epx:pixmap_ltm_translate(Pixels, -Tx, -Ty),
+
     %% set clip rect!
-    VisibleRect = {Tx, Ty, W/Scale, H/Scale},  %% in view coordinates
+    VisibleRect = {Tx, Ty, W/Sx, H/Sy},  %% in view coordinates
     State1 = draw_content(Pixels,VisibleRect,State),
     epx:pixmap_ltm_reset(Pixels),
     epx_gc:set_border_width(0), %% FIXME: use special gc for user content
@@ -1412,18 +1492,18 @@ fill_area(Pixmap, {X,Y,W,H}, Color) ->
 %% scrollbar
 scrollbars(State) ->
     ScrollBarSize = scroll_bar_size(State),
-    ContentWidth = content_width0(State),
-    ContentHeight = content_height0(State),
-    ViewWidth = get_view_width(State),
-    ViewHeight = get_view_height(State),
-    if ViewWidth > ContentWidth ->
-	    if ViewHeight > (ContentHeight-ScrollBarSize) ->
+    DrawingWidth = drawing_width0(State),
+    DrawingHeight = drawing_height0(State),
+    Width = get_scaled_view_width(State),
+    Height = get_scaled_view_height(State),
+    if Width > DrawingWidth ->
+	    if Height > (DrawingHeight-ScrollBarSize) ->
 		    {scroll_horizontal(State), scroll_vertical(State)};
 	       true ->
 		    {scroll_horizontal(State), none}
 	    end;
-       ViewHeight > ContentHeight ->
-	    if ViewWidth > (ContentWidth-ScrollBarSize) ->
+       Height > DrawingHeight ->
+	    if Width > (DrawingWidth-ScrollBarSize) ->
 		    {scroll_horizontal(State), scroll_vertical(State)};
 	       true ->
 		    {none,                     scroll_vertical(State)}
@@ -1432,7 +1512,6 @@ scrollbars(State) ->
 	    {none, none}
     end.
        
-
 draw_vscroll(Pixels,left,HBar,State) ->
     X0 = left_bar(State),
     draw_vscroll_(Pixels,X0,HBar,State);
@@ -1445,18 +1524,17 @@ draw_vscroll(_Pixels,none,_OtherBar,State) ->
     set_vscroll(State, undefined, undefined).
 
 draw_vscroll_(Pixels, X0, HBar, State) ->
-    ScrollBarHeight = content_height_(HBar,State),
-    if ScrollBarHeight > 0 ->
-	    draw_vscroll__(Pixels, X0, ScrollBarHeight, HBar, State);
+    DrawingHeight = drawing_height_(HBar,State),
+    if DrawingHeight > 0 ->
+	    draw_vscroll__(Pixels, X0, DrawingHeight, HBar, State);
        true ->
 	    set_vscroll(State, undefined, undefined)
     end.
 
-draw_vscroll__(Pixels, X0, ScrollBarHeight, HBar, State) ->
+draw_vscroll__(Pixels, X0, DrawingHeight, HBar, State) ->
     ScrollBarSize = scroll_bar_size(State),
     HndlSize = scroll_hndl_size(State),
     TopBar = top_bar(State),
-    ViewHeight = get_view_height(State),
     epx_gc:set_fill_style(solid),
     ScrollBarColor = scroll_bar_color(State),
     epx_gc:set_fill_color(ScrollBarColor),
@@ -1465,17 +1543,18 @@ draw_vscroll__(Pixels, X0, ScrollBarHeight, HBar, State) ->
 	     bottom -> TopBar;
 	     top    -> TopBar+ScrollBarSize
 	 end,
-    Rect = {X0,Y0,ScrollBarSize,ScrollBarHeight},
+    Rect = {X0,Y0,ScrollBarSize,DrawingHeight},
     epx_gc:set_border_width(0),
     epx:draw_rectangle(Pixels, Rect),
     epx_gc:set_fill_color(scroll_hndl_color(State)),
-    ViewInPixels = ViewHeight*State#state.scale,
-    ViewToWindow = ScrollBarHeight / ViewInPixels,
+    Height = get_scaled_view_height(State),
+    ViewToWindow = DrawingHeight / Height,
+    HandleLength = ViewToWindow*DrawingHeight,
     Top = get_view_ypos(State),
-    HandleLength = trunc(ViewToWindow*ScrollBarHeight),
-    HandlePos = Y0+trunc(ViewToWindow*Top),
-    Pad = (ScrollBarSize-HndlSize) div 2,
+    HandlePos = Y0+ViewToWindow*Top,
+    Pad = (ScrollBarSize-HndlSize) / 2,
     HRect = {X0+Pad,HandlePos,HndlSize,HandleLength},
+    %% FIXME style flat/round (rx,ry)
     epx:draw_roundrect(Pixels,HRect,5,5),
     set_vscroll(State, Rect, HRect).
 
@@ -1491,17 +1570,16 @@ draw_hscroll(_Pixels,none,_OtherBar,State) ->
     set_hscroll(State, undefined, undefined).
 
 draw_hscroll_(Pixels, Y0, VBar, State) ->
-    ScrollBarWidth = content_width_(VBar,State),
-    if ScrollBarWidth > 0 ->
-	    draw_hscroll__(Pixels, Y0, ScrollBarWidth, VBar, State);
+    DrawingWidth = drawing_width_(VBar,State),
+    if DrawingWidth > 0 ->
+	    draw_hscroll__(Pixels, Y0, DrawingWidth, VBar, State);
        true ->
 	    set_hscroll(State, undefined, undefined)
     end.
 
-draw_hscroll__(Pixels, Y0, ScrollBarWidth, VBar, State) ->
+draw_hscroll__(Pixels, Y0, DrawingWidth, VBar, State) ->
     ScrollBarSize = scroll_bar_size(State),
     HndlSize = scroll_hndl_size(State),
-    ViewWidth = get_view_width(State),
     epx_gc:set_fill_style(solid),
     ScrollBarColor = scroll_bar_color(State),
     epx_gc:set_fill_color(ScrollBarColor),
@@ -1511,7 +1589,7 @@ draw_hscroll__(Pixels, Y0, ScrollBarWidth, VBar, State) ->
 	     left -> LeftBar+ScrollBarSize;
 	     right -> LeftBar
 	 end,
-    Rect = {X0,Y0,ScrollBarWidth,ScrollBarSize},
+    Rect = {X0,Y0,DrawingWidth,ScrollBarSize},
     epx_gc:set_border_width(0),
     epx:draw_rectangle(Pixels, Rect),
     %% Fill the square between vertical & horizonal
@@ -1525,7 +1603,7 @@ draw_hscroll__(Pixels, Y0, ScrollBarWidth, VBar, State) ->
 	    epx_gc:set_border_color(ScrollBarColor1),
 	    epx:draw_rectangle(Pixels, Square);
 	right ->
-	    Square = {X0+ScrollBarWidth,Y0,
+	    Square = {X0+DrawingWidth,Y0,
 		      ScrollBarSize-2,ScrollBarSize-2},
 	    epx_gc:set_border_width(1),
 	    ScrollBarColor1 = darken(ScrollBarColor,20),
@@ -1534,13 +1612,14 @@ draw_hscroll__(Pixels, Y0, ScrollBarWidth, VBar, State) ->
     end,
     epx_gc:set_border_width(0),
     epx_gc:set_fill_color(scroll_hndl_color(State)),
-    ViewInPixels = ViewWidth*State#state.scale,
-    ViewToWindow = ScrollBarWidth / ViewInPixels,
+    Width = get_scaled_view_width(State),
+    ViewToWindow = DrawingWidth / Width,
+    HandleLength = ViewToWindow*DrawingWidth,
     Left = get_view_xpos(State),
-    HandleLength = trunc(ViewToWindow*ScrollBarWidth),
-    HandlePos = X0+trunc(ViewToWindow*Left),
-    Pad = (ScrollBarSize-HndlSize) div 2,
+    HandlePos = X0+ViewToWindow*Left,
+    Pad = (ScrollBarSize-HndlSize) / 2,
     HRect = {HandlePos,Y0+Pad,HandleLength,HndlSize},
+    %% FIXME style flat/round (rx,ry)
     epx:draw_roundrect(Pixels,HRect,5,5),
     set_hscroll(State, Rect, HRect).
 
@@ -1634,11 +1713,9 @@ darken({R,G,B},N) ->
 get_view_xpos(#state { content = WD }) -> WD#window_content.view_xpos.
 get_view_ypos(#state { content = WD }) -> WD#window_content.view_ypos.
 
-get_view_pos(#state { content = WD }, X, Y) -> 
-    {WD#window_content.view_xpos+X,WD#window_content.view_ypos+Y}.
-
-get_rview_pos(#state { content = WD }, X, Y) -> 
-    { X-WD#window_content.view_xpos, Y-WD#window_content.view_ypos}.
+%% view position that is displayed in drawing area
+get_view_origin(#state { content = WD }) -> 
+    {WD#window_content.view_xpos,WD#window_content.view_ypos}.
 
 set_view_xpos(S = #state{ content = WD}, X) ->
     S#state { content = WD#window_content { view_xpos = X }}.
@@ -1652,19 +1729,19 @@ get_view_right(#state { content = WD }) -> WD#window_content.view_right.
 get_view_top(#state { content = WD }) -> WD#window_content.view_top.
 get_view_bottom(#state { content = WD }) -> WD#window_content.view_bottom.
 get_view_width(#state { content = WD }) ->
-    (WD#window_content.view_right - WD#window_content.view_left)+1.
+    (WD#window_content.view_right - WD#window_content.view_left).    
 get_view_height(#state { content = WD }) ->
-    (WD#window_content.view_bottom - WD#window_content.view_top)+1.
+    (WD#window_content.view_bottom - WD#window_content.view_top).
 get_view_rect(#state { content = WD }) ->
     #window_content { view_left = L, view_right = R, 
 		      view_top  = T, view_bottom = B } = WD,
-    { L, T, (R - L)+1, (B - T)+1 }.
+    { L, T, (R - L), (B - T) }.
 
-set_view_rect(S=#state { content = WD }, L, R, T, B) ->    
-    S#state { content = WD#window_content { view_left = L,
-					    view_right = R,
-					    view_top   = T,
-					    view_bottom = B }}.
+set_view_rect(S=#state { content = WD }, {X,Y,W,H}) ->    
+    S#state { content = WD#window_content { view_left = X,
+					    view_right = X+W,
+					    view_top   = Y,
+					    view_bottom = Y+H }}.
 
 get_motion(#state { content = WD }) -> WD#window_content.motion.
 

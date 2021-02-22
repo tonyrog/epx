@@ -192,6 +192,9 @@
 	      epx_canvas/0]).
 
 -export_type([epx_rect/0,
+	      point/0,
+	      point2d/0,
+	      point3d/0,
 	      epx_pixel_format/0,
 	      epx_window_event_flag/0,
 	      epx_window_event_flags/0,
@@ -205,7 +208,9 @@
 -type void() :: 'ok'.
 -type coord() :: integer() | float().
 -type dim() :: unsigned() | float().
--type point() :: {X::coord(), Y::coord()}.
+-type point2d() ::  {X::coord(), Y::coord()}.
+-type point3d() ::  {X::coord(), Y::coord(), Z::coord()}.
+-type point() :: point2d().
 -type triangle() :: {P1::point(), P2::point(), P3::point()} |
 		    {X1::coord(), Y1::coord(),
 		     X2::coord(), Y2::coord(),

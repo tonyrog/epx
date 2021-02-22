@@ -166,4 +166,5 @@ accel([Char],Mod) when Char >= $A, Char =< $Z, Mod#keymod.shift ->
 accel([Char],Mod) when Char >= $A, Char =< $Z ->
     {Char+32, Mod};
 accel([Char],Mod) ->
-    {Char, Mod}.
+    {Char, Mod};
+accel([],_Mod) -> none.
