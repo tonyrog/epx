@@ -914,12 +914,18 @@ epx_event({motion,[left],Pos},State) ->
     case get_motion(State) of
 	{vhndl,{_DX,Dy}} ->
 	    {_,Y,_} = Pos,
-	    State1 = adjust_window_ypos(Y-Dy, State),
+	    {_,Y0,_,Height} = get_vscroll(State),
+	    Yr = (Y-Y0)/Height,  %% relative hit position
+	    Vy = Yr*get_view_height(State), %% View position
+	    State1 = adjust_view_ypos(Vy+Dy, State),
 	    {noreply,set_dirty_area(State1)};
 	{hhndl,{Dx,_Dy}} ->
 	    {X,_,_} = Pos,
-	    State1 = adjust_window_xpos(X-Dx, State),
-	    {noreply,set_dirty_area(State1)}; 
+	    {X0,_,Width,_} = get_hscroll(State),
+	    Xr = (X-X0)/Width,  %% relative hit position
+	    Vx = Xr*get_view_width(State), %% View position
+	    State1 = adjust_view_xpos(Vx+Dx, State),
+	    {noreply,set_dirty_area(State1)};
 	_ ->
 	    State1 = select(State#state.pt1, Pos, State#state{ pt2 = Pos }),
 	    {noreply,State1}
@@ -991,42 +997,52 @@ scroll_hit(Pos, State) ->
     HScroll = get_hscroll(State),
     case epx_rect:contains(HScroll, Pos) of
 	true ->
+	    {X0,_,Width,_} = HScroll,
+	    {X,_Y,_} = Pos,
+	    Xr = (X-X0)/Width,  %% relative hit position
+	    Vx = Xr*get_view_width(State), %% View position
+	    %% hit horizontal scrollbar
 	    epx:window_enable_events(State#state.window, [motion]),
 	    HHndl = get_hhndl(State),
 	    case epx_rect:contains(HHndl, Pos) of
 		true ->
-		    {Xv,Yv,_,_} = HHndl,
-		    {Xp,Yp,_} = Pos,
-		    Delta = {Xp-Xv, Yp-Yv},
-		    set_motion(State,{hhndl,Delta});
+		    %% hit horizontal scroll handle
+		    {Hx,_Hy,_,_} = HHndl,
+		    Dx = -(X-Hx),
+		    State1 = adjust_view_xpos(Vx+Dx, State),
+		    State2 = set_motion(State1,{hhndl,{Dx,0}}),
+		    set_dirty_area(State2);
 		false ->
-		    {_,_,Vw,_} = HHndl,
-		    {Xp,_Yp,_} = Pos,
-		    Dx = Vw / 2,
-		    State1 = adjust_window_xpos(Xp-Dx, State),
-		    Delta = {Dx, 0},
-		    State2 = set_motion(State1,{hhndl,Delta}),
+		    {_,_,Hw,_} = HHndl,
+		    Dx = -(Hw/2),
+		    State1 = adjust_view_xpos(Vx+Dx, State),
+		    State2 = set_motion(State1,{hhndl,{Dx,0}}),
 		    set_dirty_area(State2)
 	    end;
 	false ->
 	    VScroll = get_vscroll(State),
 	    case epx_rect:contains(VScroll, Pos) of
 		true ->
+		    {_,Y0,_,Height} = VScroll,
+		    {_X,Y,_} = Pos,
+		    Yr = (Y-Y0)/Height,  %% relative hit position
+		    Vy = Yr*get_view_height(State), %% View position
+		    %% hit vertical scrollbar
 		    epx:window_enable_events(State#state.window, [motion]),
 		    VHndl = get_vhndl(State),
 		    case epx_rect:contains(VHndl, Pos) of
 			true ->
-			    {Xv,Yv,_,_} = VHndl,
-			    {Xp,Yp,_} = Pos,
-			    Delta = {Xp-Xv, Yp-Yv},
-			    set_motion(State,{vhndl,Delta});
+			    %% hit vertical scroll handle
+			    {_Hx,Hy,_,_} = VHndl,
+			    Dy = -(Y-Hy),
+			    State1 = adjust_view_ypos(Vy+Dy, State),
+			    State2 = set_motion(State1,{vhndl,{0,Dy}}),
+			    set_dirty_area(State2);
 			false ->
-			    {_,_,_,Vh} = VHndl,
-			    {_Xp,Yp,_} = Pos,
-			    Dy = Vh / 2,
-			    State1 = adjust_window_ypos(Yp-Dy, State),
-			    Delta = {0,Dy},
-			    State2 = set_motion(State1,{vhndl,Delta}),
+			    {_,_,_,Hh} = VHndl,
+			    Dy = -(Hh/2),
+			    State1 = adjust_view_ypos(Vy+Dy, State),
+			    State2 = set_motion(State1,{vhndl,{0,Dy}}),
 			    set_dirty_area(State2)
 		    end;
 		false ->
@@ -1136,18 +1152,6 @@ drawing_height_(none, State) -> drawing_height0(State);
 drawing_height_(undefined, State) -> drawing_height0(State);
 drawing_height_(_VBar,State) -> drawing_height0(State)-scroll_bar_size(State).
 
-%% adjust xpos given window x coord
-adjust_window_xpos(Wx, State) ->
-    Vx = window_to_view_xpos(Wx, State),
-    Vx1 = adjust_right_pos(max(0,Vx), State),
-    set_view_xpos(State, Vx1).
-
-%% adjust ypos given window y coord
-adjust_window_ypos(Wy, State) ->
-    Vy = window_to_view_ypos(Wy,State),
-    Vy1 = adjust_bottom_pos(max(0,Vy), State),
-    set_view_ypos(State, Vy1).
-
 %% adjust xpos given view x coord    
 adjust_view_xpos(Vx, State) ->
     Vx1  = adjust_right_pos(max(0, Vx), State),
@@ -1182,8 +1186,8 @@ page_up(State) ->
 	    State;
 	{_,_,_,H} ->
 	    {_,_,_,VH} = get_vhndl(State), %% page size in window coords
-	    R = VH/H,  %% page ratio
-	    Page = R*get_view_height(State),
+	    Pr = VH/H,  %% page ratio
+	    Page = Pr*get_view_height(State),
 	    State1 = step_up(State, Page),
 	    set_dirty_area(State1)
     end.
@@ -1528,14 +1532,16 @@ draw_vscroll__(Pixels, X0, DrawingHeight, HBar, State) ->
     ScaledHeight = get_scaled_view_height(State),
     %% scroll size as ratio of scaled height
     Ht = DrawingHeight / ScaledHeight,
-    HandleLength = Ht*DrawingHeight, 
+    HandleLength = Ht*DrawingHeight,
     %% Top position as ratio (0,1)
     Yt = get_view_ypos(State) / get_view_height(State),
     HandlePos = Y0+Yt*DrawingHeight,
     Pad = (ScrollBarSize-HndlSize) / 2,
     HRect = {X0+Pad,HandlePos,HndlSize,HandleLength},
     %% FIXME style flat/round (rx,ry)
-    epx:draw_roundrect(Pixels,HRect,5,5),
+    %% epx:draw_roundrect(Pixels,HRect,5,5),
+    epx:draw_rectangle(Pixels,HRect),
+
     set_vscroll(State, Rect, HRect).
 
 draw_hscroll(Pixels,top,VBar,State) ->
@@ -1600,7 +1606,8 @@ draw_hscroll__(Pixels, Y0, DrawingWidth, VBar, State) ->
     Pad = (ScrollBarSize-HndlSize) / 2,
     HRect = {HandlePos,Y0+Pad,HandleLength,HndlSize},
     %% FIXME style flat/round (rx,ry)
-    epx:draw_roundrect(Pixels,HRect,5,5),
+    %% epx:draw_roundrect(Pixels,HRect,5,5),
+    epx:draw_rectangle(Pixels,HRect),
     set_hscroll(State, Rect, HRect).
 
 get_hscroll(#state { content = WD }) -> WD#window_content.hscroll.
