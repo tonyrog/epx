@@ -66,6 +66,11 @@ calc_menu_size_([], MI, Acc, W, H) ->
 draw(_MenuState, _Pixels, undefined) ->
     ok;
 draw(MenuState = #menu_state { row=Row}, Pixels, {X,Y}) ->
+    draw_(MenuState, Row, Pixels, X, Y);
+draw(MenuState = #menu_state { row=Row}, Pixels, {X,Y,_}) ->
+    draw_(MenuState, Row, Pixels, X, Y).
+
+draw_(MenuState, Row, Pixels, X, Y) ->
     MI = MenuState#menu_state.info,
     Profile = MenuState#menu_state.profile,
     Scheme = Profile#menu_profile.scheme,
@@ -132,7 +137,12 @@ find_row(Menu, Pt1, Pos) ->
 	    {Row,Menu}
     end.
 
-find_menu_item({Mx,My}, {_WHList,W,H}, MI, {X,Y}) ->
+find_menu_item({Mx,My,_}, Geom, MI, {X,Y,_}) ->
+    find_menu_item_(Mx,My, Geom, MI, X,Y);
+find_menu_item({Mx,My}, Geom, MI, {X,Y}) ->
+    find_menu_item_(Mx,My, Geom, MI, X,Y).
+
+find_menu_item_(Mx,My, {_WHList,W,H}, MI, X,Y) ->
     ItemHeight = MI#menu_info.glyph_height,
     Top = MI#menu_info.top_offset,
     Bottom = MI#menu_info.bottom_offset,
