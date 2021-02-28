@@ -27,6 +27,7 @@
 -export([invalidate/0, invalidate/1]).
 -export([set_status_text/1]).
 -export([file_menu/0, edit_menu/0]).
+-export([enable_motion/0, disable_motion/0]).
  
 %% -define(DEBUG, true).
 
@@ -37,27 +38,61 @@
 -include_lib("epx/include/epx_menu.hrl").
 -include_lib("epx/include/epx_window_content.hrl").
 
+-type button() :: left | right | middle |
+		  wheel_up | wheel_down | wheel_left | wheel_right.
+-type keymod() :: ctrl_left | ctrl_right | ctrl |
+		  shift_left | shift_right | shift |
+		  alt_left | alt_right | alt |
+		  meta_left | meta_right | meta |
+		  num | caps | altgr | scr.
+-type keysym() :: left | right | up | down | insert | deleta |
+		  home | 'end' | pageup | pagedown | 
+		  f1 | f2 | f3 | f4 | f5 | f6 | f7 | 
+		  f8 | f9 | f10 | f11 | f12 |
+		  print | sysreq | pause | break | quit | menu | redraw |
+		  integer().
+
+-type button_press_event() :: 
+	{button_press, Button::button(), Pos::epx:point()}.
+-type button_release_event() :: 
+	{button_release, Button::button(), Pos::epx:point()}.
+-type key_press_event() ::
+	{key_press, Sym::keysym(), KeyMods::[keymod()], KeyCode::integer()}.
+-type key_release_event() ::
+	{key_release, Sym::keysym(), KeyMods::[keymod()], KeyCode::integer()}.
+-type enter_event() :: 
+	{enter, Pos::epx:point()}.
+-type leave_event() :: 
+	{leave, Pos::epx:point()}.
+-type focus_in_event() :: 
+	focus_in.
+-type focus_out_event() :: 
+	focus_out.
+
 %% epxw callbacks
--callback init(Window :: epx:epx_window(), Screen::epx:epx_pixmap(),
-	      [Opt::term()]) ->
-    State :: term().
+-callback init(Args :: term()) -> {ok, State :: term()} |
+				  {ok, State :: term(), Timeout :: timeout()} |
+				  {ok, State :: term(), hibernate} |
+				  {stop, Reason :: term()} |
+				  ignore.
+
 -callback configure(Event :: term(), State :: term()) -> 
     NewState :: term().
--callback key_press(Event :: term(), State :: term()) -> 
+-callback key_press(Event :: key_press_event(), State :: term()) -> 
     NewState :: term().
--callback key_release(Event :: term(), State :: term()) -> 
+-callback key_release(Event :: key_release_event(), State :: term()) -> 
     NewState :: term().
--callback button_press(Event :: term(), State :: term()) -> 
+-callback button_press(Event :: button_press_event(), State :: term()) -> 
     NewState :: term().
--callback button_release(Event :: term(), State :: term()) -> 
+-callback button_release(Event :: button_release_event(), State :: term()) -> 
     NewState :: term().
--callback enter(Event :: term(), State :: term()) -> 
+-callback enter(Event :: enter_event(), State :: term()) -> 
     NewState :: term().
--callback leave(Event :: term(), State :: term()) -> 
+-callback leave(Event :: leave_event(), State :: term()) -> 
     NewState :: term().
--callback focus_in(Event :: term(), State :: term()) -> 
+-callback focus_in(Event :: focus_in_event(), State :: term()) -> 
     NewState :: term().
--callback focus_out(Event :: term(), State :: term()) -> 
+-callback focus_out(Event :: focus_out_event(), State :: term()) -> 
     NewState :: term().
 -callback close(State :: term()) -> 
     NewState :: term().
@@ -65,6 +100,8 @@
 	       State :: term()) -> 
     NewState :: term().
 -callback select(Rect::epx:epx_rect(), State :: term()) -> 
+    NewState :: term().
+-callback motion(Pos::epx:epx_point(), State :: term()) ->
     NewState :: term().
 -callback command(Symbol::term(), Mod::epx_keymod(), State :: term()) -> 
     {noreply, NewState :: term()} |
@@ -110,7 +147,7 @@
    ]).
 
 -optional_callbacks(
-   [init/3, 
+   [init/1,
     configure/2,
     key_press/2,
     key_release/2,
@@ -123,6 +160,7 @@
     close/1,
     draw/3,
     select/2,
+    motion/2,
     command/3
    ]).
 
@@ -195,55 +233,72 @@
 	 bottom_bar_color              = red6
 	}).
 
+-type callback() :: fun().
+-type init_cb() :: fun().
+-type configure_cb() :: fun((Rect::epx:epx_rect(),State::term()) ->
+				   NewState::term()).
+-type key_press_cb() :: fun((Event::key_press_event(),State::term()) ->
+				   NewState::term()).
+-type key_release_cb() :: fun((Event::key_release_event(),State::term()) ->
+				     NewState::term()).
+-type button_press_cb() :: fun((Event::button_press_event(),State::term()) ->
+				      NewState::term()).
+-type button_release_cb() :: fun((Event::button_release_event(),State::term())->
+					NewState::term()).
+-type enter_cb() :: fun((Event::enter_event(),State::term()) -> 
+			       NewState::term()).
+-type leave_cb() :: fun((Event::leave_event(),State::term()) -> 
+			       NewState::term()).
+-type focus_in_cb() :: fun((Event::focus_in_event(),State::term()) -> 
+				  NewState::term()).
+-type focus_out_cb() :: fun((Event::focus_out_event(),State::term()) -> 
+				   NewState::term()).
+-type close_cb() :: fun((State::term()) -> NewState::term()).
+
+-type draw_cb() :: fun((Pixmap::epx:epx_pixmap(),Rect::epx:epx_rect(),
+			State::term()) -> NewState::term()).
+-type select_cb() :: fun((Rect::epx:epx_rect(),State::term()) ->
+				NewState::term()).
+-type motion_cb() :: fun((Pos::epx:epx_point(),State::term()) ->
+				NewState::term()).
+-type command_cb() :: fun((Command::term(), Mod::epx_keymod(), State::term()) ->
+				 NewState::term()).
+-type menu_cb() :: fun((Event::term(), State::term()) ->
+			      undefined | epx_menu:epx_menu()).
+
 -record(callbacks, 
 	{
-	 init :: undefined | 
-		 fun((Window::epx:epx_window(),
-		      Screen::epx:epx_pixmap(),
-		      UserOpts::[term()]) -> NewState::term()),
-	 handle_call :: undefined | fun(),
-	 handle_cast :: undefined | fun(),
-         handle_info :: undefined | fun(),
-         handle_continue :: undefined | fun(),
-	 code_change :: undefined | fun(),
-         terminate :: undefined | fun(),
-	 configure :: undefined |
-		      fun((Event::term(), State::term()) -> NewState::term()),
-	 key_press :: undefined |
-		      fun((Event::term(), State::term()) -> NewState::term()),
-	 key_release :: undefined |
-		      fun((Event::term(), State::term()) -> NewState::term()),
-	 button_press :: undefined |
-		      fun((Event::term(), State::term()) -> NewState::term()),
-         button_release :: undefined |
-		      fun((Event::term(), State::term()) -> NewState::term()),
-	 enter :: undefined |
-		      fun((Event::term(), State::term()) -> NewState::term()),
-         leave :: undefined |
-		      fun((Event::term(), State::term()) -> NewState::term()),
-	 focus_in :: undefined |
-		      fun((Event::term(), State::term()) -> NewState::term()),
-         focus_out :: undefined |
-		      fun((Event::term(), State::term()) -> NewState::term()),
-	 close  :: undefined |
-		   fun((State::term()) -> NewState::term()),
-	 draw  :: undefined |
-		  fun((Pixmap::epx:epx_pixmap(),Rect::epx:epx_rect(),
-			   State::term()) -> NewState::term()),
-	 select :: undefined |
-		   fun((Rect::epx:epx_rect(),State::term())
-		       -> NewState::term()),
-         command :: undefined |
-		    fun((Command::term(), Mod::epx_keymod(), State::term()) ->
-			       NewState::term()),
-	 menu :: undefined |
-		 fun((Event::term(), State::term()) ->
-			    undefined | epx_menu:epx_menu())
+	 init :: undefined | init_cb(),
+	 handle_call :: undefined | callback(),
+	 handle_cast :: undefined | callback(),
+         handle_info :: undefined | callback(),
+         handle_continue :: undefined | callback(),
+	 code_change :: undefined | callback(),
+         terminate :: undefined | callback(),
+	 configure :: undefined | configure_cb(),
+		      
+	 key_press :: undefined | key_press_cb(),
+	 key_release :: undefined | key_release_cb(),
+	 button_press :: undefined | button_press_cb(),
+         button_release :: undefined | button_release_cb(),
+	 enter :: undefined | enter_cb(),
+         leave :: undefined | leave_cb(),
+	 focus_in :: undefined | focus_in_cb(),
+         focus_out :: undefined | focus_out_cb(),
+	 close  :: undefined | close_cb(),
+	 draw  :: undefined | draw_cb(),
+	 select :: undefined | select_cb(),
+	 motion :: undefined | motion_cb(),
+         command :: undefined | command_cb(),
+	 menu :: undefined | menu_cb()
  }).
 
 -define(CALLBACK(S,Name), (((S)#state.user_cb)#callbacks.Name)).
 
 -define(STATE_KEY, 'EPXW_STATE').
+
+-define(SYS_MOTION,  16#01).
+-define(USER_MOTION, 16#02).
 
 -record(state, 
 	{
@@ -260,7 +315,7 @@
 	 window_profile :: #window_profile{},
 	 content :: #window_content{},
 	 keymod :: epx_keymod(), %% modifiers
-	 esc    :: boolean(), %% escape modifier
+	 motion = 0 :: integer(), %% motion mask
 	 context_menu :: epx_menu:epx_menu(),
 	 edit_menu    :: epx_menu:epx_menu(),
 	 file_menu    :: epx_menu:epx_menu(),
@@ -270,7 +325,7 @@
 	 scale = {1,1} :: {number(),number()},
 	 pt1   :: undefine | {X::integer(),Y::integer()}, %% start pos
 	 pt2   :: undefine | {X::integer(),Y::integer()}, %% cur pos
-	 operation = none :: none | menu,
+	 operation = none :: none | select | menu,
 	 user_mod :: atom(),       %% user module
 	 user_cb  :: #callbacks{}, %% user callbacks
 	 user_state :: term(),     %% user state
@@ -335,7 +390,11 @@ zoom() -> (state())#state.zoom.
 scale() -> (state())#state.scale.
 file_menu() -> (state())#state.file_menu.
 edit_menu() -> (state())#state.edit_menu.
-    
+enable_motion() -> 
+    export_state(enable_motion_(true, ?USER_MOTION, state())).
+disable_motion() ->
+    export_state(enable_motion_(false, ?USER_MOTION, state())).
+
      
 set_view_size(W, H) when W >= 0, H >= 0 ->
     S0 = state(),
@@ -520,7 +579,6 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 		winfo  = WInfo,
 		profile = Profile,
 		keymod = #keymod{},
-		esc = false,
 		menu_profile = MProfile,
 		window_profile = WProfile,
 		content = WContent,
@@ -531,21 +589,32 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 
     ViewWidth = proplists:get_value(view_width, Env, Width),
     ViewHeight = proplists:get_value(view_height, Env, Height),
-
     State1 = set_view_rect(State0, {0,0,ViewWidth,ViewHeight}),
+    export_state(State1),
+    Rect = {0,0,Width,Height},
+    case UserCb#callbacks.init of
+	undefined ->
+	    init_res(undefined, ok, Rect, State1);
+	Init ->
+	    case Init(UserOpts) of
+		{ok,UserState} ->
+		    init_res(UserState, ok, Rect, state());
+		{ok,UserState,InitType} ->
+		    init_res(UserState, InitType, Rect, state());
+		Other ->  %% stop/ignore
+		    Other
+	    end
+    end.
 
-    State2 = case UserCb#callbacks.init of
-		 undefined ->
-		     State1;
-		 Init ->
-		     export_state(State1),
-		     UserState = Init(Window, Screen, UserOpts),
-		     State11 = state(),
-		     State11#state { user_state = UserState}
-	     end,
-    Rect = {0, 0, Width, Height},
-    State3 = user_event({configure,Rect},?CALLBACK(State2,configure),State2),
-    {ok, draw(State3, Rect)}.
+init_res(UserState, InitType, Rect, State) ->
+    State1 = State#state { user_state = UserState},
+    State2 = user_event(Rect,?CALLBACK(State1,configure),State1),
+    State3 = draw(State2, Rect),
+    if InitType =:= ok ->
+	    {ok, State3};
+       true->
+	    {ok, State3, InitType}
+    end.
 
 load_callbacks(UserMod) when is_atom(UserMod) ->
     {module,_} = code:ensure_loaded(UserMod),
@@ -564,7 +633,7 @@ load_callbacks(UserMap) when is_map(UserMap) ->
 load_callbacks_(UserMod, UserMap) ->
     {UserMod, 
      #callbacks {
-	init = load_callback_(UserMod, UserMap, init, 3),
+	init = load_callback_(UserMod, UserMap, init, 1),
 	handle_call = load_callback_(UserMod, UserMap, handle_call, 3),
 	handle_cast = load_callback_(UserMod, UserMap, handle_cast, 2),
 	handle_info = load_callback_(UserMod, UserMap,handle_info, 2),
@@ -583,6 +652,7 @@ load_callbacks_(UserMod, UserMap) ->
 	focus_out = load_callback_(UserMod, UserMap, focus_out, 2),
 	draw  = load_callback_(UserMod, UserMap, draw, 3),
 	select = load_callback_(UserMod, UserMap, select, 2),
+	motion = load_callback_(UserMod, UserMap, motion, 2),
 	command = load_callback_(UserMod, UserMap, command, 3),
 	menu = load_callback_(UserMod, UserMap, menu, 2)
        }}.
@@ -593,6 +663,10 @@ load_callback_(UserMod, UserMap, Func, Arity) ->
 	    case erlang:function_exported(UserMod, Func, Arity) of
 		true ->
 		    erlang:make_fun(UserMod, Func, Arity);
+		false when Func =:= draw, Arity =:= 3 ->
+		    ?dbg("warning: no draw/3 function for module ~s\n", 
+			 [UserMod]),
+		    undefined;
 		false ->
 		    undefined
 	    end;
@@ -670,8 +744,6 @@ handle_info(#epx_event{win=Win,data=Event}, State) when
 	Reply ->
 	    Reply
     end;
-handle_info('REDRAW',State) ->
-    {noreply, draw(State)};
 handle_info(Info, State) ->
     case ?CALLBACK(State, handle_info) of
 	undefined ->
@@ -734,9 +806,7 @@ epx_event(_Event={configure,Rect0}, State) ->
 		     end,
 	    State1 = State#state { screen = Screen, pixels = Pixels,
 				   width=W, height=H },
-	    State2 = user_event({configure,Rect1},
-				?CALLBACK(State1,configure),
-				State1),
+	    State2 = user_event(Rect1,?CALLBACK(State1,configure),State1),
 	    State3 = adjust_view_xpos(get_view_xpos(State2), State2),
 	    State4 = adjust_view_ypos(get_view_ypos(State3), State3),
 	    {noreply, set_dirty_area(State4)};
@@ -745,55 +815,26 @@ epx_event(_Event={configure,Rect0}, State) ->
     end;
 
 epx_event(Event={key_press, Sym, Mod, _code}, State) ->
-    if Sym =:= $\e -> %% escape key processing
-	    epx:window_disable_events(State#state.window,[motion]),
-	    if not State#state.esc ->
-		    {noreply, State#state { esc = true }};
-	       true ->
-		    {noreply, State}
-	    end;
+    if Sym =:= $\e, State#state.operation =:= menu ->
+	    State1 = disable_sys_motion(State),
+	    State2 = State1#state { operation = none },
+	    State3 = set_dirty_area(State2),
+	    State4 = user_event(Event,?CALLBACK(State3,key_press),State3),
+	    {noreply, State4};
        true ->
 	    M = set_mod(State#state.keymod, Mod),
 	    State1 = State#state { keymod=M },
 	    State2 = command(Sym, M, State1),
 	    %% FIXME: if command is run then do not call key_press/key_release?
 	    State3 = user_event(Event,?CALLBACK(State1,key_press),State2),
-	    {noreply, State3#state { esc = false }}
+	    {noreply, State3 }
     end;
 epx_event(Event={key_release, _Sym, Mod, _code}, State) ->
     M = clr_mod(State#state.keymod, Mod),
     State1 = State#state { keymod = M },
     State2 = user_event(Event,?CALLBACK(State1,key_release), State1),
     {noreply, State2};
-epx_event(Event={button_press,[wheel_down],_Pos},State) ->
-    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
-    {noreply, State1};
-epx_event(Event={button_release, [wheel_down], _Pos}, State) ->
-    flush_wheel(State#state.window),  %% optional?
-    State1 = user_event(Event, ?CALLBACK(State,button_release), State),
-    {noreply, scroll_down(State1)};
-epx_event(Event={button_press,[wheel_up],_Pos},State) ->
-    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
-    {noreply, State1};
-epx_event(Event={button_release, [wheel_up], _Pos}, State) ->
-    flush_wheel(State#state.window),
-    State1 = user_event(Event, ?CALLBACK(State,button_release), State),
-    {noreply, scroll_up(State1)};
-epx_event(Event={button_press,[wheel_left],_Pos}, State) ->
-    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
-    {noreply, State1};
-epx_event(Event={button_release,[wheel_left],_Pos},State) ->
-    flush_wheel(State#state.window),
-    State1 = user_event(Event, ?CALLBACK(State,button_release), State),
-    {noreply, scroll_left(State1)};
-epx_event(Event={button_press,[wheel_right],_Pos}, State) ->
-    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
-    {noreply, State1};    
-%% Fixme: transform X,Y into view coordinates before callback
-epx_event(Event={button_release,[wheel_right],_Pos},State) ->
-    flush_wheel(State#state.window),
-    State1 = user_event(Event, ?CALLBACK(State,button_release), State),
-    {noreply, scroll_right(State1)};
+
 epx_event(Event={button_press, [left], Pos}, State) ->
     if State#state.operation =:= menu ->
 	    case epx_menu:find_row(State#state.menu,
@@ -807,7 +848,6 @@ epx_event(Event={button_press, [left], Pos}, State) ->
 			    {noreply, State#state { menu=Menu }};
 			{Cmd,Mod} ->
 			    State1 = State#state { menu=Menu },
-			    %% FIXME: avoid button_release?
 			    State2 = command(Cmd,Mod,State1),
 			    State3 = set_dirty_area(State2),
 			    {noreply, State3}
@@ -816,45 +856,17 @@ epx_event(Event={button_press, [left], Pos}, State) ->
        true ->
 	    case scroll_hit(Pos, State) of
 		false ->
-		    Window = State#state.window,
-		    epx:window_enable_events(Window,[motion]),
-		    State1 = user_event(Event, ?CALLBACK(State,button_press),
-					State),
-		    %% FIXME: select callback!
-		    State2 = set_dirty_area(State1),
-		    {noreply, State2#state { operation=select,
-					     pt1=Pos,pt2=Pos }};
+		    %%Window = State#state.window,
+		    State1 = enable_sys_motion(State),
+		    State2 = user_event(Event, ?CALLBACK(State1,button_press),
+					State1),
+		    State3 = select(start,Pos,Pos,State2#state{pt1=Pos,pt2=Pos}),
+		    State4 = set_dirty_area(State3),
+		    {noreply, State4#state { operation=select }};
 		State1 ->
 		    {noreply, State1}
 	    end
     end;
-epx_event(Event={button_release, [left], _Pos}, State) ->
-    flush_motion(State#state.window),
-    State1 =
-	case get_motion(State) of
-	    undefined ->
-		case State#state.pt1 of
-		    undefined ->
-			State;
-		    Pt1 ->
-			case State#state.operation of
-			    select ->
-				State0 = select(Pt1, State#state.pt2, State),
-				set_dirty_area(State0);
-			    _ ->
-				State0 = set_dirty_area(State),
-				user_event(Event, ?CALLBACK(State0,button_release), State0)
-			end
-		end;
-	    {vhndl,_Delta} ->
-		epx:window_disable_events(State#state.window, [motion]),
-		set_motion(State, undefined);
-	    {hhndl,_Delta} ->
-		epx:window_disable_events(State#state.window, [motion]),
-		set_motion(State, undefined)
-	end,
-    {noreply, State1#state{pt1 = undefined, pt2 = undefined, operation = none}};
-
 epx_event(Event={button_press, [right], Pos}, State) ->
     %% check for context menu
     Pos1 = window_to_view_pos(Pos,State),
@@ -874,26 +886,92 @@ epx_event(Event={button_press, [right], Pos}, State) ->
 					State#state { user_state = UserState}),
 		    {noreply, State1};
 		{reply,Menu0,UserState} ->
-		    epx:window_enable_events(State#state.window,[motion]),
+		    State1 = enable_sys_motion(State),
 		    case epx_menu:set_row(Menu0, -1) of
 			undefined ->
-			    State1 = user_event(Event,
-						?CALLBACK(State,button_press),
-						State#state { user_state = UserState}),
-			    {noreply, State1};
+			    State2 = State1#state { user_state = UserState},
+			    State3 = user_event(Event,
+						?CALLBACK(State2,button_press),
+						State2),
+			    {noreply, State3};
 			Menu1 ->
-			    State1 = State#state { pt1 = Pos, pt2 = Pos,
-						   operation = menu,
-						   menu = Menu1 },
-			    {noreply, set_dirty_area(State1)}
+			    State2 = State1#state { pt1 = Pos, pt2 = Pos,
+						    operation = menu,
+						    menu = Menu1,
+						    user_state = UserState },
+			    {noreply, set_dirty_area(State2)}
 		    end
 	    end
     end;
+
+epx_event(Event={button_press,[wheel_left],_Pos}, State) ->
+    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
+    {noreply, State1};
+epx_event(Event={button_press,[wheel_right],_Pos}, State) ->
+    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
+    {noreply, State1};    
+epx_event(Event={button_press,[wheel_down],_Pos},State) ->
+    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
+    {noreply, State1};
+epx_event(Event={button_press,[wheel_up],_Pos},State) ->
+    State1 = user_event(Event, ?CALLBACK(State,button_press), State),
+    {noreply, State1};
+
+
+epx_event(Event={button_release, [left], Pos}, State) ->
+    flush_motion(State#state.window),
+    Pt1 = State#state.pt1,
+    State1 = State#state{pt1 = undefined, pt2 = undefined, operation = none},
+    case get_motion(State1) of
+	undefined ->
+	    case State#state.operation of
+		select ->
+		    State2 = select(stop,Pt1,Pos,State1),
+		    State3 = disable_sys_motion(State2),
+		    State4 = set_dirty_area(State3),
+		    State5 = user_event(Event,?CALLBACK(State4,button_release),State4),
+		    {noreply, State5};
+		menu ->
+		    State2 = disable_sys_motion(State1),
+		    State3 = set_dirty_area(State2),
+		    {noreply, State3};
+		_ ->
+		    State2 = set_dirty_area(State1),
+		    State3 = user_event(Event, ?CALLBACK(State2,button_release), State2),
+		    {noreply, State3}
+	    end;
+	{vhndl,_Delta} ->
+	    State2 = disable_sys_motion(State1),
+	    {noreply, set_motion(State2, undefined)};
+	{hhndl,_Delta} ->
+	    State2 = disable_sys_motion(State1),
+	    {noreply, set_motion(State2, undefined)}
+    end;
+
+epx_event(Event={button_release,[wheel_left],_Pos},State) ->
+    flush_wheel(State#state.window),
+    State1 = user_event(Event, ?CALLBACK(State,button_release), State),
+    {noreply, scroll_left(State1)};
+%% Fixme: transform X,Y into view coordinates before callback
+epx_event(Event={button_release,[wheel_right],_Pos},State) ->
+    flush_wheel(State#state.window),
+    State1 = user_event(Event, ?CALLBACK(State,button_release), State),
+    {noreply, scroll_right(State1)};
+epx_event(Event={button_release, [wheel_up], _Pos}, State) ->
+    flush_wheel(State#state.window),
+    State1 = user_event(Event, ?CALLBACK(State,button_release), State),
+    {noreply, scroll_up(State1)};
+epx_event(Event={button_release, [wheel_down], _Pos}, State) ->
+    flush_wheel(State#state.window),  %% optional?
+    State1 = user_event(Event, ?CALLBACK(State,button_release), State),
+    {noreply, scroll_down(State1)};
+
 epx_event(Event={button_release, _Buttons, _Pos3D}, State) ->
     flush_motion(State#state.window),
     State1 = user_event(Event, ?CALLBACK(State,button_release), State),
     {noreply, State1};
-epx_event({motion,[],Pos},State) ->
+
+epx_event(Event={motion,[],Pos},State) ->
     flush_motion(State#state.window),
     if State#state.operation =:= menu ->
 	    {Row,Menu} = epx_menu:find_row(State#state.menu,
@@ -906,10 +984,10 @@ epx_event({motion,[],Pos},State) ->
 		    {noreply,set_dirty_area(State1)}
 	    end;
        true ->
-	    %% User callback?
-	    {noreply, State}
+	    State1 = user_event(Event, ?CALLBACK(State, motion), State),
+	    {noreply, State1}
     end;
-epx_event({motion,[left],Pos},State) ->
+epx_event(Event={motion,[left],Pos},State) ->
     flush_motion(State#state.window),
     case get_motion(State) of
 	{vhndl,{_DX,Dy}} ->
@@ -927,8 +1005,10 @@ epx_event({motion,[left],Pos},State) ->
 	    State1 = adjust_view_xpos(Vx+Dx, State),
 	    {noreply,set_dirty_area(State1)};
 	_ ->
-	    State1 = select(State#state.pt1, Pos, State#state{ pt2 = Pos }),
-	    {noreply,State1}
+	    State1 = user_event(Event, ?CALLBACK(State, motion), State),
+	    State2 = select(continue,State1#state.pt1,Pos,
+			    State1#state{ pt2 = Pos }),
+	    {noreply,State2}
     end;
 epx_event(Event={enter, _Pos}, State) ->
     State1 = user_event(Event, ?CALLBACK(State,enter), State),
@@ -953,6 +1033,7 @@ epx_event(close, State) ->
     end;
 epx_event(_Event, State) ->
     ?dbg("unhandled epx event: ~p\n", [_Event]),
+    %% FIXME! Handle info!
     {noreply,State}.
 
 
@@ -1002,22 +1083,22 @@ scroll_hit(Pos, State) ->
 	    Xr = (X-X0)/Width,  %% relative hit position
 	    Vx = Xr*get_view_width(State), %% View position
 	    %% hit horizontal scrollbar
-	    epx:window_enable_events(State#state.window, [motion]),
-	    HHndl = get_hhndl(State),
+	    State1 = enable_sys_motion(State),
+	    HHndl = get_hhndl(State1),
 	    case epx_rect:contains(HHndl, Pos) of
 		true ->
 		    %% hit horizontal scroll handle
 		    {Hx,_Hy,_,_} = HHndl,
 		    Dx = -(X-Hx),
-		    State1 = adjust_view_xpos(Vx+Dx, State),
-		    State2 = set_motion(State1,{hhndl,{Dx,0}}),
-		    set_dirty_area(State2);
+		    State2 = adjust_view_xpos(Vx+Dx, State1),
+		    State3 = set_motion(State2,{hhndl,{Dx,0}}),
+		    set_dirty_area(State3);
 		false ->
 		    {_,_,Hw,_} = HHndl,
 		    Dx = -(Hw/2),
-		    State1 = adjust_view_xpos(Vx+Dx, State),
-		    State2 = set_motion(State1,{hhndl,{Dx,0}}),
-		    set_dirty_area(State2)
+		    State2 = adjust_view_xpos(Vx+Dx, State1),
+		    State3 = set_motion(State2,{hhndl,{Dx,0}}),
+		    set_dirty_area(State3)
 	    end;
 	false ->
 	    VScroll = get_vscroll(State),
@@ -1028,22 +1109,22 @@ scroll_hit(Pos, State) ->
 		    Yr = (Y-Y0)/Height,  %% relative hit position
 		    Vy = Yr*get_view_height(State), %% View position
 		    %% hit vertical scrollbar
-		    epx:window_enable_events(State#state.window, [motion]),
+		    State1 = enable_sys_motion(State),
 		    VHndl = get_vhndl(State),
 		    case epx_rect:contains(VHndl, Pos) of
 			true ->
 			    %% hit vertical scroll handle
 			    {_Hx,Hy,_,_} = VHndl,
 			    Dy = -(Y-Hy),
-			    State1 = adjust_view_ypos(Vy+Dy, State),
-			    State2 = set_motion(State1,{vhndl,{0,Dy}}),
-			    set_dirty_area(State2);
+			    State2 = adjust_view_ypos(Vy+Dy, State1),
+			    State3 = set_motion(State2,{vhndl,{0,Dy}}),
+			    set_dirty_area(State3);
 			false ->
 			    {_,_,_,Hh} = VHndl,
 			    Dy = -(Hh/2),
-			    State1 = adjust_view_ypos(Vy+Dy, State),
-			    State2 = set_motion(State1,{vhndl,{0,Dy}}),
-			    set_dirty_area(State2)
+			    State2 = adjust_view_ypos(Vy+Dy, State1),
+			    State3 = set_motion(State2,{vhndl,{0,Dy}}),
+			    set_dirty_area(State3)
 		    end;
 		false ->
 		    false
@@ -1271,6 +1352,28 @@ flush_motion(Win) ->
 	    ok
     end.
 
+enable_sys_motion(State) ->
+    enable_motion_(true, ?SYS_MOTION, State).
+disable_sys_motion(State) ->
+    enable_motion_(false, ?SYS_MOTION, State).
+
+enable_motion_(true, Motion, State) ->
+    Motion1 = State#state.motion bor Motion,
+    if State#state.motion =:= 0 -> %% need to enable?
+	    epx:window_enable_events(State#state.window,[motion]);
+       true ->
+	    ok
+    end,
+    State#state { motion = Motion1 };
+enable_motion_(false, Motion, State) ->
+    Motion1 = State#state.motion band (bnot Motion),
+    if Motion1 =:= 0 -> %% need to disable
+	    epx:window_disable_events(State#state.window, [motion]);
+       true ->
+	    ok
+    end,
+    State#state { motion = Motion1 }.
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -1320,11 +1423,11 @@ code_change(OldVsn, State, Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-select({X1,Y1,_},{X2,Y2,_}, State) ->
+select(Phase,{X1,Y1,_},{X2,Y2,_}, State) ->
     {X11,X22}=minmax(X1,X2),
     {Y11,Y22}=minmax(Y1,Y2),
     Area = {X11,Y11,(X22-X11)+1,(Y22-Y11)+1},
-    user_event({select,Area},?CALLBACK(State,select),State).
+    user_event({Phase,Area},?CALLBACK(State,select),State).
 
 minmax(A, B) when A < B -> {A,B};
 minmax(A, B) -> {B,A}.
@@ -1354,23 +1457,23 @@ transform_event(Event={enter,Pos},State) ->
 transform_event(Event={leave,Pos},State) ->
     Pos1 = window_to_view_pos(Pos,State),
     setelement(2, Event, Pos1);
-transform_event({select,{X,Y,W,H}},State) when is_number(X), is_number(Y),
-					       is_number(W), is_number(H) ->
-    {X1,Y1,_} = window_to_view_pos({X,Y,0},State),
+transform_event({Tag,{X,Y,W,H}},State) when is_number(X), is_number(Y),
+					    is_number(W), is_number(H) ->
+    {X1,Y1} = window_to_view_pos({X,Y,0},State),
     {W1,H1} = window_to_view_dim({W,H},State),
-    {select,{X1,Y1,W1,H1}};
+    {Tag,{X1,Y1,W1,H1}};
 transform_event(Event, _State) ->
     Event.
 
 %% Wx = (Vx - Tx)/Sx + Cx
 %% Vx = (Wx - Cx)*Sx + Tx
 
-%% Transform window coordinate into view coodinate
-window_to_view_pos({Wx,Wy,Wz}, State) ->
+%% Transform window coordinate 3d into view coodinate 2d
+window_to_view_pos({Wx,Wy,_Wz}, State) ->
     #state { scale = {Sx,Sy},
 	     content=#window_content{view_xpos=Tx,view_ypos=Ty}} = State,
     {Cx,Cy} = drawing_origin(State),
-    { (Wx-Cx)*Sx + Tx, (Wy-Cy)*Sy + Ty, Wz}.
+    { (Wx-Cx)*Sx + Tx, (Wy-Cy)*Sy + Ty}.
 
 window_to_view_xpos(Wx, State) ->
     #state { scale = {Sx,_Sy},content=#window_content{view_xpos=Tx}} = State,
@@ -1726,7 +1829,8 @@ set_view_rect(S=#state { content = WD }, {X,Y,W,H}) ->
 					    view_top   = Y,
 					    view_bottom = Y+H }}.
 
-get_motion(#state { content = WD }) -> WD#window_content.motion.
+get_motion(#state { content = WD }) -> 
+    WD#window_content.motion.
 
 set_motion(S=#state { content = WD }, Motion) ->
     S#state { content = WD#window_content { motion = Motion }}.
@@ -1734,8 +1838,6 @@ set_motion(S=#state { content = WD }, Motion) ->
 draw_content(Pixmap, Dirty, State) ->
     case ?CALLBACK(State, draw) of
 	undefined ->
-	    ?dbg("warning: no draw/3 function for module ~s\n", 
-		 [State#state.user_mod]),
 	    State;
 	Draw ->
 	    Rect = if Dirty =:= undefined ->
@@ -1764,6 +1866,7 @@ draw_top_bar(Pixels, State) ->
 	    State
     end.
 
+%% bottom - status bar
 draw_bottom_bar(Pixels, State) ->
     case toolbars(State) of
 	{_Left,_Right,_Top,Bottom}  
