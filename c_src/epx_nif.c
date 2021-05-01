@@ -4045,7 +4045,9 @@ static ERL_NIF_TERM canvas_draw(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_object(env, argv[1], &pixmap_res, (void**) &pixmap))
 	return enif_make_badarg(env);
-    epx_canvas_draw(canvas, pixmap);
+    epx_canvas_draw(canvas, 0, 0, 0, 0,
+		    pixmap->width, pixmap->height,
+		    pixmap, EPX_FLAG_BLEND);
     return ATOM(ok);
 }
 

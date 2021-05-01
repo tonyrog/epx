@@ -995,8 +995,6 @@ canvas_set_color(_Canvas,_I,_Color) ->
 	  ok.
 canvas_set_operation(_Canvas,_I,_Operation) ->
     ?nif_stub().
--spec canvas_draw(Canvas::epx_canvas(),Pixmap::epx_pixmap()) ->
-	  ok.
 
 -spec canvas_set_params(Canvas::epx_canvas(),I::canvas_elem(),
 			D::number(), E::number(), F::number()) -> ok.
@@ -1006,8 +1004,12 @@ canvas_set_params(_Cancas,_I,_D,_E,_F) ->
 -spec canvas_set_params(Canvas::epx_canvas(),I::canvas_elem(),
 			A::number(),B::number(),C::number(),
 			D::number(), E::number(), F::number()) -> ok.
+
 canvas_set_params(_Cancas,_I,_A,_B,_C,_D,_E,_F) ->
     ?nif_stub().
+
+-spec canvas_draw(Canvas::epx_canvas(),Pixmap::epx_pixmap()) ->
+	  ok.
 
 canvas_draw(_Canvas,_Pixmap) ->
     ?nif_stub().

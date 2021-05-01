@@ -26,6 +26,9 @@
 -export([magic/1, mime_type/0, extensions/0,
 	 read_info/1, write_info/2,
 	 read/2, write/2]).
+-export([write_data/5, write_data/8]).
+-export([format_data/4, format_data/7]).
+-export([format_pixel_data/2]).
 
 -include("../include/epx_image.hrl").
 -include("dbg.hrl").
@@ -415,20 +418,36 @@ write(Fd, IMG) ->
     Width  = epx:pixmap_info(Pixmap, width),
     Height = epx:pixmap_info(Pixmap, height),
     Format = epx:pixmap_info(Pixmap, pixel_format),
+    PixelData = get_pixel_data(Pixmap,Width,Height),
+    write_data(Fd,PixelData,Width,Height,Format).
+
+write_data(Fd, PixelData, Width, Height, Format) ->
+    write_data(Fd, PixelData, Width, Height, Format, 0, 0, 0).
+    
+write_data(Fd, PixelData, Width, Height, Format,
+	   CompressionMethod, FilterMethod, InterlaceMethod) ->
+    PngData = format_data(PixelData, Width, Height, Format,
+			  CompressionMethod, FilterMethod, InterlaceMethod),
+    file:write(Fd, PngData).
+
+format_data(PixelData, Width, Height, Format) ->
+    format_data(PixelData, Width, Height, Format, 0,0,0).
+
+format_data(PixelData, Width, Height, Format,
+	    CompressionMethod, FilterMethod, InterlaceMethod) ->
+    {ColorType,BitDepth} = color_type(Format), 
     MAGIC = <<137, 80, 78, 71, 13, 10, 26, 10>>,
-    {ColorType,BitDepth} = color_type(Format),
-    CompressionMethod = 0,
-    FilterMethod = 0,
-    InterlaceMethod = 0,
     IHDR = png_chunk(<<"IHDR">>,<< Width:32, Height:32,
 				   BitDepth:8,ColorType:8,
 				   CompressionMethod:8,FilterMethod:8, 
 				   InterlaceMethod:8 >>),
-    PixelData = get_pixel_data(Pixmap,Width,Height),
     IDAT = png_chunk(<<"IDAT">>, PixelData),
     IEND = png_chunk(<<"IEND">>, <<>>),
-    file:write(Fd, <<MAGIC/binary, IHDR/binary, IDAT/binary, IEND/binary>>).
+    <<MAGIC/binary, IHDR/binary, IDAT/binary, IEND/binary>>.
 
+%% use this function if pixel data is packed like R,G,B
+format_pixel_data(Data,RowBytes) ->
+    zlib:compress([[<<0>>,Row] || <<Row:RowBytes/binary>> <= Data ]).
 
 get_pixel_data(Pixmap,W,H) ->
     Pixels = get_pixels(Pixmap,W,H),

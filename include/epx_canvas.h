@@ -81,6 +81,11 @@ extern int epx_canvas_set_operation(epx_canvas_t* canvas, int a,
 				    epx_pixel_operation_t pixop);
 extern int epx_canvas_set_param(epx_canvas_t* canvas, int i, int k,
 				double param);
-extern int epx_canvas_draw(epx_canvas_t* canvas, epx_pixmap_t* pixmap);
+extern int epx_canvas_draw(epx_canvas_t* canvas,
+			   int x_src, int y_src,
+			   int x_dst, int y_dst,
+			   unsigned int width, unsigned int height,
+			   epx_pixmap_t* pixmap,
+			   epx_flags_t flags);
 
 #endif

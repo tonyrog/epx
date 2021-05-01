@@ -52,7 +52,7 @@
 
 -define(emit_record(T,R), emit_record(R, record_info(fields, T))).
 
-%% -define(debug, true).
+-define(debug, true).
 -include("dbg.hrl").
 -ifdef(debug).
 -define(dbg_emit_record(T,R), emit_record(R, record_info(fields, T))).
@@ -71,14 +71,14 @@
 
 
 %% YCbCr => RGB (JPG)
--define(R(Y,Cb,Cr), ((Y) + (1.402)*((Cr)-128))).
--define(G(Y,Cb,Cr), ((Y) - 0.34414*((Cb)-128) - 0.71414*((Cr)-128))).
+-define(R(Y,Cb,Cr), ((Y) + (1.4020)*((Cr)-128))).
+-define(G(Y,Cb,Cr), ((Y) - 0.3441363*((Cb)-128) - 0.71413636*((Cr)-128))).
 -define(B(Y,Cb,Cr), ((Y) + 1.772*((Cb)-128))).
 
 %% RGB => YCbCr
 -define(Y(R,G,B), (0.299*(R) + 0.587*(G) + 0.114*(B))).
--define(Cb(R,G,B), (-0.1687*(R) - 0.3313*(G) + 0.5*(B) + 128)).
--define(Cr(R,G,B), (0.5*R - 0.4187*(G) - 0.0813*(B) + 128)).
+-define(Cb(R,G,B), (-0.168736*(R) - 0.331264*(G) + 0.500*(B) + 128)).
+-define(Cr(R,G,B), (0.500*R - 0.4186876*(G) - 0.08131241*(B) + 128)).
 
 magic(<<?M_MARK,?M_SOI,?M_MARK,?M_APP1,_Len:16,"Exif",0,0,_/binary>>) ->
     true;
@@ -91,9 +91,14 @@ mime_type() -> "image/jpeg".
 
 extensions() -> [".jpeg", ".jpg"].
 
-
+read_info(Binary) when is_binary(Binary) ->
+    JFd = #jfd { fd=undefined, bits=(<<>>), bytes=Binary },
+    read_info_(JFd);
 read_info(Fd) ->
-    JFd = jfd(Fd),
+    JFd = #jfd { fd=Fd, bits=(<<>>), bytes=(<<>>) },
+    read_info_(JFd).
+
+read_info_(JFd) ->
     case jfd_read_bytes(JFd, 2) of
 	{JFd1, <<?M_MARK,?M_SOI>>} ->
 	    read_segments(JFd1, 
@@ -518,21 +523,15 @@ cvt_ycbcr_row([],[],[],Data) ->
 
 %% Y,Cb,Cr are direct none leveled input so add +128
 append_rgb(Y,Cb,Cr,Pixels) ->
-    Y1  = Y + 128,
-    Cr1 = Cr - 128 + 128,
-    Cb1 = Cb - 128 + 128,
-    R = clamp(round(Y1 + 1.402*Cr1)),
-    G = clamp(round(Y1 - 0.34414*Cb1 - 0.71414*Cr1)),
-    B = clamp(round(Y1 + 1.772*Cb1)),
+    Y1  = Y   + 128,
+    Cr1 = Cr  + 128,
+    Cb1 = Cb  + 128,
+    R = clamp_byte(round(?R(Y1,Cr1,Cb1))),
+    G = clamp_byte(round(?G(Y1,Cr1,Cb1))),
+    B = clamp_byte(round(?B(Y1,Cr1,Cb1))),
     <<Pixels/binary,R,G,B>>.
-clamp(X) when X > 255 -> 255;
-clamp(X) when X < 0 -> 0;
-clamp(X) -> X.
 
-
-
-jfd(Fd) ->
-    #jfd { fd=Fd, bits=(<<>>), bytes=(<<>>) }.
+clamp_byte(X) -> max(0,min(X,255)).
 
 jfd_skip(JFd) ->
     case jfd_read_bytes(JFd, 1) of
@@ -1051,7 +1050,7 @@ rzigzag([A0, A1, A8,A16, A9, A2, A3,A10,
      [A56,A57,A58,A59,A60,A61,A62,A63]].
 
 %%
-%% Conver from 8x8 matrix form to block mode
+%% Convert from 8x8 matrix form to block mode
 %%
 zigzag([[A0, A1, A5, A6,A14,A15,A27,A28],
 	[A2, A4, A7,A13,A16,A26,A29,A42],

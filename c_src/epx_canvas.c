@@ -207,19 +207,30 @@ int epx_canvas_set_param(epx_canvas_t* canvas, int i, int k, double param)
     return 1;
 }
 
-// Fixme rectangle and flags!
-int epx_canvas_draw(epx_canvas_t* canvas, epx_pixmap_t* pixmap)
+int epx_canvas_draw(epx_canvas_t* canvas,
+		    int x_src, int y_src,
+		    int x_dst, int y_dst,
+		    unsigned int width, unsigned int height,
+		    epx_pixmap_t* pixmap,
+		    epx_flags_t flags)
 {
-    int y;
-    epx_flags_t flags = EPX_FLAG_BLEND;
+    int y, xd, yd;
+    epx_rect_t r;
+    epx_rect_t r0 = {{x_dst,y_dst},{width,height}};
     // FIXME: stack arrays can not be trusted (use thread cache?)
     size_t n = canvas->nelems;
     int is_set[n];
     epx_pixel_t pixel[n];
 
-    for (y = 0; y < (int)pixmap->height; y++) {
-	int x = 0;
-	int k;	
+    if (!epx_rect_intersect(&r0, &pixmap->clip, &r))
+	return 0;
+
+    xd = r.xy.x - x_src;
+    yd = r.xy.y - y_src;
+
+    for (y = y_src; y < (int)height; y++) {
+	int x = x_src;
+	int k;
 	
 	// start_x, FIXME: make a step function for y!
 	// in this case x=0 so compiler should optimise that!
@@ -237,7 +248,7 @@ int epx_canvas_draw(epx_canvas_t* canvas, epx_pixmap_t* pixmap)
 	    canvas->state[k].U = U0;
 	}
 	
-	for (x = 0; x < (int)pixmap->width; x++) {
+	for (x = x_src; x < (int)width; x++) {
 	    epx_pixel_t pk = (epx_pixel_t) EPX_PIXEL_TRANSPARENT;
 	    int pn = 0;
 	    // evaluate the "tree" structure from the leaves to the root
@@ -313,7 +324,7 @@ int epx_canvas_draw(epx_canvas_t* canvas, epx_pixmap_t* pixmap)
 		}
 	    }
 	    
-	    epx_pixmap_put_pixel(pixmap, x, y, flags, pk);
+	    epx_pixmap_put_pixel(pixmap, x+xd, y+yd, flags, pk);
 	    
 	    // step_x, advance all states
 	    for (k = 0; k < (int)canvas->nparams; k++) {
