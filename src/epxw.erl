@@ -756,20 +756,30 @@ handle_info(Info, State) ->
     end.
 
 reply({reply,Reply,UState}) ->
-    State = state(),
+    State = dstate(),
     {reply, Reply, State#state { user_state = UState }};
 reply({reply,Reply,UState,Arg}) ->
-    State = state(),
+    State = dstate(),
     {reply, Reply, State#state { user_state = UState }, Arg};
 reply({noreply,UState}) ->
-    State = state(),
+    State = dstate(),
     {noreply, State#state { user_state = UState }};
 reply({noreply,UState,Arg}) ->
-    State = state(),
+    State = dstate(),
     {noreply, State#state { user_state = UState },Arg};
 reply({stop, Reason, UState}) ->
-    State = state(),
+    State = dstate(),
     {stop, Reason, State#state { user_state = UState }}.
+
+%% redraw state if dirty
+dstate() ->
+    State = state(),
+    if State#state.dirty =:= undefined ->
+	    State;
+       true ->
+	    draw(State)
+    end.
+
 
 -spec handle_continue(Info :: term(), State :: term()) ->
 	  {noreply, NewState :: term()} |
