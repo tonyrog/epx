@@ -22,6 +22,7 @@ color(Scheme, Name) when is_list(Name) ->
     color(Scheme, maps:get(string:lowercase(Name), Map)).
 
 color_number(_Scheme, Index) when is_integer(Index) -> Index;
+color_number(_Scheme, RGB) when is_tuple(RGB) -> RGB;
 color_number(Scheme, Name) when is_atom(Name) ->
     Map = epx_palette:color_from_name(Scheme),
     maps:get(Name, Map);

@@ -22,7 +22,8 @@
 const epx_t2d_t epx_identity_ctm =
 {
     .sx = 1.0f, .ry = 0.0f, .tx = 0.0f,
-    .rx = 0.0f, .sy = 1.0f, .ty = 0.0f
+    .rx = 0.0f, .sy = 1.0f, .ty = 0.0f,
+    .version = 0
 };
 
 void epx_t2d_transform_xy(epx_t2d_t* t, float* xp, float* yp)
@@ -54,6 +55,7 @@ void epx_t2d_identity(epx_t2d_t* dst)
 
 void epx_t2d_set(float elem[6], epx_t2d_t* dst)
 {
+    dst->version++;
     dst->sx = elem[T_SX];
     dst->ry = elem[T_RY];
     dst->tx = elem[T_TX];
@@ -90,6 +92,7 @@ void epx_t2d_compose(epx_t2d_t* t, epx_t2d_t* s, epx_t2d_t* dst)
     float sy = trx*s->ry + tsy*s->sy;
     float tx = tsx*s->tx + try*s->ty + t->tx;
     float ty = trx*s->tx + tsy*s->ty + t->ty;
+    dst->version++;
     dst->sx = sx;
     dst->ry = ry;
     dst->sy = sy;
@@ -106,6 +109,7 @@ void epx_t2d_compose(epx_t2d_t* t, epx_t2d_t* s, epx_t2d_t* dst)
 //
 void epx_t2d_translate(epx_t2d_t* t, float tx, float ty, epx_t2d_t* dst)
 {
+    dst->version++;
     dst->tx = t->tx + t->sx*tx + t->ry*ty;
     dst->ty = t->ty + t->rx*tx + t->sy*ty;
     dst->sx = t->sx;
@@ -122,6 +126,7 @@ void epx_t2d_translate(epx_t2d_t* t, float tx, float ty, epx_t2d_t* dst)
 //
 void epx_t2d_scale(epx_t2d_t* t, float sx, float sy, epx_t2d_t* dst)
 {
+    dst->version++;    
     dst->sx = t->sx*sx;
     dst->ry = t->ry*sy;
     dst->rx = t->rx*sx;    
@@ -146,6 +151,7 @@ void epx_t2d_rotate(epx_t2d_t* t, float a, epx_t2d_t* dst)
     ax =  t->sx*c + t->ry*s;
     ay = -t->sx*s + t->ry*c;
 
+    dst->version++;
     dst->sx = ax;
     dst->ry = ay;
     dst->tx = t->tx;

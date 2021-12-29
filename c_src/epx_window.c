@@ -43,10 +43,10 @@ int epx_window_init(epx_window_t* win, int x, int y,
 {
     EPX_OBJECT_INIT(win, EPX_WINDOW_TYPE);
     win->backend = 0;
+    win->owner   = 0;    
     win->user    = 0;
-    win->owner   = 0;
+    win->mask    = 0;    
     win->opengl  = 0;
-    win->mask    = 0;
     epx_rect_set(&win->area, x, y, width, height);
     epx_rect_set(&win->rarea, x, y, width, height);
     return 0;

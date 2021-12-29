@@ -25,7 +25,7 @@ struct _epx_backend_t;
 typedef struct _epx_window_t {
     EPX_OBJECT_MEMBERS(struct _epx_window_t);
     struct _epx_backend_t* backend;       // backend pointer if attached
-    void* owner;                          // user field (for erlang pid)
+    void* owner;                          // user field (creator pid)
     void* user;                           // extra user data
     uint32_t mask;                        // event mask, FIXME lock!
     int opengl;                           // window supportes OpenGL

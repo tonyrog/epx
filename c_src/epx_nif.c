@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <math.h>
 
+#define NIF_ERLANG   // use nif logging with %T
 #include "erl_nif.h"
 #include "../include/epx.h"
 
@@ -50,6 +51,12 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info);
 static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
 			 ERL_NIF_TERM load_info);
 static void epx_unload(ErlNifEnv* env, void* priv_data);
+
+/*
+    NIF("bitmap_put_bits", 8, bitmap_put_bits)			\
+    NIF("bitmap_copy_to", 2, bitmap_copy_to)			\
+    NIF("bitmap_scroll", 6, bitmap_scroll)			\
+*/
 
 #define NIF_LIST \
     NIF("debug",         1,  debug)				\
@@ -96,6 +103,19 @@ static void epx_unload(ErlNifEnv* env, void* priv_data);
     NIF("pixmap_ltm_scale", 3, pixmap_ltm_scale)		\
     NIF("pixmap_ltm_rotate", 2, pixmap_ltm_rotate)		\
     NIF("pixmap_ltm_reset", 1, pixmap_ltm_reset)		\
+    NIF("bitmap_create", 2, bitmap_create)			\
+    NIF("bitmap_put_bit", 4, bitmap_put_bit)			\
+    NIF("bitmap_get_bit", 3, bitmap_get_bit)			\
+    NIF("bitmap_copy", 1, bitmap_copy)				\
+    NIF("bitmap_copy_area", 8, bitmap_copy_area)		\
+    NIF("bitmap_info_",  2, bitmap_info)			\
+    NIF("bitmap_set_clip", 2, bitmap_set_clip)			\
+    NIF("bitmap_fill", 2, bitmap_fill)				\
+    NIF("bitmap_fill_rectangle", 6, bitmap_fill_rectangle)	\
+    NIF("bitmap_draw_rectangle", 6, bitmap_draw_rectangle)	\
+    NIF("bitmap_draw_ellipse", 6, bitmap_draw_ellipse)		\
+    NIF("bitmap_fill_ellipse", 6, bitmap_fill_ellipse)		\
+    NIF("bitmap_draw", 10, bitmap_draw)				\
     NIF("dict_create", 0, dict_create)				\
     NIF("dict_copy",   1, dict_copy)				\
     NIF("dict_set",    3, dict_set)				\
@@ -152,7 +172,13 @@ static void epx_unload(ErlNifEnv* env, void* priv_data);
     NIF("canvas_set_operation", 3, canvas_set_operation)	\
     NIF("canvas_set_params", 5, canvas_set_params)		\
     NIF("canvas_set_params", 8, canvas_set_params)		\
-    NIF("canvas_draw", 2, canvas_draw)
+    NIF("canvas_draw", 2, canvas_draw)				\
+    NIF("poly_create", 0, poly_create)				\
+    NIF("poly_set",    2, poly_set)				\
+    NIF("poly_set",    3, poly_set)				\
+    NIF("poly_draw",   5, poly_draw)				\
+    NIF("poly_info",   2, poly_info)				\
+    NIF("poly_info",   3, poly_info)
 
 // Declare all nif functions
 #undef NIF
@@ -211,7 +237,6 @@ struct _epx_queue_t;
 typedef struct epx_message_t
 {
     epx_message_type_t type;
-    int dtor;   // message is sent from destructor
     struct _epx_thread_t* sender;
     union {
 	epx_window_t* window;  // window attach/detach
@@ -264,13 +289,30 @@ typedef struct _epx_thread_t {
     void*       priv;    // private (upgrade) data
 } epx_thread_t;
 
+// Object wrapper
+typedef struct _epx_nif_object_t {
+    epx_object_t* epx_obj;          // object pointer
+} epx_nif_object_t;
+
 // Backend wrapper
 typedef struct _epx_nif_backend_t {
+    epx_backend_t* backend;           // real backend
+    ErlNifPid      own;               // creating erlang process    
     struct _epx_nif_backend_t* next;  // upgrade list
-    epx_thread_t*  main;     // main thread
-    ErlNifPid*     owner;    // creating erlang process (not used right now)
-    epx_backend_t* backend;  // real backend
+    epx_thread_t*  main;              // main thread
 } epx_nif_backend_t;
+
+// Window wrapper
+typedef struct _epx_nif_window_t {
+    epx_window_t* window;    
+    ErlNifPid     own;      // "owner" pid storage
+} epx_nif_window_t;
+
+// Pixmap wrapper
+typedef struct _epx_nif_pixmap_t {
+    epx_pixmap_t* pixmap;    
+    ErlNifPid     own;      // "owner" pid storage
+} epx_nif_pixmap_t;
 
 // Wrapper to handle reource atom name etc.
 typedef struct {
@@ -292,6 +334,7 @@ typedef struct {
 
 static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx);
 
+/********
 static ERL_NIF_TERM backend_list(ErlNifEnv* env, int argc,
 				 const ERL_NIF_TERM argv[]);
 
@@ -329,6 +372,7 @@ static ERL_NIF_TERM simd_set(ErlNifEnv* env, int argc,
 
 static ERL_NIF_TERM debug(ErlNifEnv* env, int argc,
 			  const ERL_NIF_TERM argv[]);
+*/
 
 #undef NIF
 #ifdef NIF_TRACE
@@ -342,16 +386,16 @@ ErlNifFunc epx_funcs[] =
     NIF_LIST
 };
 
-
-epx_resource_t dict_res;
-epx_resource_t pixmap_res;
-epx_resource_t gc_res;
-epx_resource_t font_res;
-epx_resource_t backend_res;
-epx_resource_t window_res;
-epx_resource_t anim_res;
-epx_resource_t canvas_res;
-
+ErlNifResourceType* dict_res;
+ErlNifResourceType* gc_res;
+ErlNifResourceType* font_res;
+ErlNifResourceType* backend_res;
+ErlNifResourceType* animation_res;
+ErlNifResourceType* canvas_res;
+ErlNifResourceType* poly_res;
+ErlNifResourceType* bitmap_res;
+ErlNifResourceType* pixmap_res;
+ErlNifResourceType* window_res;
 
 // Atom macros
 #define ATOM(name) atm_##name
@@ -384,6 +428,7 @@ DECL_ATOM(none);
 
 // epx types
 DECL_ATOM(epx_pixmap);
+DECL_ATOM(epx_bitmap);
 DECL_ATOM(epx_window);
 DECL_ATOM(epx_backend);
 DECL_ATOM(epx_dict);
@@ -391,6 +436,7 @@ DECL_ATOM(epx_gc);
 DECL_ATOM(epx_font);
 DECL_ATOM(epx_animation);
 DECL_ATOM(epx_canvas);
+DECL_ATOM(epx_poly);
 
 // simd
 DECL_ATOM(emu);
@@ -437,6 +483,18 @@ DECL_ATOM(x);
 DECL_ATOM(y);
 // DECL_ATOM(backend);
 DECL_ATOM(event_mask);
+
+// poly_info
+//DECL_ATOM(count);
+DECL_ATOM(box);
+DECL_ATOM(edge);
+DECL_ATOM(sedge);
+DECL_ATOM(vertex);
+DECL_ATOM(pos);
+DECL_ATOM(slope);
+// poly flags
+DECL_ATOM(absolute);  // default
+DECL_ATOM(relative);
 
 // Flags
 DECL_ATOM(solid);
@@ -683,18 +741,23 @@ DECL_ATOM(green);
 DECL_ATOM(blue);
 DECL_ATOM(calpha);
 
-int nif_enter(const char* funcname, int argc, const ERL_NIF_TERM argv[])
+static void nif_emit_log(int level, char* file, int line, ...)
 {
-    int i;
-    enif_fprintf(stderr, "epx:%s(", funcname, argc);
-    if (argc > 0)
-	enif_fprintf(stderr, "%T", argv[0]);
-    for (i = 1; i < argc; i++)
-	enif_fprintf(stderr, ",%T", argv[i]);
-    enif_fprintf(stderr, ")\r\n");
-    return 0;
-}
+    va_list ap;
+    char* fmt;
 
+    if ((level == DLOG_EMERGENCY) ||
+	((epx_debug_level >= 0) && (level <= epx_debug_level))) {
+	int save_errno = errno;
+	va_start(ap, line);
+	fmt = va_arg(ap, char*);
+	enif_fprintf(stderr, "%s:%d: ", file, line);
+	enif_vfprintf(stderr, fmt, ap);
+	enif_fprintf(stderr, "\r\n");
+	va_end(ap);
+	errno = save_errno;
+    }
+}
 
 // some primitive argument access functions
 
@@ -776,8 +839,8 @@ static int get_coord(ErlNifEnv* env,
 	if (!get_fsigned(env, x, &xf)) return 0;
 	if (!get_fsigned(env, y, &yf)) return 0;
 	epx_t2d_transform_xy(ctm, &xf, &yf);
-	*xp = (int) round(xf);
-	*yp = (int) round(yf);
+	*xp = (int) roundf(xf);
+	*yp = (int) roundf(yf);
     }
     else {
 	if (!get_signed(env, x, xp)) return 0;
@@ -1124,120 +1187,198 @@ static void epx_thread_exit(void* value)
     enif_thread_exit(value);
 }
 
+
+static int backend_send(epx_backend_t* backend, epx_message_t* mp)
+{
+    epx_nif_backend_t* nif_backend = backend->res;
+    return epx_message_send(nif_backend->main, 0, mp);
+}
+
 /******************************************************************************
  *
  *   Resource destructors
  *
  *****************************************************************************/
 
+
+static ERL_NIF_TERM* object_type[] =
+{
+    [EPX_BACKEND_TYPE] = &ATOM(epx_backend),
+    [EPX_WINDOW_TYPE]  = &ATOM(epx_window),
+    [EPX_PIXMAP_TYPE]  = &ATOM(epx_pixmap),
+    [EPX_BITMAP_TYPE]  = &ATOM(epx_bitmap),
+    [EPX_GC_TYPE]      = &ATOM(epx_gc),
+    [EPX_DICT_TYPE]    = &ATOM(epx_dict),
+    [EPX_FONT_TYPE]    = &ATOM(epx_font),
+    [EPX_ANIM_TYPE]    = &ATOM(epx_animation),
+    [EPX_CANVAS_TYPE]  = &ATOM(epx_canvas),
+    [EPX_POLY_TYPE]    = &ATOM(epx_poly)
+};
+
+
+typedef epx_object_t* (*create_fn_t)(void);
+typedef epx_object_t* (*copy_fn_t)(epx_object_t*);
+	 
+static create_fn_t object_create[] =
+{ 
+    [EPX_GC_TYPE]      = (create_fn_t) epx_gc_create,
+    [EPX_DICT_TYPE]    = (create_fn_t) epx_dict_create,
+    [EPX_FONT_TYPE]    = (create_fn_t) epx_font_create,
+    [EPX_ANIM_TYPE]    = (create_fn_t) epx_anim_create,
+    [EPX_CANVAS_TYPE]  = (create_fn_t) epx_canvas_create,
+    [EPX_POLY_TYPE]    = (create_fn_t) epx_poly_create
+};
+
+static copy_fn_t object_copy[] =
+{
+    [EPX_BITMAP_TYPE]  = (copy_fn_t) epx_bitmap_copy,        
+    [EPX_PIXMAP_TYPE]  = (copy_fn_t) epx_pixmap_copy,    
+    [EPX_GC_TYPE]      = (copy_fn_t) epx_gc_copy,
+    [EPX_DICT_TYPE]    = (copy_fn_t) epx_dict_copy,
+};
+
 static void object_dtor(ErlNifEnv* env, void* obj)
 {
     (void) env;
-    DEBUGF("Object: destruct obj=%p, ref=%lu", obj, ((epx_object_t*)obj)->refc);
-    epx_object_unref(obj);
+    epx_object_t* epx_obj = ((epx_nif_object_t*) obj)->epx_obj;
+    DEBUGF("OBJECT_DTOR: obj=%T:%p, refc=%lu",
+	   *object_type[epx_obj->type],
+	   epx_obj, epx_object_refc(epx_obj));
+    epx_object_unref(epx_obj);
 }
 
 static void backend_dtor(ErlNifEnv* env, void* obj)
 {
     epx_ctx_t* ctx = (epx_ctx_t*) enif_priv_data(env);
-    epx_nif_backend_t* backend = (epx_nif_backend_t*) obj;
+    epx_nif_backend_t* nif_backend = (epx_nif_backend_t*) obj;
+    epx_backend_t* backend = nif_backend->backend;
     epx_nif_backend_t** pp;
     epx_message_t m;
 
-    DEBUGF("BACKEND_DTOR: obj=%p, refc=%lu",
-	   (backend->backend),
-	   ((epx_object_t*) (backend->backend))->refc);
+    DEBUGF("BACKEND_DTOR: obj=%p, refc=%lu", backend, epx_object_refc(backend));
 
-    if (backend->owner) {
-	enif_free(backend->owner);
-	backend->owner = 0;
-    }
-
+    backend->owner = NULL;
     // unlock backend from context
     enif_rwlock_rwlock(ctx->backend_list_lock);
     pp = &ctx->backend_list;
-    while(*pp != backend)
+    while(*pp != nif_backend)
 	pp = &(*pp)->next;
-    *pp = backend->next;
+    *pp = nif_backend->next;
     enif_rwlock_rwunlock(ctx->backend_list_lock);
 
     // let reaper kill it, to avoid dead lock
     m.type = EPX_MESSAGE_KILL;
-    m.thread = backend->main;
+    m.thread = nif_backend->main;
     epx_message_send(ctx->reaper, 0, &m);
 }
 
 static void pixmap_dtor(ErlNifEnv* env, void* obj)
 {
     (void) env;
-    epx_pixmap_t* pixmap = (epx_pixmap_t*) obj;
+    epx_nif_pixmap_t* pm = (epx_nif_pixmap_t*) obj;
+    epx_pixmap_t* pixmap = pm->pixmap;
 
-    DEBUGF("PIXMAP_DTOR: obj=%p, refc=%lu",
-		   obj, ((epx_object_t*)obj)->refc);
-    if (pixmap->user) {
+    DEBUGF("PIXMAP_DTOR: obj=%p, user=%p, onwer=%p, refc=%lu",
+	   obj, pixmap->user, pixmap->owner, epx_object_refc(pixmap));
+    pm->pixmap = NULL;
+    pixmap->owner  = NULL;  // mark dtor 
+    if (pixmap->user) {     // mapped
 	epx_message_t m;
-	epx_nif_backend_t* backend = pixmap->user;
-
+	epx_backend_t* backend = pixmap->user;
+	epx_nif_backend_t* nif_backend = (epx_nif_backend_t*) backend->res;
 	m.type = EPX_MESSAGE_PIXMAP_DETACH;
-	m.dtor = 1;
 	m.pixmap = pixmap;
-	epx_message_send(backend->main, 0, &m);
+	epx_object_ref(m.pixmap);
+	epx_message_send(nif_backend->main, 0, &m);
     }
-    else {
-	epx_object_unref(pixmap);
-    }
-
+    epx_object_unref(pixmap);
 }
 
 static void window_dtor(ErlNifEnv* env, void* obj)
 {
     (void) env;
-    epx_window_t* window = (epx_window_t*) obj;
+    epx_nif_window_t* nw = (epx_nif_window_t*) obj;
+    epx_window_t* window = nw->window;
 
-    DEBUGF("WINDOW_DTOR: obj=%p, refc=%lu",
-	       obj, ((epx_object_t*)obj)->refc);
-
-    if (window->owner) {
-	enif_free(window->owner);
-	window->owner = 0;
-    }
-
+    DEBUGF("WINDOW_DTOR: obj=%p, user=%p, owner=%p, refc=%lu",
+	   obj, window->user, window->owner, epx_object_refc(window));
+    nw->window = NULL;
+    window->owner = NULL;   // mark dtor 
     if (window->user) {
 	epx_message_t m;
-	epx_nif_backend_t* backend = window->user;
-
+	epx_backend_t* backend = window->user;
+	epx_nif_backend_t* nif_backend = (epx_nif_backend_t*) backend->res;
 	m.type = EPX_MESSAGE_WINDOW_DETACH;
-	m.dtor = 1;
 	m.window = window;
-	epx_message_send(backend->main, 0, &m);
+	epx_object_ref(m.window);
+	epx_message_send(nif_backend->main, 0, &m);
     }
-    else {
-	epx_object_unref(window);
-    }
+    epx_object_unref(window);
 }
 
 /******************************************************************************
  *
- *   Epx resource init
+ *   Epx resource
  *
  *****************************************************************************/
 
-static int epx_resource_init(ErlNifEnv* env,
-			     epx_resource_t* res,
-			     char* name,
-			     ErlNifResourceDtor* dtor,
-			     ErlNifResourceFlags flags,
-			     ErlNifResourceFlags* tried)
+static epx_nif_object_t* alloc_object(ErlNifResourceType* res,
+				      epx_object_t* epx_obj)
 {
-    res->name = name;
-    res->type = enif_make_atom(env, name);
-    res->res  = enif_open_resource_type(env, 0, name, dtor, flags, tried);
-    return 0;
+    epx_nif_object_t* obj = NULL;
+    if (epx_obj != NULL) {
+	obj = enif_alloc_resource(res, sizeof(epx_nif_object_t));
+	obj->epx_obj = epx_obj;
+	epx_obj->res = obj;      // connect to resource object
+    }
+    return obj;
 }
+
+static epx_object_t* create_object(ErlNifResourceType* res,
+				   epx_object_type_t type)
+{
+    epx_object_t* epx_obj = (object_create[type])();
+    if ((epx_obj != NULL) && (alloc_object(res, epx_obj) == NULL)) {
+	epx_object_unref(epx_obj);
+	return NULL;
+    }
+    return epx_obj;
+}
+
+static epx_object_t* copy_object(ErlNifResourceType* res,
+				     epx_object_t* epx_obj)
+{
+    epx_object_t* epx_obj_copy = (object_copy[epx_obj->type])(epx_obj);
+    if ((epx_obj_copy != NULL) && (alloc_object(res, epx_obj_copy) == NULL)) {
+	epx_object_unref(epx_obj);
+	return NULL;
+    }
+    return epx_obj_copy;
+}
+
 
 void* epx_resource_alloc(epx_resource_t* rp, size_t size)
 {
     return enif_alloc_resource(rp->res, size);
+}
+
+static ErlNifResourceType* epx_resource_create(ErlNifEnv* env,
+					       const char* name,
+					       ErlNifResourceDtor* dtor)
+{
+    ErlNifResourceFlags tried;
+    return enif_open_resource_type(env, 0, name, dtor,
+				   ERL_NIF_RT_CREATE, &tried);
+}
+
+static ErlNifResourceType* epx_resource_takeover(ErlNifEnv* env,
+						 const char* name,
+						 ErlNifResourceDtor* dtor)
+{
+    ErlNifResourceFlags tried;
+    return enif_open_resource_type(env, 0, name, dtor,
+				   ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER,
+				   &tried);
 }
 
 
@@ -1248,36 +1389,185 @@ void* epx_resource_alloc(epx_resource_t* rp, size_t size)
  *****************************************************************************/
 
 // For now, wrap the resource object {type,pointer-val,handle}
-static ERL_NIF_TERM make_object(ErlNifEnv* env,
-				const ERL_NIF_TERM type,
-				void* robject)
+static ERL_NIF_TERM make_object(ErlNifEnv* env, epx_object_t* epx_obj)
 {
     return enif_make_tuple3(env,
-			    type,
-			    enif_make_ulong(env, (unsigned long) robject),
-			    enif_make_resource(env, robject));
+			    *object_type[epx_obj->type],
+			    enif_make_ulong(env, (unsigned long) epx_obj->res),
+			    enif_make_resource(env, epx_obj->res));
+}
+
+static ERL_NIF_TERM make_window(ErlNifEnv* env, epx_window_t* window)
+{
+    if (window == NULL)
+	return ATOM(undefined);
+    else
+	return enif_make_tuple3(env,
+				ATOM(epx_window),
+				enif_make_ulong(env,
+						(unsigned long) window->res),
+				enif_make_resource(env, window->res));
+}
+
+static ERL_NIF_TERM make_pixmap(ErlNifEnv* env, epx_pixmap_t* pixmap)
+{
+    if (pixmap == NULL)
+	return ATOM(undefined);
+    else
+	return enif_make_tuple3(env,
+				ATOM(epx_pixmap),
+				enif_make_ulong(env,
+						(unsigned long) pixmap->res),
+				enif_make_resource(env, pixmap->res));
 }
 
 // Accept {type,pointer-val,handle}
-static int get_object(ErlNifEnv* env, const ERL_NIF_TERM term,
-		      epx_resource_t* rtype,
-		      void** robjectp)
+static int get_object(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		      ErlNifResourceType* res,
+		      epx_object_t** epx_obj_ptr)
+{
+    const ERL_NIF_TERM* elem;
+    epx_nif_object_t* obj;
+    int arity;
+    unsigned long handle;
+
+    if (!enif_get_tuple(env, arg, &arity, &elem))
+	return 0;
+    if (arity != 3)
+	return 0;
+    if (!enif_is_atom(env, elem[0]))
+	return 0;	
+    if (!enif_get_ulong(env, elem[1], &handle))
+	return 0;
+    if (!enif_get_resource(env, elem[2], res, (void**)&obj))
+	return 0;
+    if ((unsigned long) obj != handle)
+	return 0;
+    if (elem[0] != *object_type[obj->epx_obj->type])
+	return 0;
+    *epx_obj_ptr = obj->epx_obj;
+    return 1;
+}
+
+
+static int get_font(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		    epx_font_t** font)
+{
+    if (!get_object(env, arg, font_res, (epx_object_t**) font))
+	return 0;
+    return 1;
+}
+
+static int get_gc(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		  epx_gc_t** gc)
+{
+    if (!get_object(env, arg, gc_res, (epx_object_t**) gc))
+	return 0;
+    return 1;
+}
+
+static int get_canvas(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		      epx_canvas_t** canvas)
+{
+    if (!get_object(env, arg, canvas_res, (epx_object_t**) canvas))
+	return 0;
+    return 1;
+}
+
+static int get_poly(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		    epx_poly_t** poly)
+{
+    if (!get_object(env, arg, poly_res, (epx_object_t**) poly))
+	return 0;
+    return 1;
+}
+
+static int get_anim(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		    epx_animation_t** anim)
+{
+    if (!get_object(env, arg, animation_res, (epx_object_t**) anim))
+	return 0;
+    return 1;
+}
+
+
+static int get_dict(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		    epx_dict_t** dict)
+{
+    if (!get_object(env, arg, dict_res, (epx_object_t**) dict))
+	return 0;
+    return 1;
+}
+
+static int get_bitmap(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		      epx_bitmap_t** bitmap)
+{
+    if (!get_object(env, arg, bitmap_res, (epx_object_t**) bitmap))
+	return 0;
+    return 1;
+}
+
+// Accept {type,pointer-val,handle}
+static int get_res(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		   ErlNifResourceType* res, ERL_NIF_TERM type, void** obj_ptr)
 {
     const ERL_NIF_TERM* elem;
     int arity;
     unsigned long handle;
+    void* obj;
 
-    if (!enif_get_tuple(env, term, &arity, &elem))
+    if (!enif_get_tuple(env, arg, &arity, &elem))
 	return 0;
     if (arity != 3)
 	return 0;
-    if (!enif_is_atom(env, elem[0]) || (elem[0] != rtype->type))
+    if (elem[0] != type)
 	return 0;
     if (!enif_get_ulong(env, elem[1], &handle))
 	return 0;
-    if (!enif_get_resource(env, elem[2], rtype->res, robjectp))
+    if (!enif_get_resource(env, elem[2], res, &obj))
 	return 0;
-    if ((unsigned long)*robjectp != handle)
+    if ((unsigned long)obj != handle)
+	return 0;
+    *obj_ptr = obj;
+    return 1;
+}
+
+static int get_backend(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		       epx_backend_t** backend_ptr)
+{
+    epx_nif_backend_t* ptr;
+    if (!get_res(env, arg, backend_res, ATOM(epx_backend), (void**) &ptr))
+	return 0;
+    *backend_ptr = ptr->backend;
+    return 1;
+}
+
+static int get_window(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		      epx_window_t** window_ptr)
+{
+    epx_nif_window_t* ptr;
+    if (!get_res(env, arg, window_res, ATOM(epx_window), (void**) &ptr))
+	return 0;
+    *window_ptr = ptr->window;
+    return 1;    
+}
+
+static int get_pixmap(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		      epx_pixmap_t** pixmap_ptr)
+{
+    epx_nif_pixmap_t* ptr;
+    if (!get_res(env, arg, pixmap_res, ATOM(epx_pixmap), (void**) &ptr))
+	return 0;
+    *pixmap_ptr = ptr->pixmap;
+    return 1;    
+}
+
+static int get_texture(ErlNifEnv* env, const ERL_NIF_TERM term,
+		       epx_pixmap_t** texture)
+{
+    if (term == ATOM(undefined))
+	*texture = 0;
+    else if (!get_pixmap(env, term, texture))
 	return 0;
     return 1;
 }
@@ -1795,28 +2085,15 @@ static ERL_NIF_TERM make_texture(ErlNifEnv* env, epx_pixmap_t* texture)
     if (!texture)
 	return ATOM(undefined);
     else
-// FIXME: make_resouce_binary - if not sub_pixmap
-	return make_object(env, ATOM(epx_pixmap),  texture);
+	return make_pixmap(env, texture);
 }
 
-static int get_texture(ErlNifEnv* env, const ERL_NIF_TERM term,
-		       epx_pixmap_t** texture)
+static ERL_NIF_TERM make_bitmap(ErlNifEnv* env, epx_bitmap_t* bitmap)
 {
-    if (term == ATOM(undefined))
-	*texture = 0;
-    else if (!get_object(env, term, &pixmap_res, (void**) texture))
-	return 0;
-    return 1;
-}
-
-static int get_font(ErlNifEnv* env, const ERL_NIF_TERM term,
-		    epx_font_t** font)
-{
-    if (term == ATOM(undefined))
-	*font = 0;
-    else if (!get_object(env, term, &font_res, (void**) font))
-	return 0;
-    return 1;
+    if (!bitmap)
+	return ATOM(undefined);
+    else
+	return make_object(env, (epx_object_t*) bitmap);
 }
 
 static ERL_NIF_TERM make_font(ErlNifEnv* env, epx_font_t* font)
@@ -1824,7 +2101,7 @@ static ERL_NIF_TERM make_font(ErlNifEnv* env, epx_font_t* font)
     if (!font)
 	return ATOM(undefined);
     else
-	return make_object(env, ATOM(epx_font), font);
+	return make_object(env,(epx_object_t*)font);
 }
 
 // Get a 8 bit fix_point value in range [0..1] mapped to [0..255]
@@ -2259,9 +2536,8 @@ static ERL_NIF_TERM make_event(ErlNifEnv* env, epx_event_t* e)
     default:
 	data = ATOM(undefined);
     }
-
     return enif_make_tuple3(env, ATOM(epx_event),
-			    make_object(env, ATOM(epx_window), e->window),
+			    make_window(env, e->window),
 			    data);
 }
 
@@ -2292,8 +2568,6 @@ static ERL_NIF_TERM debug(ErlNifEnv* env, int argc,
 
     return ATOM(ok);
 }
-
-
 
 /******************************************************************************
  *
@@ -2453,7 +2727,8 @@ static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc,
     unsigned int width;
     unsigned int height;
     epx_format_t fmt;
-    epx_pixmap_t* dst;
+    epx_pixmap_t* pixmap;
+    epx_nif_pixmap_t* pm;
     ERL_NIF_TERM t;
 
     if (!get_unsigned(env, argv[0], &width))
@@ -2463,17 +2738,14 @@ static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc,
     if (!get_pixel_format(env, argv[2], &fmt))
 	return enif_make_badarg(env);
 
-    dst = epx_resource_alloc(&pixmap_res, sizeof(epx_pixmap_t));
-    if (!dst)
+    if ((pixmap = epx_pixmap_create(width, height, fmt)) == NULL)
 	return enif_make_badarg(env);
-    if (epx_pixmap_init(dst, width, height, fmt) < 0) {
-	enif_release_resource(dst);
-	return enif_make_badarg(env);
-    }
-    epx_object_ref(dst);
-    // t = enif_make_resource_binary(env, dst, dst->data, dst->sz);
-    t = make_object(env, ATOM(epx_pixmap), dst);
-    enif_release_resource(dst);
+    pm = enif_alloc_resource(pixmap_res, sizeof(epx_nif_pixmap_t));
+    pm->pixmap = pixmap;
+    pixmap->owner = (void*) enif_self(env, &pm->own);
+    pixmap->res = pm;
+    t = make_pixmap(env, pixmap);
+    enif_release_resource(pm);
     return t;
 }
 
@@ -2483,7 +2755,7 @@ static ERL_NIF_TERM pixmap_info(ErlNifEnv* env, int argc,
     (void) argc;
     epx_pixmap_t* src;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
     if (argv[1] == ATOM(width)) {
 	return enif_make_uint(env, src->width);
@@ -2506,12 +2778,8 @@ static ERL_NIF_TERM pixmap_info(ErlNifEnv* env, int argc,
     else if (argv[1] == ATOM(epx_pixel_format)) {
 	return make_epx_pixel_format(env, src->pixel_format);
     }
-    else if (argv[1] == ATOM(parent)) {
-	if (!src->parent)
-	    return ATOM(undefined);
-	else
-	    return make_object(env,ATOM(epx_pixmap), src->parent);
-    }
+    else if (argv[1] == ATOM(parent))
+	return make_pixmap(env,src->parent);
     else if (argv[1] == ATOM(clip)) {
 	return enif_make_tuple4(env,
 				enif_make_int(env, src->clip.xy.x),
@@ -2520,11 +2788,11 @@ static ERL_NIF_TERM pixmap_info(ErlNifEnv* env, int argc,
 				enif_make_uint(env, src->clip.wh.height));
     }
     else if (argv[1] == ATOM(backend)) {
-	epx_nif_backend_t* backend = (epx_nif_backend_t*) src->user;
+	epx_backend_t* backend = (epx_backend_t*) src->user;
 	if (!backend)
 	    return ATOM(undefined);
 	else
-	    return make_object(env,ATOM(epx_backend), backend);
+	    return make_object(env,(epx_object_t*)backend);
     }
     else
 	return enif_make_badarg(env);
@@ -2538,10 +2806,11 @@ static ERL_NIF_TERM pixmap_sub_pixmap(ErlNifEnv* env, int argc,
     int x, y;
     unsigned int width, height;
     epx_pixmap_t* src;
-    epx_pixmap_t* dst;
+    epx_pixmap_t* subpixmap;
+    epx_nif_pixmap_t* pm;
     ERL_NIF_TERM t;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
     if (!get_signed(env, argv[1], &x))
 	return enif_make_badarg(env);
@@ -2552,16 +2821,14 @@ static ERL_NIF_TERM pixmap_sub_pixmap(ErlNifEnv* env, int argc,
     if (!get_unsigned(env, argv[4], &height))
 	return enif_make_badarg(env);
 
-    dst = epx_resource_alloc(&pixmap_res,sizeof(epx_pixmap_t));
-    if (!dst)
+    if ((subpixmap = epx_pixmap_sub_pixmap(src, x, y, width, height)) == NULL)
 	return enif_make_badarg(env);
-    if (epx_pixmap_init_sub_pixmap(src, dst, x, y, width, height) < 0) {
-	enif_release_resource(dst);
-	return enif_make_badarg(env);
-    }
-    epx_object_ref(dst);
-    t = make_object(env, ATOM(epx_pixmap), dst);
-    enif_release_resource(dst);
+    pm = enif_alloc_resource(pixmap_res, sizeof(epx_nif_pixmap_t));
+    pm->pixmap = subpixmap;
+    subpixmap->res = pm;
+    subpixmap->owner = (void*) enif_self(env, &pm->own);    
+    t = make_pixmap(env, subpixmap);
+    enif_release_resource(pm);
     return t;
 }
 
@@ -2570,26 +2837,22 @@ static ERL_NIF_TERM pixmap_copy(ErlNifEnv* env, int argc,
 {
     (void) argc;
     epx_pixmap_t* src;
-    epx_pixmap_t* dst;
+    epx_pixmap_t* pixmap;
     ERL_NIF_TERM t;
-
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    epx_nif_pixmap_t* pm;
+    
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-
-    dst = epx_resource_alloc(&pixmap_res, sizeof(epx_pixmap_t));
-    if (!dst)
+    if ((pixmap = epx_pixmap_copy(src)) == NULL)
 	return enif_make_badarg(env);
-    if (epx_pixmap_init_copy(src, dst) < 0) {
-	enif_release_resource(dst);
-	return enif_make_badarg(env);
-    }
-    epx_object_ref(dst);
-    // t = enif_make_resource_binary(env, dst, dst->data, dst->sz);
-    t = make_object(env, ATOM(epx_pixmap), dst);
-    enif_release_resource(dst);
+    pm = enif_alloc_resource(pixmap_res, sizeof(epx_nif_pixmap_t));
+    pm->pixmap = pixmap;
+    pixmap->res = pm;
+    pixmap->owner = (void*) enif_self(env, &pm->own);
+    t = make_pixmap(env, pixmap);
+    enif_release_resource(pm);
     return t;
 }
-
 
 static ERL_NIF_TERM pixmap_get_pixel(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[])
@@ -2599,7 +2862,7 @@ static ERL_NIF_TERM pixmap_get_pixel(ErlNifEnv* env, int argc,
     epx_pixel_t p;
     int x, y;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
     if (!get_coord(env, src->ctm, argv[1], argv[2], &x, &y))
 	return enif_make_badarg(env);
@@ -2616,7 +2879,7 @@ static ERL_NIF_TERM pixmap_interp_pixel(ErlNifEnv* env, int argc,
     float x;
     float y;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
     if (!get_fcoord(env, src->ctm, argv[1], argv[2], &x, &y))
 	return enif_make_badarg(env);
@@ -2638,7 +2901,7 @@ static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
     ErlNifBinary bin;
     ERL_NIF_TERM bt;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0],&src))
 	return enif_make_badarg(env);
     if (!get_coord(env, src->ctm, argv[1], argv[2], &x, &y))
 	return enif_make_badarg(env);
@@ -2694,7 +2957,7 @@ static ERL_NIF_TERM pixmap_put_pixel(ErlNifEnv* env, int argc,
     epx_flags_t flags;
     int x, y;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[0], &pixmap))
 	return enif_make_badarg(env);
     if (!get_coord(env, pixmap->ctm, argv[1], argv[2], &x, &y))
 	return enif_make_badarg(env);
@@ -2720,7 +2983,7 @@ static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc,
     epx_flags_t flags;
     ErlNifBinary bin;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[0], &pixmap))
 	return enif_make_badarg(env);
 
     if (!get_coord(env, pixmap->ctm, argv[1], argv[2], &x, &y))
@@ -2749,7 +3012,7 @@ static ERL_NIF_TERM pixmap_set_clip(ErlNifEnv* env, int argc,
     epx_pixmap_t* pixmap;
     epx_rect_t rect;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[0], &pixmap))
 	return enif_make_badarg(env);
     if (!get_rect(env, argv[1], &rect))
 	return enif_make_badarg(env);
@@ -2765,7 +3028,7 @@ static ERL_NIF_TERM pixmap_fill(ErlNifEnv* env, int argc,
     epx_pixel_t color;
     epx_flags_t flags;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[0], &pixmap))
 	return enif_make_badarg(env);
     if (!get_color(env, argv[1], &color))
 	return enif_make_badarg(env);
@@ -2790,7 +3053,7 @@ static ERL_NIF_TERM pixmap_fill_area(ErlNifEnv* env, int argc,
     epx_pixel_t color;
     epx_flags_t flags;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[0], &pixmap))
 	return enif_make_badarg(env);
     if (!get_coord(env, pixmap->ctm, argv[1], argv[2], &x, &y))
 	return enif_make_badarg(env);
@@ -2811,9 +3074,9 @@ static ERL_NIF_TERM pixmap_copy_to(ErlNifEnv* env, int argc,
     epx_pixmap_t* src;
     epx_pixmap_t* dst;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
     epx_pixmap_copy_to(src, dst);
     return ATOM(ok);
@@ -2825,13 +3088,12 @@ static ERL_NIF_TERM pixmap_flip(ErlNifEnv* env, int argc,
     (void) argc;
     epx_pixmap_t* pixmap;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[0], &pixmap))
 	return enif_make_badarg(env);
     epx_pixmap_flip(pixmap);
     return ATOM(ok);
 }
 
-// (WINDOW)
 static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc,
 				 const ERL_NIF_TERM argv[])
 {
@@ -2841,9 +3103,9 @@ static ERL_NIF_TERM pixmap_scale(ErlNifEnv* env, int argc,
     unsigned int width;
     unsigned int height;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
     if (!get_unsigned(env, argv[2], &width))
 	return enif_make_badarg(env);
@@ -2870,9 +3132,9 @@ static ERL_NIF_TERM pixmap_scale_area(ErlNifEnv* env, int argc,
     unsigned int h_dst;
     epx_flags_t flags;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
 
     if (!get_coord(env, src->ctm, argv[2], argv[3], &x_src, &y_src))
@@ -2903,9 +3165,9 @@ static ERL_NIF_TERM pixmap_copy_area(ErlNifEnv* env, int argc,
     unsigned int w_src, h_src;
     epx_flags_t flags;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
 
     if (!get_coord(env, src->ctm, argv[2], argv[3], &x_src, &y_src))
@@ -2932,9 +3194,9 @@ static ERL_NIF_TERM pixmap_alpha_area(ErlNifEnv* env, int argc,
     uint8_t alpha;
     unsigned int w_src, h_src;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
     if (!get_fix_8(env, argv[2], &alpha))
 	return enif_make_badarg(env);
@@ -2960,9 +3222,9 @@ static ERL_NIF_TERM pixmap_fade_area(ErlNifEnv* env, int argc,
     uint8_t fade;
     unsigned int w_src, h_src;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
     if (!get_fix_8(env, argv[2], &fade))
 	return enif_make_badarg(env);
@@ -2988,9 +3250,9 @@ static ERL_NIF_TERM pixmap_shadow_area(ErlNifEnv* env, int argc,
     unsigned int w_src, h_src;
     epx_flags_t flags;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
 
     if (!get_coord(env, src->ctm, argv[2], argv[3], &x_src, &y_src))
@@ -3017,9 +3279,9 @@ static ERL_NIF_TERM pixmap_operation_area(ErlNifEnv* env, int argc,
     unsigned int w_src, h_src;
     epx_pixel_operation_t op;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
     if (!get_operation(env, argv[2], &op))
 	return enif_make_badarg(env);
@@ -3048,9 +3310,9 @@ static ERL_NIF_TERM pixmap_add_color_area(ErlNifEnv* env, int argc,
     unsigned int w_src, h_src;
     epx_flags_t flags;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
     if (!get_fix_8(env, argv[2], &fade))
 	return enif_make_badarg(env);
@@ -3084,9 +3346,9 @@ static ERL_NIF_TERM pixmap_filter_area(ErlNifEnv* env, int argc,
     unsigned int w_src, h_src;
     epx_flags_t flags;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
     if (!get_filter(env, argv[2], &filter, &factors))
 	return enif_make_badarg(env);
@@ -3120,9 +3382,9 @@ static ERL_NIF_TERM pixmap_rotate_area(ErlNifEnv* env, int argc,
     unsigned int h_src;
     epx_flags_t flags;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
     if (!enif_get_double(env, argv[2], &angle))
 	return enif_make_badarg(env);
@@ -3158,9 +3420,9 @@ static ERL_NIF_TERM pixmap_scroll(ErlNifEnv* env, int argc,
     int rotate;
     epx_pixel_t fill;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &src))
+    if (!get_pixmap(env, argv[0], &src))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &dst))
+    if (!get_pixmap(env, argv[1], &dst))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[2], &horizontal))
     	return enif_make_badarg(env);
@@ -3178,26 +3440,25 @@ static ERL_NIF_TERM pixmap_attach(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_nif_backend_t* backend;
+    epx_backend_t* backend;
     epx_pixmap_t* pixmap;
     epx_message_t m;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[0], &pixmap))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &backend_res, (void**) &backend))
+    if (!get_backend(env, argv[1], &backend))
 	return enif_make_badarg(env);
     if (pixmap->user) // already attached
 	return enif_make_badarg(env);
 
     // make sure backend survive until EPX_MESSAGE_PIXMAP is processed
-    enif_keep_resource(backend); // pixmap is using backend!!!
-    pixmap->user = backend;
+    epx_object_ref(backend);  // pixmap is using backend!!!
+    pixmap->user = backend;   // pixmap (will be) attached to backend
 
-    enif_keep_resource(pixmap);  // keep pixmap until attach is completed
     m.type = EPX_MESSAGE_PIXMAP_ATTACH;
     m.pixmap = pixmap;
-    epx_message_send(backend->main, 0, &m);
-
+    epx_object_ref(m.pixmap);
+    backend_send(backend, &m);
     return ATOM(ok);
 }
 
@@ -3205,20 +3466,19 @@ static ERL_NIF_TERM pixmap_detach(ErlNifEnv* env, int argc,
 					  const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_nif_backend_t* backend;
+    epx_backend_t* backend;    
     epx_pixmap_t* pixmap;
     epx_message_t m;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[0], &pixmap))
 	return enif_make_badarg(env);
     if (!(backend = pixmap->user))
 	return enif_make_badarg(env);
 
-    enif_keep_resource(pixmap);  // keep pixmap until detach is completed
     m.type = EPX_MESSAGE_PIXMAP_DETACH;
-    m.dtor = 0;
     m.pixmap = pixmap;
-    epx_message_send(backend->main, 0, &m);
+    epx_object_ref(m.pixmap);
+    backend_send(backend, &m);
     return ATOM(ok);
 }
 
@@ -3231,16 +3491,16 @@ static ERL_NIF_TERM pixmap_draw(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_nif_backend_t* backend;
+    epx_backend_t* backend;
     epx_pixmap_t* pixmap;
     epx_window_t* window;
     epx_message_t m;
     epx_rect_t sr0, sr1;     // source rect
     int dst_x, dst_y;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[0], &pixmap))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &window_res, (void**) &window))
+    if (!get_window(env, argv[1], &window))
 	return enif_make_badarg(env);
     if (!get_coord(env, NULL, argv[2], argv[3], &sr0.xy.x, &sr0.xy.y))
 	return enif_make_badarg(env);
@@ -3273,10 +3533,10 @@ static ERL_NIF_TERM pixmap_draw(ErlNifEnv* env, int argc,
     
     m.wdraw.pixmap = pixmap;
     m.wdraw.window = window;
-    enif_keep_resource(window);
-    enif_keep_resource(pixmap);
+    epx_object_ref(m.wdraw.pixmap);
+    epx_object_ref(m.wdraw.window);
     m.type = EPX_MESSAGE_PIXMAP_DRAW;
-    epx_message_send(backend->main, 0, &m);
+    backend_send(backend, &m);
     return ATOM(ok);
 }
 
@@ -3289,19 +3549,18 @@ static ERL_NIF_TERM window_sync(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_nif_backend_t* backend;
+    epx_backend_t* backend;
     epx_window_t* window;
     epx_message_t m;
 
-    if (!get_object(env, argv[0], &window_res, (void**) &window))
+    if (!get_window(env, argv[0], &window))
 	return enif_make_badarg(env);
-
     if (!(backend = window->user))
 	return enif_make_badarg(env);
     m.window = window;
-    enif_keep_resource(window);
+    epx_object_ref(m.window);
     m.type = EPX_MESSAGE_WINDOW_SYNC;
-    epx_message_send(backend->main, 0, &m);
+    backend_send(backend, &m);
     return ATOM(ok);
 }
 
@@ -3315,9 +3574,9 @@ static ERL_NIF_TERM pixmap_draw_point(ErlNifEnv* env, int argc,
     epx_gc_t* gc;
     int x, y;
     
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[0], &pixmap))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!get_coord(env, pixmap->ctm, argv[2], argv[3], &x, &y))
 	return enif_make_badarg(env);
@@ -3336,9 +3595,9 @@ static ERL_NIF_TERM pixmap_draw_line(ErlNifEnv* env, int argc,
     int x2;
     int y2;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[0], &pixmap))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!get_coord(env, pixmap->ctm, argv[2], argv[3], &x1, &y1))
 	return enif_make_badarg(env);
@@ -3358,9 +3617,9 @@ static ERL_NIF_TERM pixmap_draw_triangle(ErlNifEnv* env, int argc,
     int x1, y1;
     int x2, y2;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!get_coord(env, px->ctm, argv[2], argv[3], &x0, &y0))
 	return enif_make_badarg(env);
@@ -3382,9 +3641,9 @@ static ERL_NIF_TERM pixmap_draw_triangles(ErlNifEnv* env, int argc,
     ERL_NIF_TERM list;
     ERL_NIF_TERM head, tail;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!enif_is_list(env, argv[2]))
 	return enif_make_badarg(env);	
@@ -3465,9 +3724,9 @@ static ERL_NIF_TERM pixmap_draw_rectangle(ErlNifEnv* env, int argc,
     int x, y;
     unsigned int w, h;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!get_coord(env, px->ctm, argv[2], argv[3], &x, &y))
 	return enif_make_badarg(env);
@@ -3488,9 +3747,9 @@ static ERL_NIF_TERM pixmap_draw_fan(ErlNifEnv* env, int argc,
     ERL_NIF_TERM head, tail;
     int closed;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!enif_is_list(env, argv[2]))
 	return enif_make_badarg(env);
@@ -3545,9 +3804,9 @@ static ERL_NIF_TERM pixmap_draw_strip(ErlNifEnv* env, int argc,
     ERL_NIF_TERM list;
     ERL_NIF_TERM head, tail;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!enif_is_list(env, argv[2]))
 	return enif_make_badarg(env);
@@ -3590,6 +3849,605 @@ static ERL_NIF_TERM pixmap_draw_strip(ErlNifEnv* env, int argc,
 }
 
 
+/******************************************************************************
+ *
+ *  Bitmaps
+ *
+ *****************************************************************************/
+
+static ERL_NIF_TERM bitmap_create(ErlNifEnv* env, int argc,
+				  const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    unsigned int width;
+    unsigned int height;
+    epx_bitmap_t* bitmap;
+    epx_nif_object_t* obj;
+    ERL_NIF_TERM t;
+      
+    if (!get_unsigned(env, argv[0], &width))
+	return enif_make_badarg(env);
+    if (!get_unsigned(env, argv[1], &height))
+	return enif_make_badarg(env);
+
+    if ((bitmap = epx_bitmap_create(width, height)) == NULL)
+	return enif_make_badarg(env);
+    obj = alloc_object(bitmap_res, (epx_object_t*)bitmap);
+    t = make_object(env,(epx_object_t*)bitmap);
+    enif_release_resource(obj);
+    return t;
+}
+
+static ERL_NIF_TERM bitmap_copy(ErlNifEnv* env, int argc,
+				const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* src;
+    epx_bitmap_t* dst;
+    epx_nif_object_t* obj;
+    ERL_NIF_TERM t;
+    
+    if (!get_bitmap(env, argv[0], &src))
+	return enif_make_badarg(env);
+    if ((dst = epx_bitmap_copy(src)) == NULL)
+	return enif_make_badarg(env);
+    obj = alloc_object(bitmap_res, (epx_object_t*)dst);
+    t = make_object(env,(epx_object_t*)dst);
+    enif_release_resource(obj);
+    return t;    
+}
+
+static ERL_NIF_TERM bitmap_copy_area(ErlNifEnv* env, int argc,
+				     const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* src;
+    epx_bitmap_t* dst;
+    int x_src, y_src;
+    int x_dst, y_dst;
+    unsigned int w_src, h_src;
+
+    if (!get_bitmap(env, argv[0], &src))
+	return enif_make_badarg(env);
+    if (!get_bitmap(env, argv[1], &dst))
+	return enif_make_badarg(env);
+
+    if (!get_coord(env, NULL, argv[2], argv[3], &x_src, &y_src))
+	return enif_make_badarg(env);
+    if (!get_coord(env, NULL, argv[4], argv[5], &x_dst, &y_dst))
+	return enif_make_badarg(env);
+    if (!get_dim(env, NULL, argv[6], argv[7], &w_src, &h_src))
+	return enif_make_badarg(env);
+    epx_bitmap_copy_area(src, dst, x_src, y_src, x_dst, y_dst,
+			 w_src, h_src);
+    return ATOM(ok);
+}
+
+
+static ERL_NIF_TERM bitmap_info(ErlNifEnv* env, int argc,
+				const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* src;
+
+    if (!get_bitmap(env, argv[0], &src))
+	return enif_make_badarg(env);
+    if (argv[1] == ATOM(width)) {
+	return enif_make_uint(env, src->width);
+    }
+    else if (argv[1] == ATOM(height)) {
+	return enif_make_uint(env, src->height);
+    }
+    else if (argv[1] == ATOM(bytes_per_row)) {
+	return enif_make_uint(env, src->bytes_per_row);
+    }
+    else if (argv[1] == ATOM(parent))
+	return make_bitmap(env,src->parent);
+    else if (argv[1] == ATOM(clip)) {
+	return enif_make_tuple4(env,
+				enif_make_int(env, src->clip.xy.x),
+				enif_make_int(env, src->clip.xy.y),
+				enif_make_uint(env, src->clip.wh.width),
+				enif_make_uint(env, src->clip.wh.height));
+    }
+    else
+	return enif_make_badarg(env);
+}
+
+// bitmap_set_clip(Bitmap, #epx_rect{}) -> ok | exception(badarg)
+static ERL_NIF_TERM bitmap_set_clip(ErlNifEnv* env, int argc,
+				    const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* bitmap;
+    epx_rect_t rect;
+
+    if (!get_bitmap(env, argv[0], &bitmap))
+	return enif_make_badarg(env);
+    if (!get_rect(env, argv[1], &rect))
+	return enif_make_badarg(env);
+    epx_bitmap_set_clip(bitmap, &rect);
+    return ATOM(ok);
+}
+
+
+static ERL_NIF_TERM bitmap_put_bit(ErlNifEnv* env, int argc,
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* bitmap;
+    int x, y, bit;
+
+    if (!get_bitmap(env, argv[0], &bitmap))
+	return enif_make_badarg(env);
+    if (!get_coord(env, NULL, argv[1], argv[2], &x, &y))
+	return enif_make_badarg(env);
+    if (!get_boolean(env, argv[3], &bit)) {
+	if (!enif_get_int(env, argv[3], &bit))
+	    return enif_make_badarg(env);
+	if ((bit < 0) || (bit > 1))
+	    return enif_make_badarg(env);
+    }
+    epx_bitmap_put_bit(bitmap, x, y, bit);
+    return ATOM(ok);	
+}
+
+static ERL_NIF_TERM bitmap_get_bit(ErlNifEnv* env, int argc,
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* bitmap;
+    int x, y, bit;
+
+    if (!get_bitmap(env, argv[0], &bitmap))
+	return enif_make_badarg(env);
+    if (!get_coord(env, NULL, argv[1], argv[2], &x, &y))
+	return enif_make_badarg(env);
+    bit = epx_bitmap_get_bit(bitmap, x, y);
+    return enif_make_int(env, bit);
+}
+
+static ERL_NIF_TERM bitmap_fill(ErlNifEnv* env, int argc,
+				const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* bitmap;
+    int pat;
+
+    if (!get_bitmap(env, argv[0], &bitmap))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[1], &pat))
+	return enif_make_badarg(env);
+    epx_bitmap_fill(bitmap, (uint8_t) pat);
+    return ATOM(ok);	
+}
+
+static ERL_NIF_TERM bitmap_fill_rectangle(ErlNifEnv* env, int argc,
+					  const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    int x, y;
+    unsigned int w;
+    unsigned int h;    
+    epx_bitmap_t* bitmap;
+    int pat;    
+
+    if (!get_bitmap(env, argv[0], &bitmap))
+	return enif_make_badarg(env);
+    if (!get_coord(env, NULL, argv[1], argv[2], &x, &y))
+	return enif_make_badarg(env);
+    if (!get_dim(env, NULL, argv[3], argv[4], &w, &h))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[5], &pat))
+	return enif_make_badarg(env);    
+    epx_bitmap_fill_rectangle(bitmap, x, y, w, h, (uint8_t) pat);
+    return ATOM(ok);	
+}
+
+static ERL_NIF_TERM bitmap_draw_rectangle(ErlNifEnv* env, int argc,
+					  const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    int x, y;
+    unsigned int w;
+    unsigned int h;    
+    epx_bitmap_t* bitmap;
+    int pat;
+
+    if (!get_bitmap(env, argv[0], &bitmap))
+	return enif_make_badarg(env);
+    if (!get_coord(env, NULL, argv[1], argv[2], &x, &y))
+	return enif_make_badarg(env);
+    if (!get_dim(env, NULL, argv[3], argv[4], &w, &h))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[5], &pat))
+	return enif_make_badarg(env); 
+    epx_bitmap_draw_rectangle(bitmap, x, y, w, h, pat);
+    return ATOM(ok);	
+}
+
+static ERL_NIF_TERM bitmap_draw_ellipse(ErlNifEnv* env, int argc,
+					const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* bitmap;
+    int x, y;
+    unsigned int w, h;
+    int pat;
+    
+    if (!get_bitmap(env, argv[0], &bitmap))
+	return enif_make_badarg(env);
+    if (!get_coord(env, NULL, argv[1], argv[2], &x, &y))
+	return enif_make_badarg(env);
+    if (!get_dim(env, NULL, argv[3], argv[4], &w, &h))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[5], &pat))
+	return enif_make_badarg(env);     
+    epx_bitmap_draw_ellipse(bitmap, x, y, w, h, (uint8_t) pat);
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM bitmap_fill_ellipse(ErlNifEnv* env, int argc,
+					const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* bitmap;
+    int x, y;
+    unsigned int w, h;
+    int pat;
+    
+    if (!get_bitmap(env, argv[0], &bitmap))
+	return enif_make_badarg(env);
+    if (!get_coord(env, NULL, argv[1], argv[2], &x, &y))
+	return enif_make_badarg(env);
+    if (!get_dim(env, NULL, argv[3], argv[4], &w, &h))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[5], &pat))
+	return enif_make_badarg(env);     
+    epx_bitmap_fill_ellipse(bitmap, x, y, w, h, (uint8_t) pat);
+    return ATOM(ok);
+}
+
+
+static ERL_NIF_TERM bitmap_draw(ErlNifEnv* env, int argc,
+				const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* bitmap;
+    epx_pixmap_t* pixmap;
+    epx_rect_t sr0, sr1;  // source rect
+    int dst_x, dst_y;
+    epx_pixel_t fg, bg;
+    
+    if (!get_bitmap(env, argv[0], &bitmap))
+	return enif_make_badarg(env);
+    if (!get_pixmap(env, argv[1], &pixmap))
+	return enif_make_badarg(env);
+    if (!get_coord(env, NULL, argv[2], argv[3], &sr0.xy.x, &sr0.xy.y))
+	return enif_make_badarg(env);
+    if (!get_coord(env, NULL, argv[4], argv[5], &dst_x, &dst_y))
+	return enif_make_badarg(env);
+    if (!get_dim(env, NULL, argv[6], argv[7], &sr0.wh.width, &sr0.wh.height))
+	return enif_make_badarg(env);
+    if (!get_color(env, argv[8], &fg))
+    	return enif_make_badarg(env);
+    if (!get_color(env, argv[9], &bg))
+    	return enif_make_badarg(env);
+
+    if (!epx_rect_intersect(&sr0, &pixmap->clip, &sr1)) {
+	// printf("update empty rectangle\r\n");
+	return ATOM(ok);
+    }
+
+    // move dst_x and dst_y according to clipped source rectangel
+    dst_x += (sr1.xy.x - sr0.xy.x);
+    dst_y += (sr1.xy.y - sr0.xy.y);
+
+    epx_bitmap_draw(bitmap, pixmap,
+		    sr1.xy.x, sr1.xy.y, dst_x, dst_y, 
+		    sr1.wh.width,sr1.wh.height,
+		    fg, bg);
+    return ATOM(ok);
+}
+
+
+/******************************************************************************
+ *
+ *  Polygons
+ *
+ *****************************************************************************/
+
+static ERL_NIF_TERM poly_create(ErlNifEnv* env, int argc,
+				const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    (void) argv;    
+    epx_poly_t* poly;
+    epx_nif_object_t* obj;    
+    ERL_NIF_TERM t;
+
+    if ((poly = epx_poly_create()) == NULL)
+	return enif_make_badarg(env);
+    obj = alloc_object(poly_res, (epx_object_t*)poly);
+    t = make_object(env,(epx_object_t*)poly);
+    enif_release_resource(obj);
+    return t;    
+}
+
+#define FZERO (10E-7)
+
+static inline int is_fzero(float a)
+{
+    return (fabs(a) < FZERO);
+}
+
+static inline int is_fequal(float a, float b)
+{
+    return (fabs(a-b) < FZERO);
+}
+
+//
+// epx:poly_set(Poly::epx_poly(), Points::[X::number(),Y::number(),..]|
+//                                        [X::number(),Y::number()...],
+//             [Flags::[relative|absolute]]
+//  -> ok
+
+static ERL_NIF_TERM poly_set(ErlNifEnv* env, int argc,
+			     const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    (void) argv;
+    epx_poly_t* poly;
+    size_t npoints;
+    ERL_NIF_TERM list;
+    ERL_NIF_TERM head, tail;
+    int is_pair_list = -1;
+    int is_absolute = 1;
+    
+    if (!get_poly(env, argv[0], &poly))
+	return enif_make_badarg(env);
+    if (!enif_is_list(env, argv[1]))
+	return enif_make_badarg(env);
+    if (argc >= 3) {
+	if (argv[2] == ATOM(relative))
+	    is_absolute = 0;
+	else if (argv[2] == ATOM(absolute))
+	    is_absolute = 1;
+	else
+	    return enif_make_badarg(env);
+    }
+
+    npoints = 0;
+    list = argv[1];
+
+    // first determine size of point list either pairs or numbers
+    // maybe allow some binary formats?
+    if (enif_get_list_cell(env, list, &head, &tail)) {
+	const ERL_NIF_TERM* pair;
+	int arity;
+	float f;
+	list = tail;
+	if (enif_get_tuple(env, head, &arity, &pair) || (arity == 2))
+	    is_pair_list = 1;
+	else if (get_fsigned(env, head, &f)) {
+	    if (!enif_get_list_cell(env, list, &head, &tail))
+		return enif_make_badarg(env);
+	    is_pair_list = 0;
+	    if (!get_fsigned(env, head, &f))
+		return enif_make_badarg(env);
+	    list = tail;
+	}
+	else
+	    return enif_make_badarg(env);
+	npoints++;
+	if (is_pair_list) {  // must be pair list
+	    while(enif_get_list_cell(env, list, &head, &tail)) {
+		const ERL_NIF_TERM* pt;
+		int arity;
+		if (!enif_get_tuple(env, head, &arity, &pt) || (arity != 2))
+		    return enif_make_badarg(env);
+		npoints++;
+		list = tail;
+	    }
+	}
+	else {
+	    int nnum = 0;
+	    while(enif_get_list_cell(env, list, &head, &tail)) {
+		float f;
+		if (!get_fsigned(env, head, &f))
+		    return enif_make_badarg(env);
+		nnum++;
+		list = tail;
+	    }
+	    if ((nnum & 1) == 1) // must be even number of numbers
+		return enif_make_badarg(env);
+	    npoints += (nnum >> 1);
+	}
+    }
+    if (!enif_is_empty_list(env, list))
+	return enif_make_badarg(env);  
+    
+    INFOF("poly_set: npoints=%lu", npoints);
+    
+    {
+	epx_vertex_t* vs;
+	int i;
+
+	if ((vs = malloc(npoints*sizeof(epx_vertex_t))) == NULL)
+	    return enif_make_badarg(env);  // fixme exception limit!
+
+	list = argv[1];
+	i = 0;
+	if (is_pair_list) {
+	    while(enif_get_list_cell(env, list, &head, &tail)) {
+		const ERL_NIF_TERM* coord;
+		float x, y;
+		int arity;
+		if (!enif_get_tuple(env, head, &arity, &coord))
+		    goto error;
+		if (!get_fcoord(env,NULL,coord[0],coord[1],&x,&y))
+		    goto error;
+		list = tail;
+		if (i == 0) {
+		    vs[i].x = x;
+		    vs[i].y = y;
+		}
+		else if (is_absolute) {
+		    if (is_fequal(vs[i-1].x, x) &&
+			is_fequal(vs[i-1].y, y)) {
+			INFOF("poly_set: equal", 0);
+			continue;
+		    }
+		    vs[i].x = x;
+		    vs[i].y = y;
+		} 
+		else { // relative
+		    if (is_fzero(x) && is_fzero(y)) {
+			INFOF("poly_set: zero", 0);
+			continue;
+		    }
+		    vs[i].x = vs[i-1].x + x;
+		    vs[i].y = vs[i-1].y + y;
+		}
+		INFOF("poly_set: vertex[%d] {x=%f, y=%f}",
+		      i, vs[i].x, vs[i].y);
+		i++;
+	    }
+	}
+	else {
+	    while(enif_get_list_cell(env, list, &head, &tail)) {
+		float x, y;		
+		if (!get_fsigned(env, head, &x)) goto error;
+		list = tail;
+		if (!enif_get_list_cell(env, list, &head, &tail)) goto error;
+		if (!get_fsigned(env, head, &y))   goto error;
+		list = tail;
+
+		if (i == 0) {
+		    vs[i].x = x;
+		    vs[i].y = y;
+		}
+		else if (is_absolute) {
+		    if (is_fequal(vs[i-1].x, x) &&
+			is_fequal(vs[i-1].y, y))
+			continue;
+		    vs[i].x = x;
+		    vs[i].y = y;
+		}
+		else { // relative
+		    if (is_fzero(x) && is_fzero(y))
+			continue;
+		    vs[i].x = vs[i-1].x + x;
+		    vs[i].y = vs[i-1].y + y;
+		}		
+
+		INFOF("poly_set: vertex[%d] x=%f, y=%f",
+		      i, vs[i].x, vs[i].y);
+		i++;
+	    }
+	}
+	epx_poly_set(poly, vs, (size_t) i);
+	return ATOM(ok);
+    error:
+	free(vs);
+	return enif_make_badarg(env);	
+    }
+    return ATOM(ok);
+}
+
+
+static ERL_NIF_TERM poly_draw(ErlNifEnv* env, int argc,
+			      const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_poly_t* poly;
+    epx_pixmap_t* px;
+    epx_gc_t* gc;
+    int x_offs, y_offs;
+    
+    if (!get_poly(env, argv[0], &poly))
+	return enif_make_badarg(env);
+    if (!get_pixmap(env, argv[1], &px))
+	return enif_make_badarg(env);
+    if (!get_gc(env, argv[2], &gc))
+	return enif_make_badarg(env);
+    if (!get_coord(env, px->ctm, argv[3], argv[4], &x_offs, &y_offs))
+	return enif_make_badarg(env);
+
+    epx_poly_draw(poly, px, gc, x_offs, y_offs);
+
+    return ATOM(ok);    
+}
+
+static ERL_NIF_TERM poly_info(ErlNifEnv* env, int argc,
+			      const ERL_NIF_TERM argv[])
+{
+    (void) argv;
+    epx_poly_t* poly;
+    
+    if (!get_poly(env, argv[0], &poly))
+	return enif_make_badarg(env);
+    if ((argv[1] == ATOM(count)) && (argc == 2))
+	return enif_make_int(env, poly->nes);
+    else if ((argv[1] == ATOM(box)) && (argc == 2))
+	return enif_make_tuple4(env,
+				enif_make_double(env, poly->xmin),
+				enif_make_double(env, poly->xmax),
+				enif_make_double(env, poly->ymin),
+				enif_make_double(env, poly->ymax));
+    else if ((argv[1] == ATOM(vertex)) && (argc == 3)) {
+	int i;
+	epx_vertex_t* vp;
+	if (!enif_get_int(env, argv[2], &i) || (i < 1) || (i > (int)poly->nvs))
+	    return enif_make_badarg(env);
+	vp = &poly->vertex_table[i-1];
+	return enif_make_tuple2(env,
+				enif_make_double(env, vp->x),
+				enif_make_double(env, vp->y));
+    }
+    else if ((argv[1] == ATOM(pos)) && (argc == 3)) {
+	int i;
+	epx_pos_t* pp;
+	if (!enif_get_int(env, argv[2], &i) || (i < 1) || (i > (int)poly->nvs))
+	    return enif_make_badarg(env);
+	pp = &poly->pos_table[i-1];
+	return enif_make_tuple2(env,
+				enif_make_int(env, pp->x),
+				enif_make_int(env, pp->y));
+    }
+    else if ((argv[1] == ATOM(edge)) && (argc == 3)) {
+	int i;
+	epx_edge_t* ep;
+	if (!enif_get_int(env, argv[2], &i) || (i < 1) || (i > (int)poly->nes))
+	    return enif_make_badarg(env);
+	ep = &poly->edge_table[i-1];
+	return enif_make_tuple2(env,
+				enif_make_int(env, ep->v0+1),
+				enif_make_int(env, ep->v1+1));
+    }
+    else if ((argv[1] == ATOM(sedge)) && (argc == 3)) {
+	int i;
+	epx_edge_t* ep;
+	if (!enif_get_int(env, argv[2], &i) || (i < 1) || (i > (int)poly->nes))
+	    return enif_make_badarg(env);
+	ep = poly->es[i-1];
+	return enif_make_tuple2(env,
+				enif_make_int(env, ep->v0+1),
+				enif_make_int(env, ep->v1+1));
+    }
+    else if ((argv[1] == ATOM(slope)) && (argc == 3)) {
+	int i;
+	epx_edge_t* ep;
+	if (!enif_get_int(env, argv[2], &i) || (i < 1) || (i > (int)poly->nes))
+	    return enif_make_badarg(env);
+	ep = &poly->edge_table[i-1];
+	return enif_make_double(env, ep->k);
+    } 
+    else
+	return enif_make_badarg(env);	
+}
+
+
 static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc,
 					const ERL_NIF_TERM argv[])
 {
@@ -3599,9 +4457,9 @@ static ERL_NIF_TERM pixmap_draw_ellipse(ErlNifEnv* env, int argc,
     int x, y;
     unsigned int w, h;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!get_coord(env, px->ctm, argv[2], argv[3], &x, &y))
 	return enif_make_badarg(env);
@@ -3621,9 +4479,9 @@ static ERL_NIF_TERM pixmap_draw_roundrect(ErlNifEnv* env, int argc,
     unsigned int w, h;
     unsigned int rw, rh;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!get_coord(env, px->ctm, argv[2], argv[3], &x, &y))
 	return enif_make_badarg(env);
@@ -3642,7 +4500,7 @@ static ERL_NIF_TERM pixmap_ltm_translate(ErlNifEnv* env, int argc,
     epx_pixmap_t* px;
     float tx, ty;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
     if (!get_fsigned(env, argv[1], &tx))
 	return enif_make_badarg(env);
@@ -3659,7 +4517,7 @@ static ERL_NIF_TERM pixmap_ltm_scale(ErlNifEnv* env, int argc,
     epx_pixmap_t* px;
     float sx, sy;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
     if (!get_fsigned(env, argv[1], &sx))
 	return enif_make_badarg(env);
@@ -3676,7 +4534,7 @@ static ERL_NIF_TERM pixmap_ltm_rotate(ErlNifEnv* env, int argc,
     epx_pixmap_t* px;
     float a;
 
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
     if (!get_fsigned(env, argv[1], &a))
 	return enif_make_badarg(env);
@@ -3690,7 +4548,7 @@ static ERL_NIF_TERM pixmap_ltm_reset(ErlNifEnv* env, int argc,
     (void) argc;
     epx_pixmap_t* px;
     
-    if (!get_object(env, argv[0], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
     epx_t2d_identity(&px->ltm);
     return ATOM(ok);
@@ -3705,21 +4563,23 @@ static ERL_NIF_TERM animation_open(ErlNifEnv* env, int argc,
     char path[MAX_PATH];
     int r;
     epx_animation_t* anim;
+    epx_nif_object_t* obj;
     ERL_NIF_TERM t;
 
     if (!(r=enif_get_string(env, argv[0], path, sizeof(path), ERL_NIF_LATIN1))
 	|| (r < 0))
 	return enif_make_badarg(env);
-    anim = epx_resource_alloc(&anim_res, sizeof(epx_animation_t));
-    if (!anim)
-	return enif_make_badarg(env); // reason?
+
+    if ((anim = epx_anim_create()) == NULL)
+	return enif_make_badarg(env);
+    obj = alloc_object(animation_res, (epx_object_t*)anim);
+
     if (epx_anim_open_init(anim, path) < 0) {
-	enif_release_resource(anim);
+	enif_release_resource(obj);
 	return enif_make_badarg(env); // reason?
     }
-    epx_object_ref(anim);
-    t = make_object(env,ATOM(epx_animation), anim);
-    enif_release_resource(anim);
+    t = make_object(env,(epx_object_t*)anim);
+    enif_release_resource(obj);
     return t;
 }
 
@@ -3735,13 +4595,13 @@ static ERL_NIF_TERM animation_copy(ErlNifEnv* env, int argc,
     epx_anim_pixels_t* base;
     epx_anim_pixels_t* current;
 
-    if (!get_object(env, argv[0], &anim_res, (void**) &anim))
+    if (!get_anim(env, argv[0], &anim))
 	return enif_make_badarg(env);
     if (!enif_get_uint(env, argv[1], &index))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[2], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[2], &px))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[3], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[3], &gc))
 	return enif_make_badarg(env);
     if (!get_coord(env, px->ctm, argv[4], argv[5], &x, &y))
 	return enif_make_badarg(env);
@@ -3769,13 +4629,13 @@ static ERL_NIF_TERM animation_draw(ErlNifEnv* env, int argc,
     epx_anim_pixels_t* base;
     epx_anim_pixels_t* current;
 
-    if (!get_object(env, argv[0], &anim_res, (void**) &anim))
+    if (!get_anim(env, argv[0], &anim))
 	return enif_make_badarg(env);
     if (!enif_get_uint(env, argv[1], &index))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[2], &pixmap_res, (void**) &px))
+    if (!get_pixmap(env, argv[2], &px))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[3], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[3], &gc))
 	return enif_make_badarg(env);
     if (!get_coord(env, px->ctm, argv[4], argv[5], &x, &y))
 	return enif_make_badarg(env);
@@ -3797,7 +4657,7 @@ static ERL_NIF_TERM animation_info(ErlNifEnv* env, int argc,
     (void) argc;
     epx_animation_t* anim;
 
-    if (!get_object(env, argv[0], &anim_res, (void**) &anim))
+    if (!get_anim(env, argv[0], &anim))
 	return enif_make_badarg(env);
     if (argv[1] == ATOM(file_name)) {
 	return enif_make_string(env, anim->file_name, ERL_NIF_LATIN1);
@@ -3836,15 +4696,14 @@ static ERL_NIF_TERM canvas_create(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
     (void) argc;
     (void) argv;    
     epx_canvas_t* canvas;
+    epx_nif_object_t* obj;    
     ERL_NIF_TERM t;
-    
-    canvas = epx_resource_alloc(&canvas_res, sizeof(epx_canvas_t));
-    if (!canvas)
+
+    if ((canvas = epx_canvas_create()) == NULL)
 	return enif_make_badarg(env);
-    epx_canvas_init(canvas);
-    epx_object_ref(canvas);
-    t = make_object(env,ATOM(epx_canvas), canvas);
-    enif_release_resource(canvas);
+    obj = alloc_object(canvas_res, (epx_object_t*)canvas);
+    t = make_object(env,(epx_object_t*)canvas);
+    enif_release_resource(obj);
     return t;
 }
 
@@ -3855,7 +4714,7 @@ static ERL_NIF_TERM canvas_line(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
     double D, E, F;
     int k;
    
-    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+    if (!get_canvas(env, argv[0], &canvas))
 	return enif_make_badarg(env);
     if (!get_number(env, argv[1], &D))
 	return enif_make_badarg(env);
@@ -3875,7 +4734,7 @@ static ERL_NIF_TERM canvas_quad(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
     double A, B, C, D, E, F;
     int k;
    
-    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+    if (!get_canvas(env, argv[0], &canvas))
 	return enif_make_badarg(env);
     if (!get_number(env, argv[1], &A))
 	return enif_make_badarg(env);
@@ -3900,7 +4759,7 @@ static ERL_NIF_TERM canvas_and(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     epx_canvas_t* canvas;
     int i, j, k;
 
-    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+    if (!get_canvas(env, argv[0], &canvas))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &i))
 	return enif_make_badarg(env);
@@ -3917,7 +4776,7 @@ static ERL_NIF_TERM canvas_or(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[
     epx_canvas_t* canvas;
     int i, j, k;
 
-    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+    if (!get_canvas(env, argv[0], &canvas))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &i))
 	return enif_make_badarg(env);
@@ -3934,7 +4793,7 @@ static ERL_NIF_TERM canvas_over(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
     epx_canvas_t* canvas;
     int i, j, k;
 
-    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+    if (!get_canvas(env, argv[0], &canvas))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &i))
 	return enif_make_badarg(env);
@@ -3951,7 +4810,7 @@ static ERL_NIF_TERM canvas_not(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     epx_canvas_t* canvas;
     int i, k;
 
-    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+    if (!get_canvas(env, argv[0], &canvas))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &i))
 	return enif_make_badarg(env);
@@ -3968,7 +4827,7 @@ static ERL_NIF_TERM canvas_set_color(ErlNifEnv* env, int argc, const ERL_NIF_TER
     int i;
     epx_pixel_t color;
 
-    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+    if (!get_canvas(env, argv[0], &canvas))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &i))
 	return enif_make_badarg(env);
@@ -3986,7 +4845,7 @@ static ERL_NIF_TERM canvas_set_operation(ErlNifEnv* env, int argc, const ERL_NIF
     int i;
     epx_pixel_operation_t op;    
 
-    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+    if (!get_canvas(env, argv[0], &canvas))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &i))
 	return enif_make_badarg(env);
@@ -4003,7 +4862,7 @@ static ERL_NIF_TERM canvas_set_params(ErlNifEnv* env, int argc, const ERL_NIF_TE
     int i, j, k;
     double P[6];
     
-    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+    if (!get_canvas(env, argv[0], &canvas))
 	return enif_make_badarg(env);
     if (!enif_get_int(env, argv[1], &i))
 	return enif_make_badarg(env);
@@ -4041,9 +4900,9 @@ static ERL_NIF_TERM canvas_draw(ErlNifEnv* env, int argc,
     epx_canvas_t* canvas;    
     epx_pixmap_t* pixmap;
 
-    if (!get_object(env, argv[0], &canvas_res, (void**) &canvas))
+    if (!get_canvas(env, argv[0], &canvas))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &pixmap_res, (void**) &pixmap))
+    if (!get_pixmap(env, argv[1], &pixmap))
 	return enif_make_badarg(env);
     epx_canvas_draw(canvas, 0, 0, 0, 0,
 		    pixmap->width, pixmap->height,
@@ -4123,17 +4982,22 @@ static ERL_NIF_TERM dict_create(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
 {
     (void) argc;
     (void) argv;
-    epx_dict_t* dict;
+    epx_object_t* dict;
     ERL_NIF_TERM t;
 
-    dict = epx_resource_alloc(&dict_res, sizeof(epx_dict_t));
-    if (!dict)
+    if ((dict = create_object(dict_res, EPX_DICT_TYPE)) == NULL)
 	return enif_make_badarg(env);
-    epx_dict_init(dict);
-    epx_object_ref(dict);
-    t = make_object(env,ATOM(epx_dict), dict);
-    enif_release_resource(dict);
+    t = make_object(env, dict);
+    enif_release_resource(dict->res);
+    return t;    
+/*
+    if ((dict = epx_dict_create()) == NULL)
+	return enif_make_badarg(env);	
+    obj = alloc_object(dict_res, (epx_object_t*)dict);
+    t = make_object(env,(epx_object_t*)dict);
+    enif_release_resource(obj);
     return t;
+*/
 }
 
 static ERL_NIF_TERM dict_copy(ErlNifEnv* env, int argc,
@@ -4141,25 +5005,26 @@ static ERL_NIF_TERM dict_copy(ErlNifEnv* env, int argc,
 {
     (void) argc;
     epx_dict_t* src;
-    epx_dict_t* dst;
+    epx_object_t* dst;
     ERL_NIF_TERM t;
-
-    if (!get_object(env, argv[0], &dict_res, (void**) &src))
+    
+    if (!get_dict(env, argv[0], &src))
 	return enif_make_badarg(env);
 
-    dst = epx_resource_alloc(&dict_res, sizeof(epx_dict_t));
-    if (!dst)
+    if ((dst = copy_object(dict_res, (epx_object_t*) src)) == NULL)
 	return enif_make_badarg(env);
-    if (epx_dict_init_copy(src, dst) < 0) {
-	enif_release_resource(dst);
+    t = make_object(env, dst);
+    enif_release_resource(dst->res);
+    return t;        
+    /*
+    if ((dst = epx_dict_copy(src)) == NULL)
 	return enif_make_badarg(env);
-    }
-    epx_object_ref(dst);
-    t = make_object(env, ATOM(epx_dict), dst);
-    enif_release_resource(dst);
+    obj = alloc_object(dict_res, (epx_object_t*)dst);
+    t = make_object(env,(epx_object_t*)dst);
+    enif_release_resource(obj);
     return t;
+    */
 }
-
 
 static ERL_NIF_TERM dict_set(ErlNifEnv* env, int argc,
 			     const ERL_NIF_TERM argv[])
@@ -4171,8 +5036,9 @@ static ERL_NIF_TERM dict_set(ErlNifEnv* env, int argc,
     epx_dict_data_t value;
     dict_data_buf_t value_data;
 
-    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+    if (!get_dict(env, argv[0], &dict))
 	return enif_make_badarg(env);
+    DEBUGF("get_dict: %p refc=%lu", dict, epx_object_refc(dict));
 
     if (!get_dict_data(env, argv[1], &key, &key_data))
 	return enif_make_badarg(env);
@@ -4228,7 +5094,7 @@ static ERL_NIF_TERM dict_get(ErlNifEnv* env, int argc,
     dict_data_buf_t key_data;
     epx_dict_entry_t* ent;
 
-    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+    if (!get_dict(env, argv[0], &dict))
 	return enif_make_badarg(env);
 
     if (!get_dict_data(env, argv[1], &key, &key_data))
@@ -4248,7 +5114,7 @@ static ERL_NIF_TERM dict_get_boolean(ErlNifEnv* env, int argc,
     int value;
     char key[256];
 
-    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+    if (!get_dict(env, argv[0], &dict))
 	return enif_make_badarg(env);
     if (!enif_get_string(env, argv[1], key, sizeof(key), ERL_NIF_LATIN1))
 	return enif_make_badarg(env);
@@ -4269,7 +5135,7 @@ static ERL_NIF_TERM dict_get_integer(ErlNifEnv* env, int argc,
     int value;
     char key[256];
 
-    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+    if (!get_dict(env, argv[0], &dict))
 	return enif_make_badarg(env);
     if (!enif_get_string(env, argv[1], key, sizeof(key), ERL_NIF_LATIN1))
 	return enif_make_badarg(env);
@@ -4289,7 +5155,7 @@ static ERL_NIF_TERM dict_get_float(ErlNifEnv* env, int argc,
     double value;
     char key[256];
 
-    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+    if (!get_dict(env, argv[0], &dict))
 	return enif_make_badarg(env);
     if (!enif_get_string(env, argv[1], key, sizeof(key), ERL_NIF_LATIN1))
 	return enif_make_badarg(env);
@@ -4311,7 +5177,7 @@ static ERL_NIF_TERM dict_get_string(ErlNifEnv* env, int argc,
     size_t len;
     char key[256];
 
-    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+    if (!get_dict(env, argv[0], &dict))
 	return enif_make_badarg(env);
     if (!enif_get_string(env, argv[1], key, sizeof(key), ERL_NIF_LATIN1))
 	return enif_make_badarg(env);
@@ -4334,7 +5200,7 @@ static ERL_NIF_TERM dict_get_binary(ErlNifEnv* env, int argc,
     ErlNifBinary bin;
     ERL_NIF_TERM bt;
 
-    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+    if (!get_dict(env, argv[0], &dict))
 	return enif_make_badarg(env);
     if (!enif_get_string(env, argv[1], key, sizeof(key), ERL_NIF_LATIN1))
 	return enif_make_badarg(env);
@@ -4355,7 +5221,7 @@ static ERL_NIF_TERM dict_is_key(ErlNifEnv* env, int argc,
     epx_dict_t* dict;
     char key[256];
 
-    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+    if (!get_dict(env, argv[0], &dict))
 	return enif_make_badarg(env);
     if (!enif_get_string(env, argv[1], key, sizeof(key), ERL_NIF_LATIN1))
 	return enif_make_badarg(env);
@@ -4372,7 +5238,7 @@ static ERL_NIF_TERM dict_first(ErlNifEnv* env, int argc,
     size_t len;
     char* value;
 
-    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+    if (!get_dict(env, argv[0], &dict))
 	return enif_make_badarg(env);
     if (dict->used == 0)
 	return ATOM(false);
@@ -4390,7 +5256,7 @@ static ERL_NIF_TERM dict_next(ErlNifEnv* env, int argc,
     size_t len;
     char* value;
 
-    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+    if (!get_dict(env, argv[0], &dict))
 	return enif_make_badarg(env);
     if (!enif_get_string(env, argv[1], key, sizeof(key), ERL_NIF_LATIN1))
 	return enif_make_badarg(env);
@@ -4406,7 +5272,7 @@ static ERL_NIF_TERM dict_info(ErlNifEnv* env, int argc,
     (void) argc;
     epx_dict_t* dict;
 
-    if (!get_object(env, argv[0], &dict_res, (void**) &dict))
+    if (!get_dict(env, argv[0], &dict))
 	return enif_make_badarg(env);
     if (argv[1] == ATOM(size)) {
 	return enif_make_uint(env, dict->used);
@@ -4430,16 +5296,15 @@ static ERL_NIF_TERM gc_create(ErlNifEnv* env, int argc,
     (void) argc;
     (void) argv;
     epx_gc_t* gc;
+    epx_nif_object_t* obj;
     ERL_NIF_TERM t;
 
-    gc = epx_resource_alloc(&gc_res, sizeof(epx_gc_t));
-    if (!gc)
+    if ((gc = epx_gc_create()) == NULL)
 	return enif_make_badarg(env);
-    epx_gc_init(gc);
-    epx_object_ref(gc);
-    t = make_object(env,ATOM(epx_gc), gc);
-    enif_release_resource(gc);
-    return t;
+    obj = alloc_object(gc_res, (epx_object_t*)gc);
+    t = make_object(env,(epx_object_t*)gc);
+    enif_release_resource(obj);
+    return t;    
 }
 
 static ERL_NIF_TERM gc_copy(ErlNifEnv* env, int argc,
@@ -4449,20 +5314,18 @@ static ERL_NIF_TERM gc_copy(ErlNifEnv* env, int argc,
     (void) argv;
     epx_gc_t* src;
     epx_gc_t* dst;
+    epx_nif_object_t* obj;    
     ERL_NIF_TERM t;
 
-    if (!get_object(env, argv[0], &gc_res, (void**) &src))
+    if (!get_gc(env, argv[0], &src))
 	return enif_make_badarg(env);
-    dst = epx_resource_alloc(&gc_res, sizeof(epx_gc_t));
-    if (!dst)
-	return enif_make_badarg(env);
-    epx_gc_init_copy(src, dst);
-    epx_object_ref(dst);
-    t = make_object(env, ATOM(epx_gc), dst);
-    enif_release_resource(dst);
-    return t;
+    if ((dst = epx_gc_copy(src)) == NULL)
+	return enif_make_badarg(env);	
+    obj = alloc_object(gc_res, (epx_object_t*)dst);
+    t = make_object(env,(epx_object_t*)dst);
+    enif_release_resource(obj);
+    return t;    
 }
-
 
 static ERL_NIF_TERM gc_default(ErlNifEnv* env, int argc,
 			       const ERL_NIF_TERM argv[])
@@ -4470,16 +5333,17 @@ static ERL_NIF_TERM gc_default(ErlNifEnv* env, int argc,
     (void) argc;
     (void) argv;
     epx_ctx_t* ctx = enif_priv_data(env);
-    return make_object(env, ATOM(epx_gc), ctx->def_gc);
+    return make_object(env, (epx_object_t*)ctx->def_gc);
 }
 
+// FIXME add atom hash!
 static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
 			   const ERL_NIF_TERM argv[])
 {
     (void) argc;
     epx_gc_t* src;
 
-    if (!get_object(env, argv[0], &gc_res, (void**) &src))
+    if (!get_gc(env, argv[0], &src))
 	return enif_make_badarg(env);
 
     if (argv[1] == ATOM(fill_style)) {
@@ -4603,7 +5467,9 @@ static ERL_NIF_TERM gc_set(ErlNifEnv* env, int argc,
     }
     else if (argv[1] == ATOM(font)) {
 	epx_font_t* font;
-	if (!get_font(env, argv[2], &font))
+	if (argv[2] == ATOM(undefined))
+	    font = NULL;
+	else if (!get_font(env, argv[2], &font))
 	    return enif_make_badarg(env);
 	epx_gc_set_font(src, font);
 	return ATOM(ok);
@@ -4646,7 +5512,7 @@ static ERL_NIF_TERM gc_get(ErlNifEnv* env, int argc,
     (void) argc;
     epx_gc_t* src;
 
-    if (!get_object(env, argv[0], &gc_res, (void**) &src))
+    if (!get_gc(env, argv[0], &src))
 	return enif_make_badarg(env);
 
     if (argv[1] == ATOM(fill_style)) {
@@ -4734,22 +5600,24 @@ static ERL_NIF_TERM font_open(ErlNifEnv* env, int argc,
     char path[MAX_PATH];
     int r;
     epx_font_t* font;
+    epx_nif_object_t* obj;
     ERL_NIF_TERM t;
 
     if (!(r=enif_get_string(env, argv[0], path, sizeof(path), ERL_NIF_LATIN1))
 	|| (r < 0))
-	return enif_make_badarg(env);
-    font = epx_resource_alloc(&font_res, sizeof(epx_font_t));
-    if (!font)
-	return enif_make_badarg(env); // reason?
+	return enif_make_badarg(env);    
+
+    if ((font = epx_font_create()) == NULL)
+	return enif_make_badarg(env);	
+
+    obj = alloc_object(font_res, (epx_object_t*)font);
     if (epx_font_open_init(font, path) < 0) {
-	enif_release_resource(font);
+	enif_release_resource(obj);
 	return enif_make_badarg(env); // reason?
     }
-    epx_object_ref(font);
-    t = make_object(env,ATOM(epx_font), font);
-    enif_release_resource(font);
-    return t;
+    t = make_object(env,(epx_object_t*)font);
+    enif_release_resource(obj);
+    return t;    
 }
 
 
@@ -4759,7 +5627,7 @@ static ERL_NIF_TERM font_load(ErlNifEnv* env, int argc,
     (void) argc;
     epx_font_t* font;
 
-    if (!get_object(env, argv[0], &font_res, (void**) &font))
+    if (!get_font(env, argv[0], &font))
 	return enif_make_badarg(env);
     if (epx_font_is_loaded(font) || epx_font_is_mapped(font))
 	return ATOM(ok);
@@ -4774,7 +5642,7 @@ static ERL_NIF_TERM font_unload(ErlNifEnv* env, int argc,
     (void) argc;
     epx_font_t* font;
 
-    if (!get_object(env, argv[0], &font_res, (void**) &font))
+    if (!get_font(env, argv[0], &font))
 	return enif_make_badarg(env);
     epx_font_unload(font);
     return ATOM(ok);
@@ -4786,7 +5654,7 @@ static ERL_NIF_TERM font_map(ErlNifEnv* env, int argc,
     (void) argc;
     epx_font_t* font;
 
-    if (!get_object(env, argv[0], &font_res, (void**) &font))
+    if (!get_font(env, argv[0], &font))
 	return enif_make_badarg(env);
     if (epx_font_is_loaded(font) || epx_font_is_mapped(font))
 	return ATOM(ok);
@@ -4801,7 +5669,7 @@ static ERL_NIF_TERM font_unmap(ErlNifEnv* env, int argc,
     (void) argc;
     epx_font_t* font;
 
-    if (!get_object(env, argv[0], &font_res, (void**) &font))
+    if (!get_font(env, argv[0], &font))
 	return enif_make_badarg(env);
     epx_font_unmap(font);
     return ATOM(ok);
@@ -4813,7 +5681,7 @@ static ERL_NIF_TERM font_info(ErlNifEnv* env, int argc,
     (void) argc;
     epx_font_t* font;
 
-    if (!get_object(env, argv[0], &font_res, (void**) &font))
+    if (!get_font(env, argv[0], &font))
 	return enif_make_badarg(env);
     if (argv[1] == ATOM(file_name))
 	return enif_make_string(env, font->file_name, ERL_NIF_LATIN1);
@@ -4867,7 +5735,7 @@ static ERL_NIF_TERM font_draw_glyph(ErlNifEnv* env, int argc,
     if (!get_texture(env, argv[0], &dst))
 	return enif_make_badarg(env);
     ctm = dst ? dst->ctm : NULL;
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!get_coord(env, ctm, argv[2], argv[3], &x, &y))
 	return enif_make_badarg(env);
@@ -4893,7 +5761,7 @@ static ERL_NIF_TERM font_draw_string(ErlNifEnv* env, int argc,
     if (!get_texture(env, argv[0], &dst))
 	return enif_make_badarg(env);
     ctm = dst ? dst->ctm : NULL;
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!get_coord(env, ctm, argv[2], argv[3], &x, &y))
 	return enif_make_badarg(env);
@@ -4929,7 +5797,7 @@ static ERL_NIF_TERM font_draw_utf8(ErlNifEnv* env, int argc,
     if (!get_texture(env, argv[0], &dst))
 	return enif_make_badarg(env);
     ctm = dst ? dst->ctm : NULL;    
-    if (!get_object(env, argv[1], &gc_res, (void**) &gc))
+    if (!get_gc(env, argv[1], &gc))
 	return enif_make_badarg(env);
     if (!get_coord(env, ctm, argv[2], argv[3], &x, &y))
 	return enif_make_badarg(env);    
@@ -5136,8 +6004,7 @@ typedef struct {
 static void* backend_main(void* arg)
 {
     epx_thread_t* self = arg;
-    epx_nif_backend_t* nbackend = self->arg;
-    epx_backend_t* backend = nbackend->backend;
+    epx_backend_t* backend = self->arg;
     backend_priv_t* priv;
     epx_message_t m;
 
@@ -5162,12 +6029,12 @@ static void* backend_main(void* arg)
     DEBUGF("backend_main: send EPX_MESSAGE_POLL handle=%ld",
 	       priv->handle);
 
-    enif_keep_resource(nbackend);
+    epx_object_ref(backend);
 
     while(1) {
 	epx_thread_t* from = 0;
 
-	enif_release_resource(nbackend);
+	epx_object_unref(backend);
 
 	epx_message_recv(self, &from, &m);
 
@@ -5176,14 +6043,13 @@ static void* backend_main(void* arg)
 	    DEBUGF("backend_main: stopped by command");
 	    enif_free_env(priv->env);
 	    epx_thread_stop(priv->poll_thr, self, &poll_thr_exit);
-	    DEBUGF("backend_main: unref backend refc=%d", backend->refc);
+	    DEBUGF("backend_main: unref backend refc=%d", epx_object_refc(backend));
 	    epx_object_unref(backend);  // release real backend
 	    enif_free(priv);            // release private data
 	    self->priv = NULL;
 	    epx_thread_exit(self);
 	}
-
-	enif_keep_resource(nbackend);
+	epx_object_ref(backend);
 
 	switch(m.type) {
 	case EPX_MESSAGE_UPGRADE: {
@@ -5192,7 +6058,7 @@ static void* backend_main(void* arg)
 	    DEBUGF("backend_main: upgrade func=%p", upgrade);
 	    m.upgrade = backend_poll; // relay to poll thread
 	    epx_message_send(priv->poll_thr, 0, &m);
-	    enif_release_resource(nbackend);
+	    epx_object_unref(backend);
 	    r = epx_backend_upgrade(backend);
 	    DEBUGF("backend_main: backend %s upgrade status = %d",
 		       backend->name, r);
@@ -5213,13 +6079,13 @@ static void* backend_main(void* arg)
 
 	    DEBUGF("backend_main: EPX_MESSAGE_EVENT_READY");
 	    while ((n = epx_backend_event_read(backend, &evt)) > 0) {
-		ERL_NIF_TERM msg;
 		ErlNifPid* pid = evt.window->owner;
 		// send event to window owner
-		msg = make_event(priv->env, &evt);
-		enif_send(0, pid, priv->env, msg);
-		enif_clear_env(priv->env);
-
+		if (pid) {
+		    ERL_NIF_TERM msg = make_event(priv->env, &evt);
+		    enif_send(0, pid, priv->env, msg);
+		    enif_clear_env(priv->env);
+		}
 		DEBUGF("backend_main: got event %08X n=%d", evt.type, n);
 		if (n == 1)
 		    break;
@@ -5233,61 +6099,77 @@ static void* backend_main(void* arg)
 
 	case EPX_MESSAGE_WINDOW_ATTACH:
 	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_ATTACH");
-	    epx_backend_window_attach(backend, m.window);
-	    enif_release_resource(m.window);   // thread safe?
+	    DEBUGF("  window=%p, owner=%p", m.window, m.window->owner);
+	    if (m.window->owner != NULL)
+		epx_backend_window_attach(backend, m.window);
+	    DEBUGF("backend_main: window_attach unref: m.window %p", m.window);
+	    epx_object_unref(m.window);
 	    break;
 
 	case EPX_MESSAGE_WINDOW_DETACH:
 	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_DETACH");
-	    epx_window_detach(m.window);
-	    DEBUGF("backend_main: enif_release_resource: m.window->user");
-	    enif_release_resource(m.window->user);
+	    DEBUGF("  window=%p, owner=%p", m.window, m.window->owner);
+	    if (m.window->owner != NULL)	    
+		epx_window_detach(m.window);
+	    DEBUGF("   unref m.window->user %p", m.window->user);
+	    epx_object_unref(m.window->user);
 	    m.window->user = 0;
-	    DEBUGF("backend_main: enif_release_resource: m.window");
-	    if (m.dtor)
-		epx_object_unref(m.window);
-	    else
-		enif_release_resource(m.window);
+	    DEBUGF("    unref: m.window %p", m.window);
+	    epx_object_unref(m.window);
 	    break;
 
 	case EPX_MESSAGE_WINDOW_ADJUST:
 	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_ADJUST");
-	    epx_window_adjust(m.wadjust.window, m.wadjust.param);
-	    enif_release_resource(m.wadjust.window);   // thread safe?
-	    enif_release_resource(m.wadjust.param);    // thread safe?
+	    DEBUGF("  window=%p, owner=%p", m.wadjust.window,
+		   m.wadjust.window->owner);
+	    if (m.wadjust.window->owner != NULL)
+		epx_window_adjust(m.wadjust.window, m.wadjust.param);
+	    DEBUGF("    unref: m.window %p", m.wadjust.window);
+	    epx_object_unref(m.wadjust.window);
+	    DEBUGF("    unref: m.wadjust.param %p", m.wadjust.param);
+	    epx_object_unref(m.wadjust.param);    // thread safe?
 	    break;
 
 	case EPX_MESSAGE_WINDOW_SWAP:
 	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_SWAP");
-	    epx_window_swap(m.window);
+	    DEBUGF("  window=%p, owner=%p", m.window, m.window->owner);
+	    if (m.window->owner != NULL)
+		epx_window_swap(m.window);	    
+	    DEBUGF("    unref: m.window %p", m.window);
+	    epx_window_swap(m.window);	    
 	    break;
 
 	case EPX_MESSAGE_BACKEND_ADJUST:
 	    DEBUGF("backend_main: EPX_MESSAGE_BACKEND_ADJUST");
-	    epx_backend_adjust(backend, m.param);
-	    enif_release_resource(m.param);    // thread safe?	    
+	    if (backend->owner != NULL)
+		epx_backend_adjust(backend, m.param);
+	    DEBUGF("    unref: m.param %p", m.param);
+	    epx_object_unref(m.param);    // thread safe?	    
 	    break;
 
 	case EPX_MESSAGE_PIXMAP_ATTACH:
 	    DEBUGF("backend_main: EPX_MESSAGE_PIXMAP_ATTACH");
 	    epx_backend_pixmap_attach(backend, m.pixmap);
-	    enif_release_resource(m.pixmap);  // thread safe?
+	    DEBUGF("    unref: m.pixmap %p", m.pixmap);
+	    epx_object_unref(m.pixmap);  // thread safe?
 	    break;
 
 	case EPX_MESSAGE_PIXMAP_DETACH:
 	    DEBUGF("backend_main: EPX_MESSAGE_PIXMAP_DETACH");
+	    DEBUGF("    owner %p", m.pixmap->owner);
 	    epx_pixmap_detach(m.pixmap);
-	    enif_release_resource(m.pixmap->user);
+	    DEBUGF("    unref: m.pixmap->user %p", m.pixmap->user);
+	    epx_object_unref(m.pixmap->user);
 	    m.pixmap->user = 0;
-	    if (m.dtor)
-		epx_object_unref(m.pixmap);
-	    else
-		enif_release_resource(m.pixmap);
+	    epx_object_unref(m.pixmap);
 	    break;
 
 	case EPX_MESSAGE_PIXMAP_DRAW:
 	    DEBUGF("backend_main: EPX_MESSAGE_PIXMAP_DRAW");
-	    if (!epx_backend_draw_begin(backend, m.wdraw.window)) {
+	    DEBUGF("  window=%p, owner=%p", m.wdraw.window,
+		   m.wdraw.window->owner);
+	    if ((m.wdraw.window->owner != NULL) &&
+		!epx_backend_draw_begin(backend, m.wdraw.window)) {
 		epx_backend_pixmap_draw(backend, m.wdraw.pixmap, m.wdraw.window,
 					m.wdraw.src_x, m.wdraw.src_y,
 					m.wdraw.dst_x, m.wdraw.dst_y,
@@ -5295,28 +6177,28 @@ static void* backend_main(void* arg)
 		epx_backend_draw_end(backend, m.wdraw.window, 0);
 		epx_window_swap(m.wdraw.window);
 	    }
-	    enif_release_resource(m.wdraw.pixmap);
-	    enif_release_resource(m.wdraw.window);
+	    epx_object_unref(m.wdraw.pixmap);
+	    epx_object_unref(m.wdraw.window);
 	    break;
 
 	case EPX_MESSAGE_WINDOW_SYNC: {
 	    ERL_NIF_TERM msg;
 	    ErlNifPid* pid;
 	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_SYNC");
-
-	    // FIXME: we should/could update backend interface
-	    epx_backend_pixmap_sync(backend, NULL, m.window);
+	    DEBUGF("  window=%p, owner=%p", m.window, m.window->owner);
 
 	    pid = m.window->owner;
-	    msg = enif_make_tuple3(priv->env,
-				   ATOM(epx_event),
-				   make_object(priv->env,
-					       ATOM(epx_window),
-					       m.window),
-				   ATOM(synced));
-	    enif_send(0, pid, priv->env, msg);
-	    enif_clear_env(priv->env);
-	    enif_release_resource(m.window);
+	    if (pid != NULL) {
+		epx_backend_pixmap_sync(backend, NULL, m.window);	
+		msg = enif_make_tuple3(priv->env,
+				       ATOM(epx_event),
+				       make_window(priv->env, m.window),
+				       ATOM(synced));
+		enif_send(0, pid, priv->env, msg);
+		enif_clear_env(priv->env);
+	    }
+	    DEBUGF("    unref: m.window %p", m.window);
+	    epx_object_unref(m.window);
 	    break;
 	}
 
@@ -5363,44 +6245,43 @@ static ERL_NIF_TERM backend_open(ErlNifEnv* env, int argc,
     (void) argc;
     char name[256];
     epx_dict_t* param;
-    epx_backend_t* be;
-    epx_nif_backend_t* backend;
+    epx_backend_t* backend;
+    epx_nif_backend_t* nif_backend;
     epx_ctx_t* ctx = (epx_ctx_t*) enif_priv_data(env);
     ERL_NIF_TERM res;
-    ErlNifPid* caller;
 
     if (!enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &dict_res, (void**) &param))
+    if (!get_dict(env, argv[1], &param))
 	return enif_make_badarg(env);
 #ifdef __APPLE__
     param->opaque = epx_posix_steal_pthread;
 #endif
-    if (!(be = epx_backend_create(name, param)))
+    if (!(backend = epx_backend_create(name, param)))
 	return enif_make_badarg(env);
-    backend = epx_resource_alloc(&backend_res,sizeof(epx_nif_backend_t));
-    if (!backend)
+    
+    nif_backend = enif_alloc_resource(backend_res, sizeof(epx_nif_backend_t));
+    if (!nif_backend)
 	return enif_make_badarg(env);
-    if (!(caller = enif_alloc(sizeof(ErlNifPid))))
-	return enif_make_badarg(env);
-
-    backend->owner = (void*) enif_self(env, caller);
-    backend->backend = be;
+    backend->owner = (void*) enif_self(env, &nif_backend->own);
+    backend->res = nif_backend;
+    nif_backend->backend = backend;
+    nif_backend->next = NULL;
 
     // start the backend thread stack size = default - FIXME handle error
-    backend->main = epx_thread_start(backend_main, backend,
-				     DO_NOT_WAKEUP, 
-				     DO_NOT_STEAL,
-				     STACK_SIZE_AUTO);
+    nif_backend->main = epx_thread_start(backend_main, backend,
+					 DO_NOT_WAKEUP, 
+					 DO_NOT_STEAL,
+					 STACK_SIZE_AUTO);
 
     // add backend to list
     enif_rwlock_rwlock(ctx->backend_list_lock);
-    backend->next = ctx->backend_list;
-    ctx->backend_list = backend;
+    nif_backend->next = ctx->backend_list;
+    ctx->backend_list = nif_backend;
     enif_rwlock_rwunlock(ctx->backend_list_lock);
 
-    res = make_object(env,ATOM(epx_backend), backend);
-    enif_release_resource(backend);
+    res = make_object(env, (epx_object_t*) backend);
+    enif_release_resource(nif_backend);
     return res;
 }
 
@@ -5408,70 +6289,68 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
 				 const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_nif_backend_t* backend;
-    epx_backend_t* be;
+    epx_backend_t* backend;
 
-    if (!get_object(env, argv[0], &backend_res, (void**) &backend))
+    if (!get_backend(env, argv[0], &backend))
 	return enif_make_badarg(env);
-    be = backend->backend;
 
     if (argv[1] == ATOM(name)) {  // number of events pending
-	return enif_make_string(env, be->name, ERL_NIF_LATIN1);
+	return enif_make_string(env, backend->name, ERL_NIF_LATIN1);
     }
     else if (argv[1] == ATOM(pending)) {  // number of events pending
-	return enif_make_int(env, be->pending);
+	return enif_make_int(env, backend->pending);
     }
     else if (argv[1] == ATOM(opengl)) { // opengl support
-	return make_bool(env, be->opengl);
+	return make_bool(env, backend->opengl);
     }
     else if (argv[1] == ATOM(use_opengl)) { // opengl used
-	return make_bool(env, be->use_opengl);
+	return make_bool(env, backend->use_opengl);
     }
     else if (argv[1] == ATOM(windows)) { // windows attached
 	epx_window_t* window;
 	ERL_NIF_TERM list = enif_make_list(env, 0);
 
-	epx_lock_lock(be->window_list.lock);
-	window = (epx_window_t*) be->window_list.first;
+	epx_lock_lock(backend->window_list.lock);
+	window = (epx_window_t*) backend->window_list.first;
 
 	while(window) {
 	    list =
 		enif_make_list_cell(env,
-				    make_object(env, ATOM(epx_window), window),
+				    make_window(env,window),
 				    list);
 	    window = window->next;
 	}
-	epx_lock_unlock(be->window_list.lock);
+	epx_lock_unlock(backend->window_list.lock);
 	return list;
     }
     else if (argv[1] == ATOM(pixmaps)) { // pixmaps attached
 	epx_pixmap_t* pixmap;
 	ERL_NIF_TERM list = enif_make_list(env, 0);
 
-	epx_lock_lock(be->pixmap_list.lock);
-	pixmap = (epx_pixmap_t*) be->pixmap_list.first;
+	epx_lock_lock(backend->pixmap_list.lock);
+	pixmap = (epx_pixmap_t*) backend->pixmap_list.first;
 
 	while(pixmap) {
 	    list =
 		enif_make_list_cell(env,
-				    make_object(env, ATOM(epx_pixmap), pixmap),
+				    make_pixmap(env,pixmap),
 				    list);
 	    pixmap = pixmap->next;
 	}
-	epx_lock_unlock(be->pixmap_list.lock);
+	epx_lock_unlock(backend->pixmap_list.lock);
 	return list;
     }
     else if (argv[1] == ATOM(width)) { // width of display
-	return enif_make_int(env, be->width);
+	return enif_make_int(env, backend->width);
     }
     else if (argv[1] == ATOM(height)) { // height of display
-	return enif_make_int(env, be->height);
+	return enif_make_int(env, backend->height);
     }
     else if (argv[1] == ATOM(epx_pixel_formats)) { // pixmap formats supported
 	int i;
 	ERL_NIF_TERM list = enif_make_list(env, 0);
-	for (i = be->nformats-1; i >= 0; i--) {
-	    ERL_NIF_TERM hd = make_epx_pixel_format(env,be->formats[i]);
+	for (i = backend->nformats-1; i >= 0; i--) {
+	    ERL_NIF_TERM hd = make_epx_pixel_format(env,backend->formats[i]);
 	    list = enif_make_list_cell(env,hd,list);
 	}
 	return list;
@@ -5479,8 +6358,8 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
     else if (argv[1] == ATOM(pixel_formats)) { // as epx_pixel_formats but names
 	int i;
 	ERL_NIF_TERM list = enif_make_list(env, 0);
-	for (i = be->nformats-1; i >= 0; i--) {
-	    ERL_NIF_TERM hd = make_pixel_format(env,be->formats[i]);
+	for (i = backend->nformats-1; i >= 0; i--) {
+	    ERL_NIF_TERM hd = make_pixel_format(env,backend->formats[i]);
 	    list = enif_make_list_cell(env,hd,list);
 	}
 	return list;
@@ -5494,7 +6373,7 @@ static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
 	    epx_dict_init(&d);
 	    epx_dict_set_boolean(&d, namebuf, 0);
 
-	    if (epx_backend_info(be, &d)) {
+	    if (epx_backend_info(backend, &d)) {
 		epx_dict_data_t k;
 		int ix;
 		k.type = EPX_DICT_STRING;
@@ -5517,18 +6396,18 @@ static ERL_NIF_TERM backend_adjust(ErlNifEnv* env, int argc,
 				   const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_nif_backend_t* backend;
+    epx_backend_t* backend;
     epx_dict_t* param;
     epx_message_t m;
 
-    if (!get_object(env, argv[0], &backend_res, (void**) &backend))
+    if (!get_backend(env, argv[0], &backend))
 	return enif_make_badarg(env);    
-    if (!get_object(env, argv[1], &dict_res, (void**) &param))
+    if (!get_dict(env, argv[1], &param))
 	return enif_make_badarg(env);
-    enif_keep_resource(param);
     m.type = EPX_MESSAGE_BACKEND_ADJUST;
     m.param = param;
-    epx_message_send(backend->main, 0, &m);
+    epx_object_ref(m.param);
+    backend_send(backend, &m);
     return ATOM(ok);    
 }
 
@@ -5543,9 +6422,9 @@ static ERL_NIF_TERM window_create(ErlNifEnv* env, int argc,
     unsigned int width;
     unsigned int height;
     epx_window_t* window = 0;
-    ERL_NIF_TERM res;
-    ErlNifPid* caller;
+    ERL_NIF_TERM t;
     uint32_t events = 0;
+    epx_nif_window_t* nw;
 
     if (!get_coord(env, NULL, argv[0], argv[1], &x, &y))
 	return enif_make_badarg(env);
@@ -5555,48 +6434,41 @@ static ERL_NIF_TERM window_create(ErlNifEnv* env, int argc,
 	if (!get_event_flags(env, argv[4], &events))
 	    return enif_make_badarg(env);
     }
-    window = epx_resource_alloc(&window_res, sizeof(epx_window_t));
-    if (!window)
-	goto error;
-    if (!(caller = enif_alloc(sizeof(ErlNifPid))))
-	goto error;
-    if (epx_window_init(window, x, y, width, height) < 0)
-	goto error;
+    if ((window = epx_window_create(x, y, width, height)) == NULL)
+	return enif_make_badarg(env);
+    nw = enif_alloc_resource(window_res, sizeof(epx_nif_window_t));
+    nw->window = window;
+    window->owner = (void*) enif_self(env, &nw->own);
+    window->res = nw;
     epx_window_set_event_mask(window, events);
-    window->owner = (void*) enif_self(env, caller);
-    epx_object_ref(window);
-    res = make_object(env,ATOM(epx_window),window);
-    enif_release_resource(window);
-    return res;
-
-error:
-    if (window)
-	enif_release_resource(window);
-    return enif_make_badarg(env);
+    t = make_window(env,window);
+    enif_release_resource(nw);
+    return t;
 }
 
 static ERL_NIF_TERM window_adjust(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_nif_backend_t* backend;
+    epx_backend_t* backend;
     epx_window_t* window;
     epx_dict_t* param;
     epx_message_t m;
 
-    if (!get_object(env, argv[0], &window_res, (void**) &window))
+    if (!get_window(env, argv[0], &window))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &dict_res, (void**) &param))
+    if (!get_dict(env, argv[1], &param))
 	return enif_make_badarg(env);
 
     if (!(backend = window->user))
 	return enif_make_badarg(env);
-    enif_keep_resource(window);
-    enif_keep_resource(param);
+
     m.type = EPX_MESSAGE_WINDOW_ADJUST;
     m.wadjust.window = window;
     m.wadjust.param  = param;
-    epx_message_send(backend->main, 0, &m);
+    epx_object_ref(m.wadjust.window);
+    epx_object_ref(m.wadjust.param);
+    backend_send(backend, &m);
     return ATOM(ok);
 }
 
@@ -5606,7 +6478,7 @@ static ERL_NIF_TERM window_info(ErlNifEnv* env, int argc,
     (void) argc;
     epx_window_t* win;
 
-    if (!get_object(env, argv[0], &window_res, (void**) &win))
+    if (!get_window(env, argv[0], &win))        
 	return enif_make_badarg(env);
     if (argv[1] == ATOM(x)) {
 	return enif_make_int(env, win->rarea.xy.x);
@@ -5621,11 +6493,11 @@ static ERL_NIF_TERM window_info(ErlNifEnv* env, int argc,
 	return enif_make_uint(env, win->rarea.wh.height);
     }
     else if (argv[1] == ATOM(backend)) {
-	epx_nif_backend_t* backend = (epx_nif_backend_t*) win->user;
+	epx_backend_t* backend = (epx_backend_t*) win->user;
 	if (!backend)
 	    return ATOM(undefined);
 	else
-	    return make_object(env,ATOM(epx_backend), backend);
+	    return make_object(env,(epx_object_t*) backend);
     }
     else if (argv[1] == ATOM(event_mask)) {
 	return make_event_flags(env, win->mask);
@@ -5662,26 +6534,24 @@ static ERL_NIF_TERM window_attach(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_nif_backend_t* backend;
+    epx_backend_t* backend;    
     epx_window_t* window;
     epx_message_t m;
 
-    if (!get_object(env, argv[0], &window_res, (void**) &window))
+    if (!get_window(env, argv[0], &window))
 	return enif_make_badarg(env);
-    if (!get_object(env, argv[1], &backend_res, (void**) &backend))
+    if (!get_backend(env, argv[1], &backend))
 	return enif_make_badarg(env);
 
     if (window->user)
 	return enif_make_badarg(env);
 
-    enif_keep_resource(backend); // window reference backend
+    epx_object_ref(backend);    // window reference backend
     window->user = backend;
-
-    enif_keep_resource(window);  // keep until backend has completed
     m.type = EPX_MESSAGE_WINDOW_ATTACH;
     m.window = window;
-    epx_message_send(backend->main, 0, &m);
-
+    epx_object_ref(m.window);
+    backend_send(backend, &m);
     return ATOM(ok);
 }
 
@@ -5690,20 +6560,19 @@ static ERL_NIF_TERM window_detach(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_nif_backend_t* backend;
+    epx_backend_t* backend;
     epx_window_t* window;
     epx_message_t m;
 
-    if (!get_object(env, argv[0], &window_res, (void**) &window))
+    if (!get_window(env, argv[0], &window))
 	return enif_make_badarg(env);
     if (!(backend = window->user))
 	return enif_make_badarg(env);
 
-    enif_keep_resource(window); // backend_main: release
     m.type = EPX_MESSAGE_WINDOW_DETACH;
-    m.dtor = 0;
     m.window = window;
-    epx_message_send(backend->main, 0, &m);
+    epx_object_ref(m.window);
+    backend_send(backend, &m);
     return ATOM(ok);
 }
 
@@ -5714,7 +6583,7 @@ static ERL_NIF_TERM window_set_event_mask(ErlNifEnv* env, int argc,
     epx_window_t* window;
     uint32_t events;
 
-    if (!get_object(env, argv[0], &window_res, (void**) &window))
+    if (!get_window(env, argv[0], &window))
 	return enif_make_badarg(env);
     if (!get_event_flags(env, argv[1], &events))
 	return enif_make_badarg(env);
@@ -5729,7 +6598,7 @@ static ERL_NIF_TERM window_enable_events(ErlNifEnv* env, int argc,
     epx_window_t* window;
     uint32_t events;
 
-    if (!get_object(env, argv[0], &window_res, (void**) &window))
+    if (!get_window(env, argv[0], &window))
 	return enif_make_badarg(env);
     if (!get_event_flags(env, argv[1], &events))
 	return enif_make_badarg(env);
@@ -5744,7 +6613,7 @@ static ERL_NIF_TERM window_disable_events(ErlNifEnv* env, int argc,
     epx_window_t* window;
     uint32_t events;
 
-    if (!get_object(env, argv[0], &window_res, (void**) &window))
+    if (!get_window(env, argv[0], &window))
 	return enif_make_badarg(env);
     if (!get_event_flags(env, argv[1], &events))
 	return enif_make_badarg(env);
@@ -5775,13 +6644,15 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
 
     // Type names
     LOAD_ATOM(epx_pixmap);
+    LOAD_ATOM(epx_bitmap);    
     LOAD_ATOM(epx_window);
     LOAD_ATOM(epx_backend);
     LOAD_ATOM(epx_dict);
     LOAD_ATOM(epx_gc);
     LOAD_ATOM(epx_font);
     LOAD_ATOM(epx_animation);
-    LOAD_ATOM(epx_canvas);    
+    LOAD_ATOM(epx_canvas);
+    LOAD_ATOM(epx_poly);
 
     // Flags
     LOAD_ATOM(solid);
@@ -5836,6 +6707,18 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(x);
     LOAD_ATOM(y);
     LOAD_ATOM(event_mask);
+
+    // poly_info
+    LOAD_ATOM(box);
+    LOAD_ATOM(edge);
+    LOAD_ATOM(sedge);
+    LOAD_ATOM(vertex);
+    LOAD_ATOM(pos);
+    LOAD_ATOM(slope);
+
+    // poly flags
+    LOAD_ATOM(absolute);  // default
+    LOAD_ATOM(relative);
 
     // epx_cap_style_t
     LOAD_ATOM(none);
@@ -6129,10 +7012,8 @@ epx_lock_t epx_nif_locker(epx_lock_command_t cmd, epx_lock_t lock)
     }
 }
 
-
 static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 {
-    ErlNifResourceFlags tried;
     epx_ctx_t* ctx;
     (void) env;
     (void) load_info;
@@ -6144,22 +7025,16 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     epx_lock_init(epx_nif_locker);
 
     // Create resource types
-    epx_resource_init(env, &dict_res, "epx_dict", object_dtor,
-		      ERL_NIF_RT_CREATE, &tried);
-    epx_resource_init(env, &pixmap_res, "epx_pixmap", pixmap_dtor,
-		      ERL_NIF_RT_CREATE, &tried);
-    epx_resource_init(env, &gc_res, "epx_gc", object_dtor,
-		      ERL_NIF_RT_CREATE, &tried);
-    epx_resource_init(env, &font_res, "epx_font", object_dtor,
-		      ERL_NIF_RT_CREATE, &tried);
-    epx_resource_init(env, &backend_res, "epx_backend", backend_dtor,
-		      ERL_NIF_RT_CREATE, &tried);
-    epx_resource_init(env, &window_res, "epx_window", window_dtor,
-		      ERL_NIF_RT_CREATE, &tried);
-    epx_resource_init(env, &anim_res, "epx_animation", object_dtor,
-		      ERL_NIF_RT_CREATE, &tried);
-    epx_resource_init(env, &canvas_res, "epx_canvas", object_dtor,
-		      ERL_NIF_RT_CREATE, &tried);    
+    pixmap_res = epx_resource_create(env, "epx_pixmap", pixmap_dtor);
+    window_res = epx_resource_create(env, "epx_window", window_dtor);    
+    backend_res = epx_resource_create(env,"epx_backend", backend_dtor);
+    bitmap_res = epx_resource_create(env, "epx_bitmap", object_dtor);
+    dict_res = epx_resource_create(env,"epx_dict", object_dtor);
+    gc_res = epx_resource_create(env,"epx_gc", object_dtor);
+    font_res = epx_resource_create(env,"epx_font", object_dtor);
+    animation_res = epx_resource_create(env,"epx_animation", object_dtor);
+    canvas_res = epx_resource_create(env,"epx_canvas", object_dtor);
+    poly_res = epx_resource_create(env,"epx_poly", object_dtor);
 
     if ((ctx = (epx_ctx_t*) enif_alloc(sizeof(epx_ctx_t))) == NULL)
 	return -1;
@@ -6173,8 +7048,8 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ctx->accel = epx_simd_accel();
 
     // create the "default" gc
-    ctx->def_gc = epx_resource_alloc(&gc_res, sizeof(epx_gc_t));
-    epx_gc_init_copy(&epx_default_gc, ctx->def_gc);
+    ctx->def_gc = epx_gc_copy(&epx_default_gc);
+    alloc_object(gc_res, (epx_object_t*)ctx->def_gc);
     epx_object_ref(ctx->def_gc);
 
     load_atoms(env, ctx);
@@ -6194,7 +7069,6 @@ static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
     (void) env;
     (void) load_info;
     epx_message_t m;
-    ErlNifResourceFlags tried;
     epx_ctx_t* ctx = (epx_ctx_t*) *old_priv_data;
     epx_nif_backend_t* bp;
     int sync_count;
@@ -6206,23 +7080,17 @@ static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
 
     ctx->ref_count++;
 
-    epx_resource_init(env, &dict_res, "epx_dict", object_dtor,
-		      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, &tried);
-    epx_resource_init(env, &pixmap_res, "epx_pixmap", pixmap_dtor,
-		      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, &tried);
-    epx_resource_init(env, &gc_res, "epx_gc", object_dtor,
-		      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, &tried);
-    epx_resource_init(env, &font_res, "epx_font", object_dtor,
-		      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, &tried);
-    epx_resource_init(env, &backend_res, "epx_backend", backend_dtor,
-		      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, &tried);
-    epx_resource_init(env, &window_res, "epx_window", window_dtor,
-		      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, &tried);
-    epx_resource_init(env, &anim_res, "epx_animation",  object_dtor,
-		      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, &tried);
-    epx_resource_init(env, &canvas_res, "epx_canvas",  object_dtor,
-		      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, &tried);    
-
+    pixmap_res = epx_resource_takeover(env, "epx_pixmap", pixmap_dtor);
+    window_res = epx_resource_takeover(env, "epx_window", window_dtor);    
+    backend_res = epx_resource_takeover(env,"epx_backend", backend_dtor);
+    bitmap_res = epx_resource_create(env, "epx_bitmap", object_dtor);    
+    dict_res = epx_resource_takeover(env,"epx_dict", object_dtor);
+    gc_res = epx_resource_takeover(env,"epx_gc", object_dtor);
+    font_res = epx_resource_takeover(env,"epx_font", object_dtor);
+    animation_res = epx_resource_takeover(env,"epx_animation", object_dtor);
+    canvas_res = epx_resource_takeover(env,"epx_canvas", object_dtor);
+    poly_res = epx_resource_takeover(env,"epx_poly", object_dtor);
+    
     load_atoms(env, ctx);
 
     // upgrade reaper

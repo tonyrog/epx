@@ -127,25 +127,25 @@ epx_backend_t* xcb_init(epx_dict_t* param);
 int xcb_upgrade(epx_backend_t* be);
 
 static int xcb_finish(epx_backend_t*);
-static int xcb_pix_attach(epx_backend_t*, epx_pixmap_t*);
-static int xcb_pix_detach(epx_backend_t*, epx_pixmap_t*);
+static int xcb_pixmap_attach(epx_backend_t*, epx_pixmap_t*);
+static int xcb_pixmap_detach(epx_backend_t*, epx_pixmap_t*);
 static int xcb_draw_begin(epx_window_t*);
 static int xcb_draw_end(epx_window_t*,int off_screen);
 static int xcb_draw(epx_backend_t*, epx_pixmap_t*, epx_window_t*,
 		    int src_x, int src_y, int dst_x, int dst_y,
 		    unsigned int width,
 		    unsigned int height);
-static int xcb_pix_sync(epx_backend_t*, epx_pixmap_t*, epx_window_t*);
-static int xcb_win_attach(epx_backend_t*, epx_window_t*);
-static int xcb_win_detach(epx_backend_t*, epx_window_t*);
-static int xcb_win_swap(epx_backend_t*, epx_window_t*);
+static int xcb_pixmap_sync(epx_backend_t*, epx_pixmap_t*, epx_window_t*);
+static int xcb_window_attach(epx_backend_t*, epx_window_t*);
+static int xcb_window_detach(epx_backend_t*, epx_window_t*);
+static int xcb_window_swap(epx_backend_t*, epx_window_t*);
 static EPX_HANDLE_T xcb_evt_attach(epx_backend_t*);
 static int xcb_evt_detach(epx_backend_t*);
 static int xcb_evt_read(epx_backend_t*, epx_event_t*);
 static int xcb_adjust(epx_backend_t *backend, epx_dict_t* param);
-static int xcb_win_adjust(epx_window_t*, epx_dict_t* param);
+static int xcb_window_adjust(epx_window_t*, epx_dict_t* param);
 static int xcb_info(epx_backend_t*, epx_dict_t* param);
-static int xcb_win_info(epx_window_t*, epx_dict_t* param);
+static int xcb_window_info(epx_window_t*, epx_dict_t* param);
 
 static void xcb_grab(epx_backend_t* backend, epx_window_t* window, int toggle);
 
@@ -153,22 +153,22 @@ static void xcb_grab(epx_backend_t* backend, epx_window_t* window, int toggle);
 static epx_callbacks_t xcb_callbacks =
 {
     .finish     = xcb_finish,
-    .pix_attach = xcb_pix_attach,
-    .pix_detach = xcb_pix_detach,
+    .pix_attach = xcb_pixmap_attach,
+    .pix_detach = xcb_pixmap_detach,
     .pix_draw   = xcb_draw,
-    .pix_sync   = xcb_pix_sync,
-    .win_attach = xcb_win_attach,
-    .win_detach = xcb_win_detach,
+    .pix_sync   = xcb_pixmap_sync,
+    .win_attach = xcb_window_attach,
+    .win_detach = xcb_window_detach,
     .evt_attach = xcb_evt_attach,
     .evt_detach = xcb_evt_detach,
     .evt_read   = xcb_evt_read,
     .adjust     = xcb_adjust,
-    .win_swap   = xcb_win_swap,
+    .win_swap   = xcb_window_swap,
     .begin      = xcb_draw_begin,
     .end        = xcb_draw_end,
-    .win_adjust = xcb_win_adjust,
+    .win_adjust = xcb_window_adjust,
     .info       = xcb_info,
-    .win_info   = xcb_win_info
+    .win_info   = xcb_window_info
 };
 
 #define NUM_LOCK_MASK    0x00000002
@@ -646,18 +646,21 @@ epx_backend_t* xcb_init(epx_dict_t* param)
     if ((b = (XCBBackend*) malloc(sizeof(XCBBackend))) == NULL)
 	return NULL;
     EPX_OBJECT_INIT((epx_backend_t*)b, EPX_BACKEND_TYPE);
-    b->b.name = "xcb";
     b->b.on_heap = 1;
     b->b.refc = 1;
-    b->b.cb = &xcb_callbacks;
+    b->b.owner = NULL;
+    b->b.user = NULL;
+    b->b.name = "xcb";
     b->b.pending = 0;
-    b->b.opengl = 0;
+    b->b.opengl = 0;    
+    b->b.use_opengl = 0;    
     b->b.width = 0;
     b->b.height = 0;
-    epx_object_list_init(&b->b.pixmap_list);
-    epx_object_list_init(&b->b.window_list);
     b->b.nformats = 0;
+    epx_object_list_init(&b->b.window_list);
+    epx_object_list_init(&b->b.pixmap_list);
     b->b.event = EPX_INVALID_HANDLE;
+    b->b.cb = &xcb_callbacks;
 #ifdef HAVE_OPENGL
     b->fbconfigs = NULL;
 #endif
@@ -814,7 +817,7 @@ static int match_or_update_format(XCBBackend* b, epx_pixmap_t* p)
 }
 
 
-static int xcb_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int xcb_pixmap_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     XCBBackend* b = (XCBBackend*) backend;
     XCBPixmap* p;
@@ -929,7 +932,7 @@ static int xcb_pix_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
     return 0;
 }
 
-static int xcb_pix_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
+static int xcb_pixmap_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     XCBPixmap* p = (XCBPixmap*) pixmap->opaque;
 
@@ -942,12 +945,12 @@ static int xcb_pix_detach(epx_backend_t* backend, epx_pixmap_t* pixmap)
     return 0;
 }
 
-static int xcb_draw_begin(epx_window_t* ewin)
+static int xcb_draw_begin(epx_window_t* window)
 {
-    if (ewin->opengl) {
+    if (window->opengl) {
 #ifdef HAVE_OPENGL
-	XCBBackend* b  = (XCBBackend*) ewin->backend;
-	XCBWindow*  w  = (XCBWindow*) ewin->opaque;
+	XCBBackend* b  = (XCBBackend*) window->backend;
+	XCBWindow*  w  = (XCBWindow*) window->opaque;
 	
 	glXMakeCurrent(b->connection, w->window, w->context);
 #endif
@@ -955,12 +958,12 @@ static int xcb_draw_begin(epx_window_t* ewin)
     return 0;
 }
 
-static int xcb_draw_end(epx_window_t* ewin, int off_screen)
+static int xcb_draw_end(epx_window_t* window, int off_screen)
 {
-    // XCBWindow*  w = (XCBWindow*) ewin->opaque;
-    XCBBackend* b  = (XCBBackend*) ewin->backend;
+    // XCBWindow*  w = (XCBWindow*) window->opaque;
+    XCBBackend* b  = (XCBBackend*) window->backend;
 
-    if (ewin->opengl) {
+    if (window->opengl) {
 #ifdef HAVE_OPENGL
 	glFlush();
 	if (!off_screen)
@@ -979,18 +982,18 @@ static int xcb_draw_end(epx_window_t* ewin, int off_screen)
 }
 
 static int xcb_draw(epx_backend_t* backend, epx_pixmap_t* pic,
-		    epx_window_t* ewin,
+		    epx_window_t* window,
 		    int src_x, int src_y, int dst_x, int dst_y,
 		    unsigned int width,
 		    unsigned int height)
 {
     XCBBackend* b = (XCBBackend*) backend;
-    XCBWindow*  w = (XCBWindow*) ewin->opaque;
+    XCBWindow*  w = (XCBWindow*) window->opaque;
     XCBPixmap*  p = (XCBPixmap*) pic->opaque;
 
     if (w == NULL)
 	return -1;
-    if (ewin->opengl) {
+    if (window->opengl) {
 #ifdef HAVE_OPENGL
 	// Fixme check for errors
 	epx_gl_load_texture(pic, &w->textureName, 0, 1, GL_REPEAT,
@@ -1066,22 +1069,22 @@ static int xcb_draw(epx_backend_t* backend, epx_pixmap_t* pic,
 }
 
 // make sure all draw command have been synced
-static int xcb_pix_sync(epx_backend_t* backend, epx_pixmap_t* pixmap,
-			epx_window_t* ewin)
+static int xcb_pixmap_sync(epx_backend_t* backend, epx_pixmap_t* pixmap,
+			epx_window_t* window)
 {
     XCBBackend* be = (XCBBackend*) backend;
     (void) pixmap;
-    (void) ewin;
+    (void) window;
 
     return xcb_flush(be->connection);
 }
 
-static int xcb_win_swap(epx_backend_t* backend, epx_window_t* ewin)
+static int xcb_window_swap(epx_backend_t* backend, epx_window_t* window)
 {
     XCBBackend* b = (XCBBackend*) backend;
-    XCBWindow*  w = (XCBWindow*) ewin->opaque;
+    XCBWindow*  w = (XCBWindow*) window->opaque;
 
-    if (ewin->opengl) {
+    if (window->opengl) {
 #ifdef HAVE_OPENGL
 	glXMakeCurrent(be->connection, w->window, w->context);
 	glXSwapBuffers(be->connection, w->window);
@@ -1112,7 +1115,7 @@ static void set_value(uint32_t mask, uint32_t flag, uint32_t* values, uint32_t v
 }
 
 
-static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
+static int xcb_window_attach(epx_backend_t* backend, epx_window_t* window)
 {
     XCBBackend* b = (XCBBackend*) backend;
     XCBWindow*  w = NULL;
@@ -1121,7 +1124,7 @@ static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
     uint32_t value_mask;
     uint32_t value_list[32];
 
-    if (ewin->opaque != NULL)
+    if (window->opaque != NULL)
 	return -1;
     if ((w = (XCBWindow*) malloc(sizeof(XCBWindow))) == NULL)
 	return -1;
@@ -1196,10 +1199,10 @@ static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 			  XCB_COPY_FROM_PARENT, // vinfo->depth, /* depth */
 			  win,
 			  b->screen->root,
-			  ewin->area.xy.x,      // x
-			  ewin->area.xy.y,	// y
-			  ewin->area.wh.width,	// width
-			  ewin->area.wh.height,	// height
+			  window->area.xy.x,      // x
+			  window->area.xy.y,	// y
+			  window->area.wh.width,	// width
+			  window->area.wh.height,	// height
 			  2,		        // border
 			  XCB_WINDOW_CLASS_INPUT_OUTPUT, // class
 			  b->screen->root_visual, // vinfo->visual, // visual
@@ -1212,7 +1215,7 @@ static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 						NULL, True ); */
 	    w->context = glXCreateContext(b->connection, vinfo, NULL, True);
 	    if (w->context)
-		ewin->opengl = 1;
+		window->opengl = 1;
 	}
 #endif
     }
@@ -1224,10 +1227,10 @@ static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 			  XCB_COPY_FROM_PARENT, // vinfo->depth, /* depth */
 			  win,
 			  b->screen->root,
-			  ewin->area.xy.x,      // x
-			  ewin->area.xy.y,	// y
-			  ewin->area.wh.width,	// width
-			  ewin->area.wh.height,	// height
+			  window->area.xy.x,      // x
+			  window->area.xy.y,	// y
+			  window->area.wh.width,	// width
+			  window->area.wh.height,	// height
 			  2,		        // border
 			  XCB_WINDOW_CLASS_INPUT_OUTPUT, // class
 			  b->screen->root_visual, // be->vinfo, // visual
@@ -1244,10 +1247,10 @@ static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	w->accel_den = 0;
 	w->thres = 0;
 	w->window = win;
-	w->x = ewin->area.xy.x;
-	w->y = ewin->area.xy.y;	
-	w->width = ewin->area.wh.width;
-	w->height = ewin->area.wh.height;
+	w->x = window->area.xy.x;
+	w->y = window->area.xy.y;	
+	w->width = window->area.wh.width;
+	w->height = window->area.wh.height;
 
 	w->gc = xcb_generate_id(b->connection);
 	xcb_create_gc(b->connection, w->gc, win, 0, NULL);
@@ -1270,25 +1273,25 @@ static int xcb_win_attach(epx_backend_t* backend, epx_window_t* ewin)
 	// fixme loop until MAP_NOTIFY on current window
 	// XIfEvent(be->connection, &event, WaitForNotify, (XPointer) win );
 	xcb_flush(b->connection);
-	epx_object_link(&backend->window_list, ewin);
-	ewin->opaque  = (void*) w;
-	ewin->backend = (epx_backend_t*) b;
+	epx_object_link(&backend->window_list, window);
+	window->opaque  = (void*) w;
+	window->backend = (epx_backend_t*) b;
 	return 0;
     }
     free(w);
     return -1;
 }
 
-static int xcb_win_detach(epx_backend_t* backend, epx_window_t* ewin)
+static int xcb_window_detach(epx_backend_t* backend, epx_window_t* window)
 {
     XCBBackend* be = (XCBBackend*) backend;
-    XCBWindow*  xwin = (XCBWindow*) ewin->opaque;
+    XCBWindow*  xwin = (XCBWindow*) window->opaque;
     
     if ((xwin != NULL) && (xwin->window != 0)) {
 	EPX_DBGFMT("xcb_unmap_window");
 	xcb_unmap_window(be->connection, xwin->window);
 	destroy_off_screen(be, xwin);
-	if (ewin->opengl) {
+	if (window->opengl) {
 #ifdef HAVE_OPENGL
 	    glXDestroyContext(be->connection, xwin->context);
 	    if (be->fbconfigs != NULL)
@@ -1300,9 +1303,9 @@ static int xcb_win_detach(epx_backend_t* backend, epx_window_t* ewin)
 	xcb_flush(be->connection);
 	/* Ungrabb? */
 	free(xwin);
-	epx_object_unlink(&backend->window_list, ewin);
-	ewin->opaque  = NULL;
-	ewin->backend = NULL;
+	epx_object_unlink(&backend->window_list, window);
+	window->opaque  = NULL;
+	window->backend = NULL;
 	return 0;
     }
     return -1;
@@ -2078,7 +2081,7 @@ typedef struct xcb_size_hints_t {
     uint32_t win_gravity;
 } xcb_size_hints_t;
 
-static int xcb_win_adjust(epx_window_t *win, epx_dict_t*param)
+static int xcb_window_adjust(epx_window_t *win, epx_dict_t*param)
 {
     int bool_val;
     char* window_name = NULL;
@@ -2240,7 +2243,7 @@ static int xcb_win_adjust(epx_window_t *win, epx_dict_t*param)
 // Query interface, send boolean entries and return the
 // queried for value
 
-static int xcb_win_info(epx_window_t* win, epx_dict_t* param)
+static int xcb_window_info(epx_window_t* win, epx_dict_t* param)
 {
     int bval;
     XCBWindow*  w  = (XCBWindow*) win->opaque;

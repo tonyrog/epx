@@ -615,9 +615,11 @@ epx_backend_t* fb_init(epx_dict_t* param)
 	return NULL;
 
     EPX_OBJECT_INIT((epx_backend_t*)be, EPX_BACKEND_TYPE);
-    be->b.name = "fb";
     be->b.on_heap = 1;
     be->b.refc = 1;
+    be->b.owner = NULL;
+    be->b.user = NULL;
+    be->b.name = "fb";
     be->b.pending = 0;
     be->b.opengl = 0;
     be->b.use_opengl = 0;

@@ -1113,21 +1113,23 @@ epx_backend_t* cocoa_init(epx_dict_t* param)
     if ((be = (CocoaBackend*) malloc(sizeof(CocoaBackend))) == NULL)
 	return NULL;
     EPX_OBJECT_INIT((epx_backend_t*)be, EPX_BACKEND_TYPE);
-
-    be->b.name = "macos";
     be->b.on_heap = 1;
     be->b.refc = 1;
-    be->b.cb = &cocoa_callbacks;
+    be->b.owner = NULL;
+    be->b.user = NULL;    
+    be->b.name = "macos";
     be->b.pending = 0;
     be->b.opengl = 0;
     be->b.use_opengl = 0;
     be->b.width = 0;
     be->b.height = 0;
+    be->b.nformats = 0;
+    epx_object_list_init(&be->b.window_list);    
     epx_object_list_init(&be->b.pixmap_list);
-    epx_object_list_init(&be->b.window_list);
     be->b.nformats = 0;
     be->b.event = EPX_INVALID_HANDLE;
-
+    be->b.cb = &cocoa_callbacks;
+    
     if (epx_dict_lookup_boolean(param, "use_opengl", &int_param) != -1)
 	be->b.use_opengl = int_param;
 #ifdef HAVE_OPENGL

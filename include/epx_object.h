@@ -36,7 +36,8 @@ typedef enum
     EPX_DICT_TYPE,
     EPX_FONT_TYPE,
     EPX_ANIM_TYPE,
-    EPX_CANVAS_TYPE
+    EPX_CANVAS_TYPE,
+    EPX_POLY_TYPE
 } epx_object_type_t;
 
 extern void EPX_BACKEND_TYPE_RELEASE(void*);
@@ -48,23 +49,26 @@ extern void EPX_DICT_TYPE_RELEASE(void*);
 extern void EPX_FONT_TYPE_RELEASE(void*);
 extern void EPX_ANIM_TYPE_RELEASE(void*);
 extern void EPX_CANVAS_TYPE_RELEASE(void*);
+extern void EPX_POLY_TYPE_RELEASE(void*);
 
 #define EPX_OBJECT_INIT(obj,Type) do {		\
     (obj)->on_heap = 0;				\
     (obj)->refc    = 0;				\
     (obj)->release = Type##_RELEASE;		\
     (obj)->opaque = 0;				\
-    (obj)->next   = 0;			\
-    (obj)->type   = (Type);		\
+    (obj)->res = 0;				\
+    (obj)->next   = 0;				\
+    (obj)->type   = (Type);			\
     } while(0)
 
-#define EPX_OBJECT_MEMBERS(Type_t) \
+#define EPX_OBJECT_MEMBERS(Type_t)		\
     epx_bucket_t   hbucket;			\
     int            on_heap;			\
     unsigned int   refc;			\
     void           (*release)(void*);		\
     void*          opaque;			\
     epx_object_type_t  type;			\
+    void*          res;				\
     Type_t*        next
 
 /* generic object */
@@ -78,24 +82,38 @@ typedef struct _epx_object_list_t {
     epx_object_t* first;
 } epx_object_list_t;
 
+static inline int epx_object_refc(void* arg)
+{
+    epx_object_t* obj = (epx_object_t*) arg;
+    if (obj) {
+	unsigned int val;
+	__atomic_load(&obj->refc, &val, __ATOMIC_SEQ_CST);
+	return (int) val;
+    }
+    return -1;
+}
+
 static inline void epx_object_ref(void* arg)
 {
     epx_object_t* obj = (epx_object_t*) arg;
+    if (obj)
+	(void) __atomic_fetch_add(&obj->refc, 1, __ATOMIC_SEQ_CST);
     // FIXME: make atomic
-    if (obj) obj->refc++;
+    // if (obj) obj->refc++;
 }
 
 static inline void epx_object_unref(void* arg)
 {
     epx_object_t* obj = (epx_object_t*) arg;
     if (obj) {
+	if (__atomic_fetch_sub(&obj->refc, 1, __ATOMIC_SEQ_CST) == 1) {
 	// FIXME: make atomic
-	if (obj->refc <= 1) {
+//	if (obj->refc <= 1) {
 	    if (obj->release)
 		obj->release(obj);
 	}
-	else
-	    obj->refc--;
+//	else
+//	    obj->refc--;
     }
 }
 

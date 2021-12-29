@@ -20,6 +20,7 @@
 #ifndef __EPX_GC_H__
 #define __EPX_GC_H__
 
+#include "epx_object.h"
 #include "epx_pixmap.h"
 #include "epx_font.h"
 

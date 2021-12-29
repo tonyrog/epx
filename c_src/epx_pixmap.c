@@ -1200,6 +1200,7 @@ static void filter_avg_N_1_area(uint8_t* src, int src_wb, epx_format_t src_pt,
     while(height1--) {
 	uint8_t* src1 = src;
 	uint8_t* dst1 = dst;
+	uint32_t ra = 0;
 	uint32_t rs = 0;
 	uint32_t gs = 0;
 	uint32_t bs = 0;
@@ -1210,6 +1211,7 @@ static void filter_avg_N_1_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 	/* Do head part loading avg buffer */
 	while(width1--) {
 	    epx_pixel_t s = unpack_src(src1);
+	    ra = (ra + s.a) - rgb[i].a;
 	    rs = (rs + s.r) - rgb[i].r;
 	    gs = (gs + s.g) - rgb[i].g;
 	    bs = (bs + s.b) - rgb[i].b;
@@ -1221,15 +1223,16 @@ static void filter_avg_N_1_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 	width1 = width - (n-1)/2;
 	while(width1--) {
 	    epx_pixel_t s = unpack_src(src1);
+	    ra = (ra + s.a) - rgb[i].a;
 	    rs = (rs + s.r) - rgb[i].r;
 	    gs = (gs + s.g) - rgb[i].g;
 	    bs = (bs + s.b) - rgb[i].b;
 	    rgb[i] = s;
 	    i = (i==n-1) ? 0 : (i + 1);
+	    s.a = ra / n;
 	    s.r = rs / n;
 	    s.g = gs / n;
 	    s.b = bs / n;
-
 	    if (flags & EPX_FLAG_BLEND) {
 		epx_pixel_t d = unpack_dst(dst1);
 		d = epx_pixel_blend(s.a, s, d);
@@ -1249,6 +1252,7 @@ static void filter_avg_N_1_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 	    gs = gs - rgb[i].g;
 	    bs = bs - rgb[i].b;
 	    i = (i==n-1) ? 0 : (i + 1);
+	    s.a = ra / n;
 	    s.r = rs / n;
 	    s.g = gs / n;
 	    s.b = bs / n;
@@ -1308,7 +1312,7 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 		 epx_pixel_t s;
 		 uint8_t* src2  = src1;
 		 uint8_t* fptr  = filter->factor;
-		 // uint32_t acc_a = 0;
+		 uint32_t acc_a = 0;
 		 uint32_t acc_r = 0;
 		 uint32_t acc_g = 0;
 		 uint32_t acc_b = 0;
@@ -1321,7 +1325,7 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 		     while(fw--) {
 			 uint8_t factor = *fptr++;
 			 epx_pixel_t t = unpack_src(sptr);
-			 // acc_a += factor*t.a;
+			 acc_a += factor*t.a;
 			 acc_r += factor*t.r;
 			 acc_g += factor*t.g;
 			 acc_b += factor*t.b;
@@ -1329,6 +1333,7 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 		     }
 		     src2 += src_wb; // next source row
 		 }
+		 s.a = acc_a / filter->fsum;
 		 s.r = acc_r / filter->fsum;
 		 s.g = acc_g / filter->fsum;
 		 s.b = acc_b / filter->fsum;
@@ -1562,7 +1567,7 @@ int epx_pixmap_set_format(epx_pixmap_t* dst, epx_format_t fmt)
 	epx_pixel_unpack_t unpack;
 	epx_pixel_pack_t pack;
 
-	bytes_per_row += EPX_ALIGN_OFFS(bytes_per_row, EPX_ALIGNMENT);
+	bytes_per_row += EPX_ALIGN_OFFS(bytes_per_row, EPX_PIXMAP_ALIGNMENT);
 	sz             = bytes_per_row*dst->height;
 	
 	unpack = epx_pixel_unpack_func(fmt);
@@ -1572,11 +1577,11 @@ int epx_pixmap_set_format(epx_pixmap_t* dst, epx_format_t fmt)
 	    return -1;
 	
 	if (sz > dst->sz) { // reallocate pixels
-	    if (!(data0 = (uint8_t*) realloc(dst->data0, sz+15)))
+	    if ((data0 = (uint8_t*) realloc(dst->data0,sz+EPX_PIXMAP_ALIGNMENT-1)) == NULL)
 		return -1;
 	    dst->sz = sz;
 	    dst->data0 = data0;
-	    dst->data = data0 + EPX_ALIGN_OFFS(data0, EPX_ALIGNMENT);
+	    dst->data = data0 + EPX_ALIGN_OFFS(data0, EPX_PIXMAP_ALIGNMENT);
 	}
 	dst->bytes_per_row  = bytes_per_row;	
 	dst->bits_per_pixel = bytes_per_pixel*8;
@@ -1606,14 +1611,14 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
     dst->backend = 0;
     dst->parent  = 0;
     dst->user    = 0;
-    bytes_per_row += EPX_ALIGN_OFFS(bytes_per_row, EPX_ALIGNMENT);
+    bytes_per_row += EPX_ALIGN_OFFS(bytes_per_row, EPX_PIXMAP_ALIGNMENT);
 
     unpack = epx_pixel_unpack_func(fmt);
     pack   = epx_pixel_pack_func(fmt);
 
     if ((unpack == NULL) || (pack == NULL))
 	return -1;
-    if (!(data0 = (uint8_t*) malloc(bytes_per_row*height+15)))
+    if (!(data0 = (uint8_t*) malloc(bytes_per_row*height+EPX_PIXMAP_ALIGNMENT-1)))
 	return -1;
 
     epx_rect_set(&dst->clip, 0, 0, width, height);
@@ -1631,7 +1636,7 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
     /* total number of bytes, not including padding */
     dst->sz             = bytes_per_row*height;
     dst->data0          = data0;
-    dst->data           = data0 + EPX_ALIGN_OFFS(data0, EPX_ALIGNMENT);
+    dst->data           = data0 + EPX_ALIGN_OFFS(data0, EPX_PIXMAP_ALIGNMENT);
     return 0;
 }
 

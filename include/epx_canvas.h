@@ -66,6 +66,8 @@ typedef struct _epx_canvas_t {
 
 extern void epx_canvas_init(epx_canvas_t* canvas);
 
+extern epx_canvas_t* epx_canvas_create(void);
+
 extern int epx_canvas_line(epx_canvas_t* canvas,
 			   double D, double E, double F);
 extern int epx_canvas_quad(epx_canvas_t* canvas,

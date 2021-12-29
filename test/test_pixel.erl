@@ -424,4 +424,4 @@ r8(5) -> random(0,31) bsl 3;
 r8(6) -> random(0,63) bsl 2.
 	    
 random(A, B) when is_integer(A), A =< B ->   
-    random:uniform((B - A) + 1) - 1 + A.
+    rand:uniform((B - A) + 1) - 1 + A.

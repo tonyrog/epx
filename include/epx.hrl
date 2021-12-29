@@ -24,12 +24,14 @@
 
 -record(epx_backend, { id, data }).
 -record(epx_window,  { id, data }).
+-record(epx_bitmap, { id, data }).
 -record(epx_pixmap, { id, data }).
 -record(epx_font, { id, data }).
 -record(epx_gc, { id, data }).
 -record(epx_dict, { id, data }).
 -record(epx_animation, { id, data }).
 -record(epx_canvas, { id, data }).
+-record(epx_poly, { id, data }).
 
 -record(epx_font_info,
 	{

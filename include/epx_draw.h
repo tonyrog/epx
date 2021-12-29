@@ -113,4 +113,7 @@ extern void draw_bary_fan(epx_pixmap_t* px, epx_gc_t* gc,
 extern void draw_bary_strip(epx_pixmap_t* px, epx_gc_t* gc,
 			    int* x, int* y, size_t n);
 
+extern void draw_poly(epx_pixmap_t* px, epx_gc_t* gc,
+		      int* x, int* y, size_t n);
+
 #endif

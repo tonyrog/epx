@@ -34,6 +34,8 @@
 // backend interface
 typedef struct _epx_backend_t {
     EPX_OBJECT_MEMBERS(struct _epx_backend_t);
+    void* owner;                          // user field (creator pid)
+    void* user;                           // extra user data    
     /* !Name of backed type */
     char* name;
     /*! Number of pending events */

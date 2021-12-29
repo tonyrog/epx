@@ -811,3 +811,4 @@ void draw_bary_strip(epx_pixmap_t* px, epx_gc_t* gc,
 	draw_bary_strip_0(px, gc, x, y, n);
     }
 }
+

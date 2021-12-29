@@ -38,12 +38,21 @@ extern int  epx_debug_level;
 #define DLOG_DEFAULT DLOG_NONE
 #endif
 
+#ifdef NIF_ERLANG
+#define DLOG(level,file,line,args...) do {				\
+	if (((level) == DLOG_EMERGENCY) ||				\
+	    ((epx_debug_level >= 0) && ((level) <= epx_debug_level))) {	\
+	    nif_emit_log((level),(file),(line),args);			\
+	}								\
+    } while(0)
+#else
 #define DLOG(level,file,line,args...) do {				\
 	if (((level) == DLOG_EMERGENCY) ||				\
 	    ((epx_debug_level >= 0) && ((level) <= epx_debug_level))) {	\
 	    epx_emit_log((level),(file),(line),args);			\
 	}								\
     } while(0)
+#endif
 
 #define DEBUGF(args...) DLOG(DLOG_DEBUG,__FILE__,__LINE__,args)
 #define INFOF(args...)  DLOG(DLOG_INFO,__FILE__,__LINE__,args)
@@ -58,4 +67,3 @@ extern int  epx_debug_level;
 #define EPX_DBGFMT_MEM(args...) DEBUGF(args)
 
 #endif
-

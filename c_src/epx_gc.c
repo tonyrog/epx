@@ -31,6 +31,7 @@ epx_gc_t epx_default_gc =
     0,            // No release function
     0,            // Opaque
     EPX_GC_TYPE,  // Type
+    0,            // res
     0,            // Next
 
     EPX_FILL_STYLE_SOLID,  // fill_style

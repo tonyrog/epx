@@ -478,7 +478,7 @@ void epx_font_draw_glyph(epx_gc_t* gc, epx_pixmap_t* dst, int* x, int* y, int c)
 	gmap.bytes_per_pixel = psz;
 	gmap.bits_per_pixel = psz*8;
 	bytes_per_row = psz*gwidth;
-	gmap.bytes_per_row = bytes_per_row + EPX_ALIGN_OFFS(bytes_per_row,EPX_ALIGNMENT);
+	gmap.bytes_per_row = bytes_per_row + EPX_ALIGN_OFFS(bytes_per_row,EPX_PIXMAP_ALIGNMENT);
 	gmap.sz = gmap.bytes_per_row*gmap.height;
 	gmap.data = (void*) glyph->data;
 	epx_rect_set(&gmap.clip, 0, 0, gmap.width, gmap.height);

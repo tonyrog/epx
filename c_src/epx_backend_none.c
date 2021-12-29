@@ -87,20 +87,21 @@ epx_backend_t* none_init(epx_dict_t* param)
     if (!(be = (none_backend_t*) malloc(sizeof(none_backend_t))))
 	return 0;
     EPX_OBJECT_INIT((epx_backend_t*)be, EPX_BACKEND_TYPE);
-    be->b.name = "none";
     be->b.on_heap = 1;
     be->b.refc = 1;
+    be->b.owner = NULL;
+    be->b.user = NULL;    
+    be->b.name = "none";
     be->b.pending = 0;
     be->b.opengl = 0;
     be->b.use_opengl = 0;
     be->b.width = 0;
     be->b.height = 0;
     be->b.nformats = 0;
-    be->b.cb = &none_callbacks;
+    epx_object_list_init(&be->b.window_list);    
     epx_object_list_init(&be->b.pixmap_list);
-    epx_object_list_init(&be->b.window_list);
     be->b.event = EPX_INVALID_HANDLE;
-
+    be->b.cb = &none_callbacks;
     return (epx_backend_t*) &(be->b);
 }
 

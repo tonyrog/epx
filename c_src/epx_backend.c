@@ -133,9 +133,9 @@ void EPX_BACKEND_TYPE_RELEASE(void* arg)
     epx_backend_finish(be);
 }
 
-void epx_backend_destroy(epx_backend_t* be)
+void epx_backend_destroy(epx_backend_t* backend)
 {
-    epx_object_unref(be);
+    epx_object_unref(backend);
 }
 
 epx_backend_t* epx_backend_create(char* name, epx_dict_t* param)
@@ -156,56 +156,56 @@ epx_backend_t* epx_backend_create(char* name, epx_dict_t* param)
     }
 }
 
-int epx_backend_upgrade(epx_backend_t* be)
+int epx_backend_upgrade(epx_backend_t* backend)
 {
     int i = 0;
     while(backend_item[i].name) {
-	if (strcmp(backend_item[i].name, be->name) == 0)
-	    return (backend_item[i].upgrade)(be);
+	if (strcmp(backend_item[i].name, backend->name) == 0)
+	    return (backend_item[i].upgrade)(backend);
 	i++;
     }
     return -1;
 }
 
-int epx_backend_adjust(epx_backend_t* be, epx_dict_t* param)
+int epx_backend_adjust(epx_backend_t* backend, epx_dict_t* param)
 {
-    return be->cb->adjust(be, param);
+    return backend->cb->adjust(backend, param);
 }
 
-int epx_backend_pixmap_attach(epx_backend_t* be, epx_pixmap_t* pixmap)
+int epx_backend_pixmap_attach(epx_backend_t* backend, epx_pixmap_t* pixmap)
 {
     if (pixmap->backend != NULL)
 	return -1;
-    if (be->cb->pix_attach(be, pixmap) < 0)
+    if (backend->cb->pix_attach(backend, pixmap) < 0)
 	return -1;
     return 0;
 }
 
 int epx_pixmap_detach(epx_pixmap_t* pixmap)
 {
-    epx_backend_t* be;
+    epx_backend_t* backend;
 
-    if ((be = pixmap->backend) != NULL) {
-	be->cb->pix_detach(be, pixmap);
+    if ((backend = pixmap->backend) != NULL) {
+	backend->cb->pix_detach(backend, pixmap);
 	pixmap->backend = 0;
     }
     return 0;
 }
 
-int epx_backend_window_attach(epx_backend_t* be, epx_window_t* window)
+int epx_backend_window_attach(epx_backend_t* backend, epx_window_t* window)
 {
     if (window->backend != NULL)
 	return -1;
-    if (be->cb->win_attach(be, window) < 0)
+    if (backend->cb->win_attach(backend, window) < 0)
 	return -1;
     return 0;
 }
 
 int epx_window_detach(epx_window_t* window)
 {
-    epx_backend_t* be;
-    if ((be = window->backend) != NULL) {
-	be->cb->win_detach(be, window);
+    epx_backend_t* backend;
+    if ((backend = window->backend) != NULL) {
+	backend->cb->win_detach(backend, window);
 	window->backend = 0;
     }
     return 0;

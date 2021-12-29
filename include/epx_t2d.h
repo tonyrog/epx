@@ -1,9 +1,9 @@
 //
-// CTM
+// T2D - CTM handing
 //
 
-#ifndef __EPX_CTM_H__
-#define __EPX_CTM_H__
+#ifndef __EPX_T2D_H__
+#define __EPX_T2D_H__
 
 #include <stdlib.h>
 
@@ -19,6 +19,7 @@ typedef struct _epx_t2d_t
     float sx; float ry; float tx;
     float rx; float sy; float ty;
     //     0;        0;        1;
+    unsigned long version;  // change counter
 } epx_t2d_t;
 
 extern const epx_t2d_t epx_identity_ctm;
@@ -35,7 +36,4 @@ extern void epx_t2d_scale(epx_t2d_t* t, float sx, float sy, epx_t2d_t* dst);
 extern void epx_t2d_rotate(epx_t2d_t* t, float a, epx_t2d_t* dst);
 
 #endif
-
-
-
-    
+  

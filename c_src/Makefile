@@ -36,7 +36,7 @@ LIBDIR=../priv
 
 ifeq ($(TYPE), debug)
 CFG_LIB=$(EPX_DIR)/priv/epx.a -lm 
-DFLAGS += -DDEBUG -D_THREAD_SAFE -D_REENTRANT
+DFLAGS += -DDEBUG -D_THREAD_SAFE -D_REENTRANT -DDLOG_DEFAULT=DLOG_DEBUG
 CFLAGS += -g -Wall -Wextra -Wswitch-default -Wswitch-enum -fno-common 
 endif
 
@@ -252,7 +252,9 @@ LIB_OBJS = \
 	epx_t2d.o \
 	epx_pixel.o \
 	epx_pixmap.o \
+	epx_bitmap.o \
 	epx_canvas.o \
+	epx_poly.o \
 	epx_anim.o \
 	epx_line.o \
 	epx_ellipse.o \

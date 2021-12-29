@@ -24,19 +24,6 @@
 #include "../include/epx_pixmap.h"
 #include "../include/epx_gc.h"
 
-#define epx_swap_int(a,b) do { \
-	int _swap_t = (a); a = (b); b = _swap_t; \
-    } while(0)
-
-#define epx_swap_int8(a,b) do { \
-	uint8_t _swap_t = (a); a = (b); b = _swap_t; \
-    } while(0)
-
-#define epx_swap_float(a,b) do { \
-    float _swap_t = (a); a = (b); b = _swap_t; \
-    } while(0)
-
-
 #define L(name,sfx) L_##name##_##sfx
 
 #define LINE_DECL(i)			      \

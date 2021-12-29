@@ -35,16 +35,29 @@ typedef struct _epx_filter_ {
     uint8_t  data[1];    // factor if stored 
 } epx_filter_t;
 
-// #define EPX_ALIGNMENT  8   // MMX
-#define EPX_ALIGNMENT  16  // SSE2
-//#define EPX_ALIGNMENT  32  // AVX2
-
 #define EPX_PIXEL_ADDR(map,x,y) \
     ((map)->data + (((y)*(int)(map)->bytes_per_row) + ((x)*(int)(map)->bytes_per_pixel)))
 
-// align pointer (a MUST be a power of 2) (and constant ;-) 
+// #define EPX_PIXMAP_ALIGNMENT  8  // MMX
+#define EPX_PIXMAP_ALIGNMENT  16    // SSE2
+ // !not working for fonts right now (fixme!)    
+//#define EPX_PIXMAP_ALIGNMENT  32  // AVX2
+
+// align pointer (a MUST be a power of 2) (and constant ;-)
 #define EPX_ALIGN_OFFS(p,a) (((a) - (((uintptr_t)p) % (a))) % (a))
 #define EPX_ALIGN(p,a) ((void*)(((uint8_t*)p)+EPX_ALIGN_OFFS(p,a)))
+
+#define epx_swap_int(a,b) do { \
+	int _swap_t = (a); a = (b); b = _swap_t; \
+    } while(0)
+
+#define epx_swap_int8(a,b) do { \
+	uint8_t _swap_t = (a); a = (b); b = _swap_t; \
+    } while(0)
+
+#define epx_swap_float(a,b) do { \
+    float _swap_t = (a); a = (b); b = _swap_t; \
+    } while(0)
 
 struct _epx_backend_t;
 
@@ -77,6 +90,7 @@ typedef struct _epx_pixmap_t {
     EPX_OBJECT_MEMBERS(struct _epx_pixmap_t);
     struct _epx_backend_t* backend;  /* backend pointer if attached */
     struct _epx_pixmap_t* parent;         // parent pixmap (for sub_pixmap)
+    void* owner;                          // user field (create pid)
     void* user;                           // extra user data
     /*! Current transform matrix */
     epx_t2d_t* ctm;

@@ -31,7 +31,7 @@
 %% simd
 -export([simd_info/0,simd_info/1,simd_set/1,simd_info_/1]).
 -export([simd_info_keys/0]).
-%% Pixmap access
+%% Pixmaps
 -export([pixmap_create/3,pixmap_create/2]).
 -export([pixmap_copy/1]).
 -export([pixmap_sub_pixmap/5]).
@@ -70,12 +70,29 @@
 -export([pixmap_draw_rectangle/6]).
 -export([pixmap_draw_fan/4]).
 -export([pixmap_draw_strip/3]).
+-export([pixmap_draw_poly/3]).
+-export([pixmap_draw_poly/5]).
 -export([pixmap_draw_ellipse/6]).
 -export([pixmap_draw_roundrect/8]).
 -export([pixmap_ltm_translate/3]).
 -export([pixmap_ltm_scale/3]).
 -export([pixmap_ltm_rotate/2]).
 -export([pixmap_ltm_reset/1]).
+%% Bitmaps
+-export([bitmap_create/2]).
+-export([bitmap_copy/1]).
+-export([bitmap_copy_area/8]).
+-export([bitmap_put_bit/4]).
+-export([bitmap_get_bit/3]).
+-export([bitmap_fill/2]).
+-export([bitmap_draw_rectangle/6]).
+-export([bitmap_fill_rectangle/6]).
+-export([bitmap_draw_ellipse/6]).
+-export([bitmap_fill_ellipse/6]).
+-export([bitmap_draw/10]).
+-export([bitmap_info/1, bitmap_info/2, bitmap_info_/2]).
+-export([bitmap_info_keys/0]).
+-export([bitmap_set_clip/2]).
 %% Animation
 -export([animation_open/1]).
 -export([animation_copy/6]).
@@ -155,6 +172,12 @@
 -export([canvas_set_params/8]).
 -export([canvas_draw/2]).
 
+%% Poly
+-export([poly_create/0, poly_create/1, poly_create/2]).
+-export([poly_set/2, poly_set/3]).
+-export([poly_draw/5]).
+-export([poly_info/2, poly_info/3]).
+
 %% Utils
 -export([draw_point/3, draw_point/2]).
 -export([draw_line/3, draw_line/5]).
@@ -164,6 +187,7 @@
 	 draw_rectangle/5, draw_rectangle/6]).
 -export([draw_fan/2, draw_fan/3]).
 -export([draw_strip/2]).
+-export([draw_poly/2]).
 -export([draw_roundrect/7, draw_roundrect/4, draw_roundrect/5]).
 -export([draw_ellipse/2, draw_ellipse/3, 
 	 draw_ellipse/5, draw_ellipse/6]).
@@ -184,12 +208,14 @@
 
 -export_type([epx_backend/0,
 	      epx_window/0,
+	      epx_bitmap/0,
 	      epx_pixmap/0,
 	      epx_font/0,
 	      epx_gc/0,
 	      epx_dict/0,
 	      epx_animation/0,
-	      epx_canvas/0]).
+	      epx_canvas/0,
+	      epx_poly/0]).
 
 -export_type([epx_rect/0,
 	      point/0,
@@ -199,6 +225,7 @@
 	      epx_window_event_flag/0,
 	      epx_window_event_flags/0,
 	      epx_pixmap_info_key/0,
+	      epx_bitmap_info_key/0,
 	      epx_window_info_key/0]).
 
 -type unsigned() :: non_neg_integer().
@@ -218,12 +245,14 @@
 
 -opaque epx_backend()   ::  #epx_backend{} | undefined.
 -opaque epx_window()    ::  #epx_window{}  | undefined.
+-opaque epx_bitmap()    ::  #epx_bitmap{}  | undefined.
 -opaque epx_pixmap()    ::  #epx_pixmap{}  | undefined.
 -opaque epx_font()      ::  #epx_font{}  | undefined.
 -opaque epx_gc()        ::  #epx_gc{}  | undefined.
 -opaque epx_dict()      ::  #epx_dict{}  | undefined.
 -opaque epx_animation() ::  #epx_animation{}  | undefined.
 -opaque epx_canvas()    ::  #epx_canvas{} | undefined.
+-opaque epx_poly()      ::  #epx_poly{} | undefined.
 
 -type canvas_elem() :: integer().
 
@@ -552,8 +581,8 @@ pixmap_flip(_Pixmap) ->
     ?nif_stub().
 
 %% @doc
-%%  Scale `Src' pixmap to size (`Width' and `Height') and put the result
-%%  in the `Dst' pixmap.
+%%  Scale 'Src' pixmap to size ('Width' and 'Height') and put the result
+%%  in the 'Dst' pixmap.
 %% @end
 -spec pixmap_scale(Src::epx_pixmap(),Dst::epx_pixmap(),
 		   Width::dim(), Height::dim()) -> void().
@@ -561,8 +590,8 @@ pixmap_scale(_Src, _Dst, _Width, _Height) ->
     ?nif_stub().
 
 %% @doc
-%%  Scale `Src' pixmap to size (`Width' and `Height') and put the result
-%%  in the `Dst' pixmap at offset `XDst', `YDst'.
+%%  Scale 'Src' pixmap to size ('Width' and 'Height') and put the result
+%%  in the 'Dst' pixmap at offset 'XDst', 'YDst'.
 %% @end
 -spec pixmap_scale_area(Src::epx_pixmap(),Dst::epx_pixmap(),
 			XDst::coord(),YDst::coord(),
@@ -571,8 +600,8 @@ pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height) ->
     pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height, []).
 
 %% @doc
-%%  Scale `Src' pixmap to size (`Width' and `Height') and put the result
-%%  in the `Dst' pixmap at offset `XDst', `YDst'.
+%%  Scale 'Src' pixmap to size ('Width' and 'Height') and put the result
+%%  in the 'Dst' pixmap at offset 'XDst', 'YDst'.
 %% @end
 -spec pixmap_scale_area(Src::epx_pixmap(),Dst::epx_pixmap(),
 			XDst::coord(),YDst::coord(),
@@ -585,9 +614,9 @@ pixmap_scale_area(_Src, _Dst, _XDst, _YDst, _Width, _Height, _Flags) ->
 		      WSrc, HSrc, _Width, _Height, _Flags).
 
 %% @doc
-%%  Scale `Src' pixmap rectangle (XSrc,YSrc, into destination rectangle 
-%%  to size (`Width' and `Height') and put the result
-%%  in the `Dst' pixmap at offset `XDst', `YDst'.
+%%  Scale 'Src' pixmap rectangle (XSrc,YSrc, into destination rectangle 
+%%  to size ('Width' and 'Height') and put the result
+%%  in the 'Dst' pixmap at offset 'XDst', 'YDst'.
 %% @end
 -spec pixmap_scale_area(Src::epx_pixmap(),Dst::epx_pixmap(),
 			XSrc::coord(),YSrc::coord(),
@@ -602,7 +631,7 @@ pixmap_scale_area(_Src, _Dst,
     ?nif_stub().
 
 %% @doc
-%%   Read the pixel value at position (`X',`Y') in pixmap `Src', return
+%%   Read the pixel value at position ('X','Y') in pixmap 'Src', return
 %%   a pixel in {A,R,G,B} form or {255,0,0,0} (black) if position is
 %%   outside the pixmap.
 %% @end
@@ -612,8 +641,8 @@ pixmap_get_pixel(_Pixmap,_X,_Y) ->
     ?nif_stub().
 
 %% @doc
-%%   Read the interpolated pixel value at position (`X',`Y') in pixmap 
-%%   `Src', return a pixel in {A,R,G,B} form or {255,0,0,0} (black) 
+%%   Read the interpolated pixel value at position ('X','Y') in pixmap 
+%%   'Src', return a pixel in {A,R,G,B} form or {255,0,0,0} (black) 
 %%   if position is outside the pixmap.
 %% @end
 -spec pixmap_interp_pixel(Src::epx_pixmap(), X::coord(), Y::coord()) ->
@@ -622,7 +651,7 @@ pixmap_interp_pixel(_Pixmap,_X,_Y) ->
     ?nif_stub().
 
 %% @doc
-%%  Read the pixels in the rectangle given by (`X',`Y',`Width',`Height')
+%%  Read the pixels in the rectangle given by ('X','Y','Width','Height')
 %%  return the pixels data in a "native" form as a binary.
 %% @end
 -spec pixmap_get_pixels(Src::epx_pixmap(), X::coord(), Y::coord(),
@@ -632,7 +661,7 @@ pixmap_get_pixels(_Pixmap,_X,_Y,_W,_H) ->
     ?nif_stub().
 
 %% @doc
-%%  Write the pixel value to position (`X',`Y') in the pixmap `Dst'
+%%  Write the pixel value to position ('X','Y') in the pixmap 'Dst'
 %% @end
 -spec pixmap_put_pixel(Dst::epx_pixmap(), X::coord(), Y::coord(),
 		       Color::epx_color()) -> void().
@@ -640,8 +669,8 @@ pixmap_put_pixel(Dst,X,Y,Color) ->
     pixmap_put_pixel(Dst,X,Y,Color,[]).
 
 %% @doc
-%%  Write the pixel value to position (`X',`Y') in the pixmap `Dst'
-%%  using the flags in `Flags'.
+%%  Write the pixel value to position ('X','Y') in the pixmap 'Dst'
+%%  using the flags in 'Flags'.
 %% @end
 -spec pixmap_put_pixel(Dst::epx_pixmap(), X::coord(), Y::coord(),
 		       Color::epx_color(),Flags::epx_flags()) -> void().
@@ -650,8 +679,8 @@ pixmap_put_pixel(_Dst,_X,_Y,_Color,_Flags) ->
 
 %% @doc
 %%  Write the raw pixels in Data described by Format, into
-%%  the rectangular area given by (`X',`Y',`Width',`Height') in the
-%%  pixmap `Dst'.
+%%  the rectangular area given by ('X','Y','Width','Height') in the
+%%  pixmap 'Dst'.
 %% @end
 -spec pixmap_put_pixels(Dst::epx_pixmap(),X::coord(),Y::coord(),
 			Width::dim(),Height::dim(),
@@ -663,8 +692,8 @@ pixmap_put_pixels(Dst,X,Y,Width,Height,Format,Data) ->
 
 %% @doc
 %%  Write the raw pixels in Data described by Format, into
-%%  the rectangular area given by (`X',`Y',`Width',`Height') using
-%%  the flags in `Flags' in the pixmap 'Dst'.
+%%  the rectangular area given by ('X','Y','Width','Height') using
+%%  the flags in 'Flags' in the pixmap 'Dst'.
 %% @end
 -spec pixmap_put_pixels(Dst::epx_pixmap(),X::coord(),Y::coord(),
 			Width::dim(),Height::dim(),
@@ -675,9 +704,9 @@ pixmap_put_pixels(_Dst,_X,_Y,_Width,_Height,_Format,_Data,_Flags) ->
     ?nif_stub().
 
 %% @doc
-%%  Copy pixels from the area (`XSrc',`YSrc',`Width',`Height') in `Src' pixmap
-%%  to the area (`XDst',`YDst',`Width',`Height') in the `Dst' pixmap. The pixels
-%%  are clipped according to the `Dst' clip rectangle.
+%%  Copy pixels from the area ('XSrc','YSrc','Width','Height') in 'Src' pixmap
+%%  to the area ('XDst','YDst','Width','Height') in the 'Dst' pixmap. The pixels
+%%  are clipped according to the 'Dst' clip rectangle.
 %% @end
 
 -spec pixmap_copy_area(Src::epx_pixmap(),Dst::epx_pixmap(),
@@ -690,10 +719,10 @@ pixmap_copy_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height) ->
     pixmap_copy_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height,[]).
 
 %% @doc
-%%  Copy pixels from the area (`XSrc',`YSrc',`Width',`Height') in `Src' pixmap
-%%  to the area (`XDst',`YDst',`Width',`Height') in the `Dst' pixmap. The pixels
-%%  are clipped according to the `Dst' clip rectangle. The pixels in
-%%  `Src' are mixed with `Dst' according to the flags in `Flags'.
+%%  Copy pixels from the area ('XSrc','YSrc','Width','Height') in 'Src' pixmap
+%%  to the area ('XDst','YDst','Width','Height') in the 'Dst' pixmap. The pixels
+%%  are clipped according to the 'Dst' clip rectangle. The pixels in
+%%  'Src' are mixed with 'Dst' according to the flags in 'Flags'.
 %% @end
 
 -spec pixmap_copy_area(Src::epx_pixmap(),Dst::epx_pixmap(),
@@ -706,11 +735,11 @@ pixmap_copy_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
     ?nif_stub().
 
 %% @doc
-%%   Blend `Src' rectangle (`XSrc',`YSrc',`Width',`Height') with
-%%   `Dst' rectangle (`XDst',`YDst',`Width',`Height') using a fixed
-%%   alpha value of `Alpha'. If `Alpha' is 1.0 it means `Src' pixels only and
-%%   an `Alpha' of 0.0 means using `Dst' pixels only.<br/>
-%%   The blending formula used is: (`Alpha'*(`Src'-`Dst')+(`Dst' bsl 8)) bsr 8.
+%%   Blend 'Src' rectangle ('XSrc','YSrc','Width','Height') with
+%%   'Dst' rectangle ('XDst','YDst','Width','Height') using a fixed
+%%   alpha value of 'Alpha'. If 'Alpha' is 1.0 it means 'Src' pixels only and
+%%   an 'Alpha' of 0.0 means using 'Dst' pixels only.<br/>
+%%   The blending formula used is: ('Alpha'*('Src'-'Dst')+('Dst' bsl 8)) bsr 8.
 %% @end
 
 -spec pixmap_alpha_area(Src::epx_pixmap(),Dst::epx_pixmap(),
@@ -723,8 +752,8 @@ pixmap_alpha_area(_Src,_Dst,_Alpha,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     ?nif_stub().
 
 %% @doc
-%%  Blend `Src' rectangle (`XSrc',`YSrc',`Width',`Heght') to `Dst'
-%%  rectangle (`XDst',`YDst',`Width',`Height') fade using Fade
+%%  Blend 'Src' rectangle ('XSrc','YSrc','Width','Heght') to 'Dst'
+%%  rectangle ('XDst','YDst','Width','Height') fade using Fade
 %%  as a blending scale factor.
 %% @end
 -spec pixmap_fade_area(Src::epx_pixmap(),Dst::epx_pixmap(),
@@ -736,8 +765,8 @@ pixmap_fade_area(_Src,_Dst,_Fade,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     ?nif_stub().
 
 %% @doc
-%%  Shadow `Src' rectangle (`XSrc',`YSrc',`Width',`Heght') to
-%%  `Dst' rectangle (`XDst',`YDst',`Width',`Height').
+%%  Shadow 'Src' rectangle ('XSrc','YSrc','Width','Heght') to
+%%  'Dst' rectangle ('XDst','YDst','Width','Height').
 %%  This function will blend the pixels from source with
 %%  the luminance value as alpha.
 %% @end
@@ -773,10 +802,10 @@ pixmap_filter_area(_Src,_Dst,_Filter,
     ?nif_stub().
 
 %% @doc
-%%    Rotate the `Src' pixels in rectangle (`XSrc',`YSrc',`Width',`Height')
-%%    around the point (`XCSrc',`YCSrc') with an of `Angle' radians.
-%%    The result is placed in the pixmap `Dst' at center poistion
-%%    (`XCDest',`YCDest'). The pixels are blended according to `Flags'
+%%    Rotate the 'Src' pixels in rectangle ('XSrc','YSrc','Width','Height')
+%%    around the point ('XCSrc','YCSrc') with an of 'Angle' radians.
+%%    The result is placed in the pixmap 'Dst' at center poistion
+%%    ('XCDest','YCDest'). The pixels are blended according to 'Flags'
 %% @end
 
 -spec pixmap_rotate_area(Src::epx_pixmap(),Dst::epx_pixmap(),
@@ -801,23 +830,23 @@ pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
 %%    Combine two pixmaps using Duff-Porter pixmap operation, and then some.
 %%    The possible operations are:
 %% <ul>
-%% <li> `clear' </li>
-%% <li> `src' </li>
-%% <li> `dst' </li>
-%% <li> `src_over' </li>
-%% <li> `dst_over' </li>
-%% <li> `src_in' </li>
-%% <li> `dst_in' </li>
-%% <li> `src_out' </li>
-%% <li> `dst_out' </li>
-%% <li> `src_atop' </li>
-%% <li> `dst_atop' </li>
-%% <li> `xor' </li>
-%% <li> `copy' </li>
-%% <li> `add' </li>
-%% <li> `sub' </li>
-%% <li> `src_blend' </li>
-%% <li> `dst_blend' </li>
+%% <li> 'clear' </li>
+%% <li> 'src' </li>
+%% <li> 'dst' </li>
+%% <li> 'src_over' </li>
+%% <li> 'dst_over' </li>
+%% <li> 'src_in' </li>
+%% <li> 'dst_in' </li>
+%% <li> 'src_out' </li>
+%% <li> 'dst_out' </li>
+%% <li> 'src_atop' </li>
+%% <li> 'dst_atop' </li>
+%% <li> 'xor' </li>
+%% <li> 'copy' </li>
+%% <li> 'add' </li>
+%% <li> 'sub' </li>
+%% <li> 'src_blend' </li>
+%% <li> 'dst_blend' </li>
 %% </ul>
 %% @end
 -spec pixmap_operation_area(Src::epx_pixmap(),Dst::epx_pixmap(),
@@ -853,8 +882,8 @@ pixmap_detach(_Pixmap) ->
     ?nif_stub().
 
 %% @doc
-%%   Draw pixels from the area (`XSrc',`YSrc',`Width',`Height') in `Pixmap'
-%%   pixmap to the area (`XDst',`YDst',`Width',`Height') on to the `Window'
+%%   Draw pixels from the area ('XSrc','YSrc','Width','Height') in 'Pixmap'
+%%   pixmap to the area ('XDst','YDst','Width','Height') on to the 'Window'
 %%   window. Both the pixmap and the window must be "attached" for this
 %%   operation to succeed.
 %% @end
@@ -919,6 +948,24 @@ pixmap_draw_fan(_Pixmap, _Gc, _Points, _Closed) ->
 pixmap_draw_strip(_Pixmap, _Gc, _Points) ->
     ?nif_stub().
 
+-spec pixmap_draw_poly(Pixmap::epx_pixmap(), Gc::epx_gc(), 
+		       Poly::epx_poly()|[{X::coord(),Y::coord()}]) ->
+	  void().
+pixmap_draw_poly(Pixmap, Gc, Poly) when is_record(Poly, epx_poly) ->
+    poly_draw(Poly, Pixmap, Gc, 0, 0);
+pixmap_draw_poly(Pixmap, Gc, Points) when is_list(Points) ->
+    poly_draw(poly_create(Points), Pixmap, Gc, 0, 0).
+
+-spec pixmap_draw_poly(Pixmap::epx_pixmap(), Gc::epx_gc(),
+		       Poly::epx_poly()|[{X::coord(),Y::coord()}],
+		       Xoffs::coord(), Yoffs::coord()) -> void().
+pixmap_draw_poly(Pixmap, Gc, Poly, Xoffs, Yoffs) 
+  when is_record(Poly, epx_poly) ->
+    poly_draw(Poly, Pixmap, Gc, Xoffs, Yoffs);
+pixmap_draw_poly(Pixmap, Gc, Points, Xoffs, Yoffs) when is_list(Points) ->
+    poly_draw(poly_create(Points), Pixmap, Gc, Xoffs, Yoffs).
+
+
 pixmap_ltm_translate(_Pixmap, _Tx, _Ty) ->
     ?nif_stub().
 
@@ -929,6 +976,178 @@ pixmap_ltm_rotate(_Pixmap, _Radians) ->
     ?nif_stub().
 
 pixmap_ltm_reset(_Pixmap) ->
+    ?nif_stub().
+
+%% @doc
+%%   Create a bitmap of size WidthxHeight bits
+%% @end
+-spec bitmap_create(Width::dim(), Height::dim()) ->
+	  epx_bitmap().
+bitmap_create(_Width,_Height) ->
+    ?nif_stub().
+
+%% @doc
+%%   Copy bitmap
+%% @end
+-spec bitmap_copy(Src::epx_bitmap()) ->
+	  epx_bitmap().
+bitmap_copy(_SrcBitmap) ->
+    ?nif_stub().
+
+
+%% @doc
+%%  Copy bits from the area ('XSrc','YSrc','Width','Height') in 'Src' bitmap
+%%  to the area ('XDst','YDst','Width','Height') in the 'Dst' bitmap. The bits
+%%  are clipped according to the 'Dst' clip rectangle.
+%% @end
+-spec bitmap_copy_area(Src::epx_bitmap(),Dst::epx_bitmap(),
+		       XSrc::coord(),YSrc::coord(),
+		       XDst::coord(),YDst::coord(),
+		       Width::dim(),Height::dim()) ->
+			      void().
+
+bitmap_copy_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
+    ?nif_stub().
+
+%% @doc
+%%   Put bit at location (x,y)
+%% @end
+
+-spec bitmap_put_bit(Bitmap::epx_bitmap(),X::coord(),Y::coord(),
+		     Bit::integer()|boolean()) ->
+	  ok.
+bitmap_put_bit(_Bitmap,_X,_Y,_Bit) ->
+    ?nif_stub().
+
+%% @doc
+%%   Get bit at location (x,y)
+%% @end
+-spec bitmap_get_bit(Bitmap::epx_bitmap(),X::coord(),Y::coord()) ->
+	  integer().
+bitmap_get_bit(_Bitmap,_X,_Y) ->
+    ?nif_stub().
+
+%% @doc
+%%   Fill bitmap with pattern
+%% @end
+-spec bitmap_fill(Bitmap::epx_bitmap(),Pat::byte()) -> ok.
+
+bitmap_fill(_Bitmap, _Pat) ->
+    ?nif_stub().    
+
+%% @doc
+%%   Draw a rectangle
+%% @end
+-spec bitmap_draw_rectangle(Bitmap::epx_bitmap(),X::coord(),Y::coord(),
+			    W::dim(),H::dim(),Bit::integer()) -> ok.
+
+bitmap_draw_rectangle(_Bitmap,_X,_Y,_W,_H,_Val) ->
+    ?nif_stub().
+
+
+
+%% @doc
+%%   Fill a rectangle with BYTE! pattern,  note that a single 1
+%%   will not fill the complete rectangle, use 2#11111111 in this case.
+%% @end
+-spec bitmap_fill_rectangle(Bitmap::epx_bitmap(),X::coord(),Y::coord(),
+			    Width::dim(),Height::dim(),
+			    Pat::byte()) -> ok.
+
+bitmap_fill_rectangle(_Bitmap,_X,_Y,_Width,_Height,_Pat) ->
+    ?nif_stub().
+
+%% @doc
+%%   Draw a ellipse
+%% @end
+-spec bitmap_draw_ellipse(Bitmap::epx_bitmap(),X::coord(),Y::coord(),
+			  W::dim(),H::dim(),Pat::byte()) -> ok.
+
+bitmap_draw_ellipse(_Bitmap,_X,_Y,_W,_H,_Pat) ->
+    ?nif_stub().
+
+%% @doc
+%%   Fill a ellipse with BYTE! pattern,  note that a single 1
+%%   will not fill the complete ellipse, use 2#11111111 in this case.
+%% @end
+-spec bitmap_fill_ellipse(Bitmap::epx_bitmap(),X::coord(),Y::coord(),
+			  Width::dim(),Height::dim(),Pat::byte()) -> ok.
+
+bitmap_fill_ellipse(_Bitmap,_X,_Y,_Width,_Height,_Pat) ->
+    ?nif_stub().
+
+
+%% @doc
+%%   Draw a bitmap onto a pixmap
+%% @end
+-spec bitmap_draw(Bitmap::epx_bitmap(),Pixmap::epx_pixmap(),
+		  XSrc::coord(),YSrc::coord(),
+		  XDst::coord(),YDst::coord(),
+		  Width::dim(),Height::dim(),
+		  Fg::epx_color(), Bg::epx_color()) ->
+	  ok.
+
+bitmap_draw(_Bitmap,_Pixmap,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,
+	    _Fg, _Bg) ->
+    ?nif_stub().
+
+
+-type epx_bitmap_info_key() ::
+	'width' |
+	'height' |
+	'bytes_per_row' |
+	'parent' |
+	'clip'.
+
+-type epx_bitmap_info() ::
+	{ 'width', unsigned() } |
+	{ 'height', unsigned() } |
+	{ 'bytes_per_row', unsigned() } |
+	{ 'parent',  epx_bitmap() } |
+	{ 'clip',    epx_rect() }.
+
+
+%% @doc
+%%   Return available bitmap information elements
+%% @end
+-spec bitmap_info_keys() -> [epx_bitmap_info()].
+
+bitmap_info_keys() ->
+    [width,
+     height,
+     bytes_per_row,
+     parent,
+     clip].
+
+%% @doc
+%%   Get all available bitmap information
+%% @end
+-spec bitmap_info(Bitmap::epx_bitmap()) -> [epx_bitmap_info()].
+
+bitmap_info(Bitmap) ->
+    bitmap_info(Bitmap, bitmap_info_keys()).
+
+bitmap_info(Bitmap, Keys) when is_list(Keys) ->
+    [{K,bitmap_info_(Bitmap,K)} || K <- Keys];
+bitmap_info(Bitmap, K) when is_atom(K) ->
+    bitmap_info_(Bitmap, K).
+
+%% @doc
+%%   Get specific pixmap information
+%% @end
+-spec bitmap_info_(Bitmap::epx_bitmap(),Key::epx_bitmap_info_key()) ->
+			  term().
+
+bitmap_info_(_Bitmap, _Key) ->
+    ?nif_stub().
+
+%% @doc
+%%   Set the clipping Rectangle, bits drawn outside the clipping
+%%   rectangle are ignored.
+%% @end
+-spec bitmap_set_clip(Bitmap::epx_bitmap(), Rect::epx_rect()) -> void().
+
+bitmap_set_clip(_Bitmap, _Rect) ->
     ?nif_stub().
 
 %%
@@ -1012,6 +1231,55 @@ canvas_set_params(_Cancas,_I,_A,_B,_C,_D,_E,_F) ->
 	  ok.
 
 canvas_draw(_Canvas,_Pixmap) ->
+    ?nif_stub().
+
+%% Poly
+
+-spec poly_create() -> epx_poly().
+poly_create() ->
+    ?nif_stub().
+
+-type poly_points() :: [{X::coord(),Y::coord()}] | [coord()].
+
+-spec poly_create(Points::poly_points()) -> epx_poly().
+poly_create(Points) ->
+    Poly = poly_create(),
+    poly_set(Poly, Points, absolute),
+    Poly.
+
+-spec poly_create(Points::poly_points(), Flag::absolue|relative) ->
+	  epx_poly().
+poly_create(Points, Flag) ->
+    Poly = poly_create(),
+    poly_set(Poly, Points, Flag),
+    Poly.
+
+-spec poly_set(Poly::epx_poly(), 
+	       Points::[{X::coord(),Y::coord()}] | [coord()]) ->
+	  ok.
+poly_set(_Poly, _Points) ->
+    ?nif_stub().
+
+-spec poly_set(Poly::epx_poly(), 
+	       Points::[{X::coord(),Y::coord()}] | [coord()],
+	       Flag::absolute|relative) -> ok.
+poly_set(_Poly, _Points, _Flag) ->
+    ?nif_stub().
+
+-spec poly_draw(Poly::epx_poly(),
+		Pixmap::epx_pixmap(),
+		Gc::epx_gc(),
+		_Xoffs,_Yoffs) -> ok.
+
+poly_draw(_Poly,_Pixmap,_Gc,_Xoffs,_Yoffs) ->
+    ?nif_stub().
+
+-spec poly_info(Poly::epx_poly(), Key::atom()) -> term().
+poly_info(_Poly, _Key) ->
+    ?nif_stub().
+
+-spec poly_info(Poly::epx_poly(), Key::atom(), Index::atom()) -> term().
+poly_info(_Poly, _Key, _Index) ->
     ?nif_stub().
 
 %%
@@ -1308,7 +1576,7 @@ window_create(_X,_Y,_Width,_Height) ->
 		    Flags::epx_window_event_flags()) ->
 			   epx_window().
 
-window_create(_X,_Y,_Width,_Height,_Mask) ->
+window_create(_X,_Y,_Width,_Height,_Flags) ->
     ?nif_stub().
 
 %%
@@ -1426,6 +1694,9 @@ draw_fan(Pixmap, Points, Closed) ->
 
 draw_strip(Pixmap, Points) ->
     pixmap_draw_strip(Pixmap, epx_gc:current(), Points).
+
+draw_poly(Pixmap, Points) ->
+    pixmap_draw_poly(Pixmap, epx_gc:current(), Points).
 
 draw_rectangle(Pixmap, Gc, {X, Y, Width, Height}) ->
     pixmap_draw_rectangle(Pixmap, Gc, X, Y, Width, Height).
