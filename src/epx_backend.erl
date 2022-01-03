@@ -33,7 +33,8 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2, code_change/3]).
+	 terminate/2, code_change/3, format_status/2]).
+
 
 -define(SERVER,  epx_backend_srv).
 -define(TABLE,   epx_backend_table).
@@ -48,6 +49,7 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
+
 
 %% get the default backend
 default() ->
@@ -65,27 +67,21 @@ create(Name, Opts) ->
 set_default(ID) ->
     gen_server:call(?SERVER, {set_default, ID}).
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start() -> {ok, Pid} | ignore | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
 start() ->
-    start([]).
-start(Args) ->
-    gen_server:start({local, ?SERVER}, ?MODULE, Args, []).
+    gen_server:start({local, ?SERVER}, ?MODULE, [], []).
 
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
+-spec start_link() -> {ok, Pid :: pid()} |
+	  {error, Error :: {already_started, pid()}} |
+	  {error, Error :: term()} |
+	  ignore.
 start_link() ->
-    start_link([]).
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Args, []).
 
@@ -97,13 +93,13 @@ start_link(Args) ->
 %% @private
 %% @doc
 %% Initializes the server
-%%
-%% @spec init(Args) -> {ok, State} |
-%%                     {ok, State, Timeout} |
-%%                     ignore |
-%%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
+-spec init(Args :: term()) -> {ok, State :: term()} |
+	  {ok, State :: term(), Timeout :: timeout()} |
+	  {ok, State :: term(), hibernate} |
+	  {stop, Reason :: term()} |
+	  ignore.
 
 init(Args) ->
     put(debug, proplists:get_bool(debug, Args)),
@@ -136,16 +132,18 @@ init(Args) ->
 %% @private
 %% @doc
 %% Handling call messages
-%%
-%% @spec handle_call(Request, From, State) ->
-%%                                   {reply, Reply, State} |
-%%                                   {reply, Reply, State, Timeout} |
-%%                                   {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, Reply, State} |
-%%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+-spec handle_call(Request :: term(), From :: {pid(), term()}, State :: term()) ->
+	  {reply, Reply :: term(), NewState :: term()} |
+	  {reply, Reply :: term(), NewState :: term(), Timeout :: timeout()} |
+	  {reply, Reply :: term(), NewState :: term(), hibernate} |
+	  {noreply, NewState :: term()} |
+	  {noreply, NewState :: term(), Timeout :: timeout()} |
+	  {noreply, NewState :: term(), hibernate} |
+	  {stop, Reason :: term(), Reply :: term(), NewState :: term()} |
+	  {stop, Reason :: term(), NewState :: term()}.
+
 handle_call({create,Name,Opts}, _From, State) ->
     try epx:backend_open(Name, epx:dict_from_list(Opts)) of
 	Backend ->
@@ -177,25 +175,28 @@ handle_call(_Request, _From, State) ->
 %% @private
 %% @doc
 %% Handling cast messages
-%%
-%% @spec handle_cast(Msg, State) -> {noreply, State} |
-%%                                  {noreply, State, Timeout} |
-%%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
+-spec handle_cast(Request :: term(), State :: term()) ->
+	  {noreply, NewState :: term()} |
+	  {noreply, NewState :: term(), Timeout :: timeout()} |
+	  {noreply, NewState :: term(), hibernate} |
+	  {stop, Reason :: term(), NewState :: term()}.
+handle_cast(_Request, State) ->
     {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
 %% Handling all non call/cast messages
-%%
-%% @spec handle_info(Info, State) -> {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+-spec handle_info(Info :: timeout() | term(), State :: term()) ->
+	  {noreply, NewState :: term()} |
+	  {noreply, NewState :: term(), Timeout :: timeout()} |
+	  {noreply, NewState :: term(), hibernate} |
+	  {stop, Reason :: normal | term(), NewState :: term()}.
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -206,10 +207,10 @@ handle_info(_Info, State) ->
 %% terminate. It should be the opposite of Module:init/1 and do any
 %% necessary cleaning up. When it returns, the gen_server terminates
 %% with Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
+-spec terminate(Reason :: normal | shutdown | {shutdown, term()} | term(),
+		State :: term()) -> any().
 terminate(_Reason, _State) ->
     ok.
 
@@ -217,12 +218,28 @@ terminate(_Reason, _State) ->
 %% @private
 %% @doc
 %% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
 %% @end
 %%--------------------------------------------------------------------
+-spec code_change(OldVsn :: term() | {down, term()},
+		  State :: term(),
+		  Extra :: term()) -> {ok, NewState :: term()} |
+	  {error, Reason :: term()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% This function is called for changing the form and appearance
+%% of gen_server status when it is returned from sys:get_status/1,2
+%% or when it appears in termination error logs.
+%% @end
+%%--------------------------------------------------------------------
+-spec format_status(Opt :: normal | terminate,
+		    Status :: list()) -> Status :: term().
+format_status(_Opt, Status) ->
+    Status.
+
 
 %%%===================================================================
 %%% Internal functions
