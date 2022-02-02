@@ -265,11 +265,11 @@ void epx_pixmap_draw_roundrect(epx_pixmap_t* pixmap, epx_gc_t* gc,
 	// top
 	epx_draw_line_horizontal(pixmap,x+rw,x+width-rw-1,y,bf,bc);
 	// bottom
-	epx_draw_line_horizontal(pixmap,x+rw,x+width-rw-1,y+height-hh-1,bf,bc);
+	epx_draw_line_horizontal(pixmap,x+rw,x+width-rw-1,y+height-1,bf,bc);
 	// left
-	epx_draw_line_vertical(pixmap,x,y+rh,y+height-hh-1,bf,bc);
+	epx_draw_line_vertical(pixmap,x,y+rh,y+height-rh-1,bf,bc);
 	// right
-	epx_draw_line_vertical(pixmap,x+width-rw-1,y+rh,y+height-hh-1,bf,bc);
+	epx_draw_line_vertical(pixmap,x+width-1,y+rh,y+height-rh-1,bf,bc);
     }
     else {
 	if (bw > 0) {

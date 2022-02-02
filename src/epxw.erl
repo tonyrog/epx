@@ -28,6 +28,7 @@
 -export([set_status_text/1]).
 -export([file_menu/0, edit_menu/0]).
 -export([enable_motion/0, disable_motion/0]).
+-export([draw/1]).
  
 %% -define(DEBUG, true).
 
@@ -609,7 +610,7 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 init_res(UserState, InitType, Rect, State) ->
     State1 = State#state { user_state = UserState},
     State2 = user_event(Rect,?CALLBACK(State1,configure),State1),
-    State3 = draw(State2, Rect),
+    State3 = draw_(State2, Rect),
     if InitType =:= ok ->
 	    {ok, State3};
        true->
@@ -739,7 +740,7 @@ handle_info(#epx_event{win=Win,data=Event}, State) when
 	    if State1#state.dirty =:= undefined ->
 		    {noreply,State1};
 	       true ->
-		    {noreply,draw(State1)}
+		    {noreply,draw_(State1)}
 	    end;
 	Reply ->
 	    Reply
@@ -756,28 +757,28 @@ handle_info(Info, State) ->
     end.
 
 reply({reply,Reply,UState}) ->
-    State = dstate(),
-    {reply, Reply, State#state { user_state = UState }};
+    State = dstate(UState),
+    {reply, Reply, State};
 reply({reply,Reply,UState,Arg}) ->
-    State = dstate(),
-    {reply, Reply, State#state { user_state = UState }, Arg};
+    State = dstate(UState),
+    {reply, Reply, State, Arg};
 reply({noreply,UState}) ->
-    State = dstate(),
-    {noreply, State#state { user_state = UState }};
+    State = dstate(UState),
+    {noreply, State};
 reply({noreply,UState,Arg}) ->
-    State = dstate(),
-    {noreply, State#state { user_state = UState },Arg};
+    State = dstate(UState),
+    {noreply, State,Arg};
 reply({stop, Reason, UState}) ->
-    State = dstate(),
-    {stop, Reason, State#state { user_state = UState }}.
+    State = dstate(UState),
+    {stop, Reason, State}.
 
 %% redraw state if dirty
-dstate() ->
+dstate(UState) ->
     State = state(),
     if State#state.dirty =:= undefined ->
-	    State;
+	    State#state { user_state = UState };
        true ->
-	    draw(State)
+	    draw_(State#state { user_state = UState })
     end.
 
 
@@ -1068,12 +1069,12 @@ drawing_origin_(State,{HBar,VBar},{LeftBar,_RightBar,TopBar,_BottomBar}) ->
 	 end,
     {X0,Y0}.
     
-%% Get drawing area width taking toolbars into account but wo scrollbar
+%% Get drawing area width taking toolbars into account but no scrollbar
 drawing_width0(State) ->
     {LeftBar,RightBar,_,_} = toolbars(State),
     State#state.width - (LeftBar+RightBar).
 
-%% Get drawing area height taking toolbars into account but wo scrollbar
+%% Get drawing area height taking toolbars into account but no scrollbar
 drawing_height0(State) ->
     {_,_,TopBar,BottomBar} = toolbars(State),
     State#state.height - (TopBar+BottomBar).
@@ -1158,26 +1159,32 @@ command(Symbol,Mod,State) ->
 	    end
     end.
 
-%% default handling on key up/down left/right pageup/pagedown home/end
- %% FIXME configure this
-command_(up, _Mod, State) ->
+command_(Sym, Mod, State) when 
+      not Mod#keymod.shift,not Mod#keymod.ctrl,not Mod#keymod.alt ->
+    command_(Sym, State);
+command_(_Sym, _Mod, State) ->
+    ?dbg("unhandled command ~p mod=~p\n", [_Sym, _Mod]),
+    State.
+
+%% no modifer (user may override with with noreply or modifier
+command_(up, State) ->
     scroll_up(State);
-command_(down, _Mod, State) ->
+command_(down, State) ->
     scroll_down(State);
-command_(left, _Mod, State) ->
+command_(left, State) ->
     scroll_left(State);
-command_(right, _Mod, State) ->
+command_(right, State) ->
     scroll_right(State);
-command_(pageup, _Mod, State) ->
+command_(pageup, State) ->
     page_up(State);
-command_(pagedown, _Mod, State) ->
+command_(pagedown, State) ->
     page_down(State);
-command_(home, _Mod, State) ->
+command_(home, State) ->
     scroll_home(State);
-command_('end', _Mod, State) ->
+command_('end', State) ->
     scroll_end(State);
  %% zoom in - FIXME configure this
-command_($-, _Mod, State) ->
+command_($-, State) ->
     Zoom = min(10, State#state.zoom + 1),
     Scale = zscale(Zoom),
     State1 = State#state { zoom = Zoom, scale = Scale },
@@ -1185,16 +1192,17 @@ command_($-, _Mod, State) ->
     State3 = adjust_view_ypos(get_view_ypos(State2), State2),
     set_dirty_area(State3);
  %% zoom out - FIXME configure this
-command_($+, _Mod, State) ->
+command_($+, State) ->
     Zoom = max(-10, State#state.zoom - 1),
     Scale = zscale(Zoom),
     State1 = State#state { zoom = Zoom, scale = Scale },
     State2 = adjust_view_xpos(get_view_xpos(State1), State1),
     State3 = adjust_view_ypos(get_view_ypos(State2), State2),
     set_dirty_area(State3);
-command_(_Symbol, _Mod, State) ->
-    ?dbg("unhandled command ~p\n", [_Symbol]),
+command_(_Sym, State) ->
+    ?dbg("unhandled command ~p\n", [_Sym]),
     State.
+
 
 %% calculate scale from zoom (Sx=Sy) now
 zscale(Z) ->
@@ -1346,13 +1354,13 @@ flush_configure(Win, Rect) ->
 	    Rect
     end.
 
-flush_expose(Win, Rect) ->
-    receive
-	{epx_event, Win, {expose, Rect1}} ->
-	    flush_expose(Win, Rect1)
-    after 0 ->
-	    Rect
-    end.
+%%flush_expose(Win, Rect) ->
+%%    receive
+%%	{epx_event, Win, {expose, Rect1}} ->
+%%	    flush_expose(Win, Rect1)
+%%    after 0 ->
+%%	    Rect
+%%    end.
 
 flush_motion(Win) ->
     receive
@@ -1442,6 +1450,8 @@ select(Phase,{X1,Y1,_},{X2,Y2,_}, State) ->
 minmax(A, B) when A < B -> {A,B};
 minmax(A, B) -> {B,A}.
 
+%% FIXME: allow user_event to return stop, noreply
+
 user_event(_E, undefined, State) ->
     State;
 user_event(E, Callback, State) ->
@@ -1485,15 +1495,15 @@ window_to_view_pos({Wx,Wy,_Wz}, State) ->
     {Cx,Cy} = drawing_origin(State),
     { (Wx-Cx)*Sx + Tx, (Wy-Cy)*Sy + Ty}.
 
-window_to_view_xpos(Wx, State) ->
-    #state { scale = {Sx,_Sy},content=#window_content{view_xpos=Tx}} = State,
-    {Cx,_Cy} = drawing_origin(State),
-    (Wx-Cx)*Sx + Tx.
+%%window_to_view_xpos(Wx, State) ->
+%%    #state { scale = {Sx,_Sy},content=#window_content{view_xpos=Tx}} = State,
+%%    {Cx,_Cy} = drawing_origin(State),
+%%    (Wx-Cx)*Sx + Tx.
 
-window_to_view_ypos(Wy, State) ->
-    #state { scale = {_Sx,Sy},content=#window_content{view_ypos=Ty}} = State,
-    {_Cx,Cy} = drawing_origin(State),
-    (Wy-Cy)*Sy + Ty.
+%%window_to_view_ypos(Wy, State) ->
+%%    #state { scale = {_Sx,Sy},content=#window_content{view_ypos=Ty}} = State,
+%%    {_Cx,Cy} = drawing_origin(State),
+%%    (Wy-Cy)*Sy + Ty.
 
 window_to_view_dim({Ww,Wh}, #state { scale={Sx,Sy}}) ->
     { Ww*Sx, Wh*Sy }.
@@ -1516,13 +1526,12 @@ get_scaled_view_width(S) ->
 get_scaled_view_height(S) ->
     view_to_window_height(get_view_height(S), S).
 
-draw(State) ->
-    draw(State, State#state.dirty).
+draw_(State) ->
+    draw_(State, State#state.dirty).
     
-draw(State = #state { profile = Profile }, Dirty) ->
+draw_(State = #state { profile = Profile }, Dirty) ->
     Scheme = Profile#profile.scheme,
     ScreenColor = epx_profile:color(Scheme, Profile#profile.screen_color),
-    {HBar,VBar} = scrollbars(State),
     Pixels = pixels(State),
     {Tx,Ty} = get_view_origin(State),
     ScrollBars={HBar,VBar} = scrollbars(State),
@@ -1539,7 +1548,7 @@ draw(State = #state { profile = Profile }, Dirty) ->
 
     %% set clip rect!
     VisibleRect = {Tx, Ty, W/Sx, H/Sy},  %% in view coordinates
-    State1 = draw_content(Pixels,VisibleRect,State),
+    State1 = draw_content_(Pixels,VisibleRect,State),
     epx:pixmap_ltm_reset(Pixels),
     epx_gc:set_border_width(0), %% FIXME: use special gc for user content
     State2 = draw_vscroll(Pixels,VBar,HBar,State1),
@@ -1548,13 +1557,67 @@ draw(State = #state { profile = Profile }, Dirty) ->
     State5 = draw_left_bar(Pixels,State4),
     State6 = draw_right_bar(Pixels,State5),
     State7 = draw_bottom_bar(Pixels,State6),
-    if State#state.pt1 =/= undefined, State#state.operation =:= menu ->
-	    epx_menu:draw(State#state.menu, Pixels, State#state.pt1);
+    if State7#state.pt1 =/= undefined, State7#state.operation =:= menu ->
+	    epx_menu:draw(State7#state.menu, Pixels, State7#state.pt1);
        true ->
 	    ok
     end,
     update_window(State7, Dirty).
 
+draw_content_(Pixmap, Dirty, State) ->
+    case ?CALLBACK(State, draw) of
+	undefined ->
+	    State;
+	Draw ->
+	    Rect = if Dirty =:= undefined ->
+			   {0,0,State#state.width,State#state.height};
+		      tuple_size(Dirty) =:= 4 ->
+			   Dirty
+		   end,
+	    export_state(State),
+	    UserState = Draw(Pixmap,Rect,State#state.user_state),
+	    State1 = state(),
+	    State1#state { user_state = UserState }
+    end.
+
+%% 
+%% Api version function to direct draw content
+%%
+draw(Draw) when is_function(Draw) ->
+    State = state(),
+    Pixels = pixels(State),
+    SaveClip = epx:pixmap_info(Pixels, clip),
+    {Tx,Ty} = get_view_origin(State),
+    ScrollBars={HBar,VBar} = scrollbars(State),
+    {Cx,Cy} = drawing_origin_(State,ScrollBars),
+    W = drawing_width_(VBar,State),
+    H = drawing_height_(HBar,State),
+    {Sx,Sy} = State#state.scale,
+    epx:pixmap_ltm_reset(Pixels),
+    epx:pixmap_ltm_translate(Pixels, Cx, Cy),
+    epx:pixmap_ltm_scale(Pixels, 1/Sx, 1/Sy),
+    epx:pixmap_ltm_translate(Pixels, -Tx, -Ty),
+    epx:pixmap_set_clip(Pixels, {Cx,Cy,W,H}),
+    VisibleRect = {Tx, Ty, W/Sx, H/Sy},  %% in view coordinates
+    {{Vx,Vy,Vw,Vh},Result} = Draw(Pixels, VisibleRect),
+    UpdatedRect = {(Vx-Tx)/Sx+Cx, (Vy-Ty)/Sy+Cy, Vh/Sy, Vw/Sx},
+    draw_window(Pixels, State, UpdatedRect),
+    epx:pixmap_ltm_reset(Pixels),
+    epx:pixmap_set_clip(Pixels, SaveClip),
+    Result.
+
+draw_window(Pixels, State, Rect) ->
+    if Pixels =:= State#state.pixels ->
+	    copy_area(Pixels,Rect,State#state.screen);
+       true ->
+	    ok
+    end,
+    epx:pixmap_draw(State#state.screen, State#state.window,
+		    0, 0, 0, 0,
+		    State#state.width, State#state.height),
+    epx:sync(State#state.screen,State#state.window).
+
+    
 update_window(State, Dirty) ->
     if State#state.pixels =/= undefined ->
 	    copy_area(State#state.pixels,Dirty,State#state.screen);
@@ -1744,14 +1807,14 @@ left_bar(#state { winfo = WI }) -> WI#window_info.left_bar.
 right_bar(#state { winfo = WI }) -> WI#window_info.right_bar.
 bottom_bar(#state { winfo = WI }) -> WI#window_info.bottom_bar.
 
-top_offset(#state { winfo = WI }) -> 
-    WI#window_info.top_offset + WI#window_info.top_bar.
-left_offset(#state { winfo = WI }) -> 
-    WI#window_info.left_offset + WI#window_info.left_bar.
-right_offset(#state { winfo = WI }) -> 
-    WI#window_info.right_offset + WI#window_info.right_bar.
-bottom_offset(#state { winfo = WI }) -> 
-    WI#window_info.bottom_offset + WI#window_info.bottom_bar.
+%%top_offset(#state { winfo = WI }) -> 
+%%    WI#window_info.top_offset + WI#window_info.top_bar.
+%%left_offset(#state { winfo = WI }) -> 
+%%    WI#window_info.left_offset + WI#window_info.left_bar.
+%%right_offset(#state { winfo = WI }) -> 
+%%    WI#window_info.right_offset + WI#window_info.right_bar.
+%%bottom_offset(#state { winfo = WI }) -> 
+%%    WI#window_info.bottom_offset + WI#window_info.bottom_bar.
 
 scroll_hndl_size(#state { winfo = WI }) -> WI#window_info.scroll_hndl_size.
 scroll_bar_size(#state { winfo = WI }) -> WI#window_info.scroll_bar_size.
@@ -1762,16 +1825,13 @@ scroll_vertical(#state { winfo = WI }) -> WI#window_info.scroll_vertical.
 scroll_xstep(#state { winfo = WI }) -> WI#window_info.scroll_xstep.
 scroll_ystep(#state { winfo = WI }) -> WI#window_info.scroll_ystep.
 
-glyph_width(#state { winfo = WI }) -> WI#window_info.glyph_width.
-glyph_height(#state { winfo = WI }) -> WI#window_info.glyph_height.
 glyph_ascent(#state { winfo = WI }) -> WI#window_info.glyph_ascent.
-glyph_descent(#state { winfo = WI }) -> WI#window_info.glyph_descent.
 
 %% profile acces
-background_color(#state { content = WD }) ->
-    P = WD#window_content.profile,
-    epx_profile:color(P#window_profile.scheme,
-		      P#window_profile.background_color).
+%% background_color(#state { content = WD }) ->
+%%    P = WD#window_content.profile,
+%%    epx_profile:color(P#window_profile.scheme,
+%%		      P#window_profile.background_color).
 
 top_bar_color(#state { content = WD }) ->
     P = WD#window_content.profile,
@@ -1817,8 +1877,8 @@ set_view_xpos(S = #state{ content = WD}, X) ->
     S#state { content = WD#window_content { view_xpos = X }}.
 set_view_ypos(S = #state{ content = WD}, Y) ->
     S#state { content = WD#window_content { view_ypos = Y }}.
-set_view_pos(S = #state{ content = WD}, X, Y) ->
-    S#state { content = WD#window_content { view_xpos = X, view_ypos = Y }}.
+%% set_view_pos(S = #state{ content = WD}, X, Y) ->
+%%    S#state { content = WD#window_content { view_xpos = X, view_ypos = Y }}.
 
 get_view_left(#state { content = WD }) -> WD#window_content.view_left.
 get_view_right(#state { content = WD }) -> WD#window_content.view_right.
@@ -1845,22 +1905,6 @@ get_motion(#state { content = WD }) ->
 set_motion(S=#state { content = WD }, Motion) ->
     S#state { content = WD#window_content { motion = Motion }}.
 
-draw_content(Pixmap, Dirty, State) ->
-    case ?CALLBACK(State, draw) of
-	undefined ->
-	    State;
-	Draw ->
-	    Rect = if Dirty =:= undefined ->
-			   {0,0,State#state.width,State#state.height};
-		      tuple_size(Dirty) =:= 4 ->
-			   Dirty
-		   end,
-	    %% fixme: pixmap_set_clip to shield pixmap
-	    export_state(State),
-	    UserState = Draw(Pixmap,Rect,State#state.user_state),
-	    State1 = state(),
-	    State1#state { user_state = UserState }
-    end.
 
 %% top & bottom bar has priority over left and right...
 draw_top_bar(Pixels, State) ->
