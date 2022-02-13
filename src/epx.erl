@@ -138,6 +138,9 @@
 -export([font_draw_string/5]).
 -export([font_draw_utf8/5]).
 
+-export([glyph_info/2, glyph_info/3, glyph_info_/3]).
+-export([glyph_info_keys/0]).
+
 %% Backend
 -export([backend_list/0]).
 -export([backend_open_/2, backend_open/2]).
@@ -1513,6 +1516,20 @@ font_info(Font, K) when is_atom(K) ->
 
 
 font_info_(_Font, _Item) ->
+    ?nif_stub().
+
+glyph_info_keys() ->
+    [name, width, height, x, y, dx, dy].
+
+glyph_info(Font, Encoding) ->
+    glyph_info(Font, Encoding, glyph_info_keys()).
+
+glyph_info(Font, Encoding, Keys) when is_list(Keys) ->
+    [{K,glyph_info_(Font,Encoding,K)} || K <- Keys];
+glyph_info(Font, Encoding, K) when is_atom(K) ->
+    glyph_info_(Font, Encoding, K).
+
+glyph_info_(_Font, _Encoding, _Item) ->
     ?nif_stub().
 
 font_draw_glyph(_Pixmap,_Gc,_X, _Y, _C) ->

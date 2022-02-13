@@ -140,6 +140,7 @@ static void epx_unload(ErlNifEnv* env, void* priv_data);
     NIF("font_map", 1, font_map)				\
     NIF("font_unmap", 1, font_unmap)				\
     NIF("font_info_", 2, font_info)				\
+    NIF("glyph_info_", 3, glyph_info)				\
     NIF("font_draw_glyph", 5, font_draw_glyph)			\
     NIF("font_draw_string", 5, font_draw_string)		\
     NIF("font_draw_utf8", 5, font_draw_utf8)			\
@@ -481,6 +482,8 @@ DECL_ATOM(count);
 // DECL_ATOM(backend);
 DECL_ATOM(x);
 DECL_ATOM(y);
+DECL_ATOM(dx);
+DECL_ATOM(dy);
 // DECL_ATOM(backend);
 DECL_ATOM(event_mask);
 
@@ -5721,6 +5724,48 @@ static ERL_NIF_TERM font_info(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
 }
 
+
+static ERL_NIF_TERM glyph_info(ErlNifEnv* env, int argc,
+			       const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_font_t* font;
+    epx_font_file_t* ff;
+    unsigned encoding;
+    epx_glyph_t* glyph;
+    
+    if (!get_font(env, argv[0], &font))
+	return enif_make_badarg(env);
+    if ((ff = font->font_file) == NULL) // must be loaded/mapped
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[1], &encoding))
+	return enif_make_badarg(env);
+
+    if ((glyph = epx_font_file_glyph(font->font_file, encoding)) == 0)
+	return ATOM(undefined);
+    if (argv[2] == ATOM(width))
+	return enif_make_uint(env, glyph->width);
+    if (argv[2] == ATOM(height))
+	return enif_make_uint(env, glyph->height);
+    if (argv[2] == ATOM(x))
+	return enif_make_int(env, glyph->xoffs);
+    if (argv[2] == ATOM(y))
+	return enif_make_int(env, glyph->yoffs);
+    if (argv[2] == ATOM(dx))
+	return enif_make_int(env, glyph->dwx);
+    if (argv[2] == ATOM(dy))
+	return enif_make_int(env, glyph->dwy);
+    if (argv[2] == ATOM(name)) {
+	const char* str;	
+	if (glyph->name_offset == 0)
+	    return ATOM(undefined);
+	str = epx_font_file_string(font->font_file,
+				   glyph->name_offset);
+	return enif_make_string(env, str, ERL_NIF_LATIN1);
+    }
+    return enif_make_badarg(env);    
+}
+
 // Draw a glyph C at X,Y return {X',Y'}
 static ERL_NIF_TERM font_draw_glyph(ErlNifEnv* env, int argc,
 				    const ERL_NIF_TERM argv[])
@@ -6705,7 +6750,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
 
     // window_info
     LOAD_ATOM(x);
-    LOAD_ATOM(y);
+    LOAD_ATOM(y);    
     LOAD_ATOM(event_mask);
 
     // poly_info
@@ -6789,6 +6834,15 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(resolution_y);
     LOAD_ATOM(descent);
     LOAD_ATOM(ascent);
+
+    // Glyph info
+    // LOAD_ATOM(name);    
+    // LOAD_ATOM(width);
+    // LOAD_ATOM(height);
+    // LOAD_ATOM(x);    
+    // LOAD_ATOM(y);    
+    LOAD_ATOM(dx);
+    LOAD_ATOM(dy);        
 
     // epx_font_spacing_t
     LOAD_ATOM(none);

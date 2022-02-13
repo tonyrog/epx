@@ -83,7 +83,7 @@ void epx_font_destroy(epx_font_t* font)
     epx_object_unref(font);
 }
 
-char* epx_font_file_string(epx_font_file_t* ff, uint32_t offset)
+const char* epx_font_file_string(epx_font_file_t* ff, uint32_t offset)
 {
     char* table = (char*)ff->data + U32LE(ff->string_table_start);
     // get string in string table (skip length indication)
@@ -96,14 +96,15 @@ epx_glyph_t* epx_font_file_glyph(epx_font_file_t* ff, uint32_t encoding)
     uint32_t stop  = U32LE(ff->encoding_stop);
     uint32_t* offset_table = 
 	(uint32_t*) (((char*)ff->data) + U32LE(ff->offset_table_start));
-    int offset;
+    uint32_t offset;
 
     if ((encoding < start) || (encoding > stop)) {
 	encoding = U32LE(ff->encoding_default);
 	if ((encoding < start) || (encoding > stop))
 	    return 0;
     }
-    offset = U32LE(offset_table[encoding - start]);
+    if ((offset = U32LE(offset_table[encoding - start])) == 0)
+	return 0;
     return (epx_glyph_t*) (((char*)ff->data) + offset);
 }
 

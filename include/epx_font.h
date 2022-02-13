@@ -76,5 +76,7 @@ static inline int epx_font_is_loaded(epx_font_t* font)
 
 extern epx_glyph_t* epx_font_file_glyph(epx_font_file_t* ff, 
 					uint32_t encoding);
+extern const char* epx_font_file_string(epx_font_file_t* ff, 
+					uint32_t offset);
 
 #endif
