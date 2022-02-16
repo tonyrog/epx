@@ -195,6 +195,9 @@
 -define(dbg(F,A), ok).
 -endif.
 
+%% -define(verbose(F,A), io:format(F "\n", [A])).
+-define(verbose(F,A), ok).
+
 -ifdef(OTP_RELEASE). %% this implies 21 or higher
 -define(EXCEPTION(Class, Reason, Stacktrace), Class:Reason:Stacktrace).
 -define(GET_STACK(Stacktrace), Stacktrace).
@@ -208,8 +211,6 @@
 
 -define(ldc(Scheme, Key, Env, Default),
 	epx_profile:color_number(Scheme, ?ld(Key,Env,Default))).
-
--define(TEXT_COLOR,              {0,0,0,0}).       %% black text
 
 %% profile with default values
 -record(profile,
@@ -254,6 +255,7 @@
 	 scroll_hndl_color      = grey6,
 	 scroll_vertical        = right,
 	 scroll_horizontal      = bottom,
+	 status_font_color      = grey5,
 
 	 top_bar_color          = red,
 	 left_bar_color         = green,
@@ -1647,7 +1649,7 @@ draw_(State = #state { profile = Profile }, Dirty) ->
     ScrollBars = {HBar,VBar} = scrollbars(State),
     {Cx,Cy} = drawing_origin_(State,ScrollBars),
     {Sx,Sy} = State#state.scale,
-    io:format("ZOOM = ~w, SCALE = ~w\n", [State#state.zoom, {Sx,Sy}]),
+    ?verbose("ZOOM = ~w, SCALE = ~w\n", [State#state.zoom, {Sx,Sy}]),
 
     epx:pixmap_ltm_reset(Pixels),
     epx:pixmap_ltm_translate(Pixels, Cx, Cy),
@@ -1665,12 +1667,37 @@ draw_(State = #state { profile = Profile }, Dirty) ->
     State5 = draw_left_bar(Pixels,State4),
     State6 = draw_right_bar(Pixels,State5),
     State7 = draw_bottom_bar(Pixels,State6),
-    if State7#state.pt1 =/= undefined, State7#state.operation =:= menu ->
-	    epx_menu:draw(State7#state.menu, Pixels, State7#state.pt1);
+    State8 = draw_menu(Pixels,State7),
+    update_window(State8, Dirty1).
+
+%% FIXME: we may want to reload the menu here?
+draw_menu(Pixels, State) ->
+    if State#state.operation =:= menu, State#state.pt1 =/= undefined ->
+	    State1 = reload_menu(State),
+	    epx_menu:draw(State1#state.menu, Pixels, State1#state.pt1),
+	    State1;
        true ->
-	    ok
-    end,
-    update_window(State7, Dirty1).
+	    State
+    end.
+
+reload_menu(State) ->
+    case ?CALLBACK(State, menu) of
+	undefined -> 
+	    State;
+	Menu ->
+	    case Menu({menu,State#state.pt1},State#state.user_state) of
+		{noreply,UserState} ->
+		    State#state { user_state = UserState};
+		{reply,undefined,UserState} ->
+		    State#state { user_state = UserState};
+		{reply,Menu0,UserState} ->
+		    {_Row,Menu1} = epx_menu:find_row(Menu0,
+						     State#state.pt1,
+						     State#state.pt2),
+		    State#state { menu = Menu1,
+				  user_state = UserState}
+	    end
+    end.
 
 %% Update and intersect dirty region and let user code
 %% update that area, return this area intersected with visible rect
@@ -1688,7 +1715,7 @@ user_draw_content(Pixmap, Region, State=#state{user_cb=Cb}) ->
 		undefined ->
 		    State#state.user_state;
 		Draw4 ->
-		    io:format("DRAW REGION = ~w\n", [Region]),
+		    ?verbose("DRAW REGION = ~w\n", [Region]),
 		    Draw4(content,Pixmap,Region,State#state.user_state)
 	    end;
 	Draw ->
@@ -1707,7 +1734,7 @@ user_draw_area(Where, Pixels, Region, State=#state{user_cb=Cb}) ->
 	    export_state(State),
 	    SaveClip = epx:pixmap_info(Pixels, clip),
 	    epx:pixmap_set_clip(Pixels, Region),
-	    io:format("DRAW ~w REGION = ~w\n", [Where, Region]),
+	    ?verbose("DRAW ~w REGION = ~w\n", [Where, Region]),
 	    UserState = Draw4(Where,Pixels, Region,State#state.user_state),
 	    epx:pixmap_set_clip(Pixels, SaveClip),
 	    State1 = state(),
@@ -1842,10 +1869,10 @@ draw(Draw) when is_function(Draw) ->
     epx:pixmap_ltm_scale(Pixels, Sx, Sy),
     epx:pixmap_ltm_translate(Pixels, -Tx, -Ty),
     Clip = {Cx,Cy,W,H},
-    io:format("CLIP = ~w\n", [Clip]),
+    ?verbose("CLIP = ~w\n", [Clip]),
     epx:pixmap_set_clip(Pixels, Clip),
     VisibleRect = {Tx, Ty, ?WINDOW_TO_VIEW_W(W,Sx), ?WINDOW_TO_VIEW_H(H,Sy) },
-    io:format("draw:VISBLE_RECT = ~w\n", [VisibleRect]),
+    ?verbose("draw:VISBLE_RECT = ~w\n", [VisibleRect]),
     Result = Draw(Pixels, VisibleRect),
     State1 = state(), %% pickup potential new state
     draw_window(Pixels, State1, State1#state.dirty),
@@ -1864,12 +1891,12 @@ draw_window(Pixels, State, Area) ->
 		State#state.width,State#state.height).
 
 update_window(State, Dirty) ->
-    io:format("UPDATE Dirty = ~w\n", [Dirty]),
+    ?verbose("UPDATE Dirty = ~w\n", [Dirty]),
     copy_pixels(pixels(State),Dirty,State#state.screen),
     %% At this point Dirty MUST be in view coordinated intersected
     %% with visible area. Not convert into window coordinates
-    Dirty1 = dirty_window_area(Dirty, State),
-    io:format("UPDATE WINDOW Dirty = ~w\n", [Dirty1]),
+    _Dirty1 = dirty_window_area(Dirty, State),
+    ?verbose("UPDATE WINDOW Dirty = ~w\n", [_Dirty1]),
     Dirty2 = all,  %% FIXME!
     draw_pixels(State#state.screen,Dirty2,State#state.window,
 		State#state.width,State#state.height),
@@ -2185,7 +2212,7 @@ get_visible_rect(State) ->
     H = drawing_height0(State),
     {Sx,Sy} = State#state.scale,
     _Rect = {Tx, Ty, ?WINDOW_TO_VIEW_W(W,Sx), ?WINDOW_TO_VIEW_H(H,Sy) },
-    io:format("VISIBLE_RECT = ~w\n", [_Rect]),
+    ?verbose("VISIBLE_RECT = ~w\n", [_Rect]),
     _Rect.
 
 get_motion(#state { content = WD }) -> 
@@ -2224,7 +2251,12 @@ draw_bottom_bar(Pixels, State) ->
 		    epx_gc:set_fill_style(none),
 		    epx:draw_rectangle(Pixels, DrawRect),
 		    epx_gc:set_font(State#state.font),
-		    epx_gc:set_foreground_color((State#state.window_profile)#window_profile.font_color),
+		    Profile = State#state.profile,
+		    Scheme = Profile#profile.scheme,
+		    WProfile = State#state.window_profile,
+		    FontColor = WProfile#window_profile.status_font_color,
+		    StatusColor = epx_profile:color(Scheme,FontColor),
+		    set_text_color(StatusColor),
 		    draw_text(Pixels, X0+10, Y0, 100, Bottom-2, 
 			      State#state.status, State),
 		    State;
@@ -2262,11 +2294,16 @@ draw_right_bar(Pixels, State) ->
 	    State
     end.
 
+set_text_color(_RGB={R,G,B}) ->
+    epx_gc:set_foreground_color({0,R,G,B});
+set_text_color(_ARGB={_A,R,G,B}) ->
+    epx_gc:set_foreground_color({0,R,G,B}).
+    
+
 draw_text(Pixels, X0, Y0, _W, _H, Text, S) ->
     X = X0,
     GA = glyph_ascent(S),
     Y = Y0+1+GA,
-    epx_gc:set_foreground_color(?TEXT_COLOR),
     epx:draw_string(Pixels, X, Y, Text).
 
 
@@ -2304,6 +2341,7 @@ load_profile(E) ->
        window_font_name = ?ld(window_font_name, E, D),
        window_font_size = ?ld(window_font_size, E, D),
        window_font_color = ?ldc(S, window_font_color, E, D),
+       status_font_color = ?ldc(S, status_font_color, E, D),
        scroll_bar_color  = ?ldc(S, scroll_bar_color, E, D),
        scroll_hndl_color = ?ldc(S, scroll_hndl_color, E, D),
        scroll_horizontal = ?ld(scroll_horizontal, E, D),
@@ -2354,7 +2392,8 @@ create_window_profile(Profile) ->
        right_bar_color   = Profile#profile.right_bar_color,
        bottom_bar_color  = Profile#profile.bottom_bar_color,
        scroll_horizontal = Profile#profile.scroll_horizontal,
-       scroll_vertical   = Profile#profile.scroll_vertical
+       scroll_vertical   = Profile#profile.scroll_vertical,
+       status_font_color = Profile#profile.status_font_color
       }.
 
 resize_pixmap(undefined, W, H, Attached) ->

@@ -55,7 +55,8 @@
 	 right_bar_color         = blue,
 	 bottom_bar_color        = grey5,
 	 scroll_horizontal       = bottom :: none | top | bottom,
-	 scroll_vertical         = right  :: none | left | right
+	 scroll_vertical         = right  :: none | left | right,
+	 status_font_color       = grey5
 	}).
 
 -record(window_content,
