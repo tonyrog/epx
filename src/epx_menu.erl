@@ -46,22 +46,42 @@ load_menu_info(Profile) ->
 		 glyph_descent = D
 	       }.
 
-calc_menu_size(Menu,MI) ->
-    calc_menu_size_(Menu,MI,[], 0, 0).
+calc_menu_size(MenuItems,MI) ->
+    calc_menu_size_(MenuItems,MI,[], 0, 0).
 
-calc_menu_size_([{"---", _Accel}|Elems], MI, Acc, W ,H) ->
-    calc_menu_size_(Elems, MI, Acc, W, H);
-calc_menu_size_([{Text, Accel}|Elems], MI, Acc, W ,H) ->
-    {Lw,_} = epx:font_draw_string(undefined,MI#menu_info.gc,0,0,Text),
-    {Rw,_} = epx:font_draw_string(undefined,MI#menu_info.gc,0,0,Accel),
-    calc_menu_size_(Elems, MI, [{Lw,Rw}|Acc], max(W, Lw+Rw),
-		    H + MI#menu_info.glyph_height);
+calc_menu_size_([MenuItem | Items], MI, Acc, W, H) ->
+    case MenuItem of
+	{"---"} ->
+	    calc_menu_size_(Items, MI, Acc, W, H);
+	{"---", _} -> %% command=sepator/accetl
+	    calc_menu_size_(Items, MI, Acc, W, H);
+	{Text} when is_list(Text) ->
+	    LR = {Lw,Rw} = calc_item_size(Text, "", MI),
+	    calc_menu_size_(Items, MI, [LR|Acc], max(W, Lw+Rw),
+			    H + MI#menu_info.glyph_height);
+	{Text, Accel} when is_list(Text), is_list(Accel) ->
+	    LR = {Lw,Rw} = calc_item_size(Text, Accel, MI),
+	    calc_menu_size_(Items, MI, [LR|Acc], max(W, Lw+Rw),
+			    H + MI#menu_info.glyph_height);
+	{Text,_Command,Accel} when is_list(Text), is_list(Accel) ->
+	    LR = {Lw,Rw} = calc_item_size(Text, Accel, MI),
+	    calc_menu_size_(Items, MI, [LR|Acc], max(W, Lw+Rw),
+			    H + MI#menu_info.glyph_height);
+	{Text, _Command} when is_list(Text) ->
+	    LR = {Lw,_Rw} = calc_item_size(Text, "", MI),
+	    calc_menu_size_(Items, MI, [LR|Acc], max(W, Lw),
+			    H + MI#menu_info.glyph_height)
+    end;
 calc_menu_size_([], MI, Acc, W, H) ->
     WExtra=MI#menu_info.left_offset+MI#menu_info.right_offset +
 	MI#menu_info.accel_offset,
     HExtra=MI#menu_info.top_offset+MI#menu_info.bottom_offset,
     {lists:reverse(Acc), W+WExtra, H+HExtra}.
 
+calc_item_size(Text, Accel, MI) ->
+    {Lw,_} = epx:font_draw_string(undefined,MI#menu_info.gc,0,0,Text),
+    {Rw,_} = epx:font_draw_string(undefined,MI#menu_info.gc,0,0,Accel),
+    {Lw, Rw}.
 
 draw(_MenuState, _Pixels, undefined) ->
     ok;
@@ -91,13 +111,31 @@ draw_(MenuState, Row, Pixels, X, Y) ->
     draw_items(Menu,0,Row,Pixels,MI,WHList,X,Y+Top,W,H),
     ok.
 
-draw_items([{"---",_Accel}|Items],I,Row,Pixels,MI,WHList,X,Y,W,H) ->
-    L = MI#menu_info.left_offset,
-    R = MI#menu_info.right_offset,
-    epx:draw_line(Pixels, X+L, Y, X+W-R, Y),
-    draw_items(Items,I,Row,Pixels,MI,WHList,X,Y,W,H);
-draw_items([{Text,Accel}|Items],I,Row,Pixels,MI,
-		[{_Wl,Wr}|WHList],X,Y,W,H) ->
+draw_items([Item|Items],I,Row,Pixels,MI,WHList,X,Y,W,H) ->
+    case Item of
+	{"---"} ->
+	    draw_separator(Pixels, X, Y, W, MI),
+	    draw_items(Items,I,Row,Pixels,MI,WHList,X,Y,W,H);
+	{"---", _} -> 
+	    draw_separator(Pixels, X, Y, W, MI),
+	    draw_items(Items,I,Row,Pixels,MI,WHList,X,Y,W,H);
+	{Text} when is_list(Text) ->
+	    draw_item(Text, "",
+		      Items,I,Row,Pixels,MI,WHList,X,Y,W,H);
+	{Text, Accel} when is_list(Text), is_list(Accel) ->
+	    draw_item(Text, Accel,
+		      Items,I,Row,Pixels,MI,WHList,X,Y,W,H);
+	{Text, _Command} when is_list(Text) ->
+	    draw_item(Text, "",
+		      Items,I,Row,Pixels,MI,WHList,X,Y,W,H);
+	{Text, _Command, Accel} when is_list(Text), is_list(Accel) ->
+	    draw_item(Text, Accel,
+		      Items,I,Row,Pixels,MI,WHList,X,Y,W,H)
+    end;
+draw_items([],_I,_Rows,_Pixels, _MI, _WHList, _X, _Y, _W, _H) ->
+    ok.
+
+draw_item(Text, Accel, Items,I,Row,Pixels,MI,[{_Wl,Wr}|WHList],X,Y,W,H) ->
     Ascent = MI#menu_info.glyph_ascent,
     ItemHeight = MI#menu_info.glyph_height,
     Left = MI#menu_info.left_offset,
@@ -114,10 +152,14 @@ draw_items([{Text,Accel}|Items],I,Row,Pixels,MI,
        true ->
 	    ok
     end,
-    draw_items(Items,I+1,Row,Pixels,MI,WHList,X,Y+ItemHeight,W,H);
-draw_items([],_I,_Rows,_Pixels, _MI, _WHList, _X, _Y, _W, _H) ->
-    ok.
+    draw_items(Items,I+1,Row,Pixels,MI,WHList,X,Y+ItemHeight,W,H).
 
+draw_separator(Pixels, X, Y, W, MI) ->
+    L = MI#menu_info.left_offset,
+    R = MI#menu_info.right_offset,
+    epx:draw_line(Pixels, X+L, Y, X+W-R, Y).
+
+    
 alpha_color(A,{_,R,G,B}) -> {A,R,G,B};
 alpha_color(A,{R,G,B}) -> {A,R,G,B};
 alpha_color(A,Name) when is_list(Name); is_atom(Name) ->
@@ -156,8 +198,12 @@ command(Menu) ->
     command_(Menu#menu_state.row, Menu#menu_state.items).
 
 command_(I, _) when I < 0 -> none;
-command_(I, [{"---", _Accel}|Elems]) -> command_(I, Elems);
-command_(0, [{_Command,Accel}|_]) -> accel(Accel);
+command_(I, [{"---"}|Elems]) -> command_(I, Elems);
+command_(I, [{"---", _}|Elems]) -> command_(I, Elems);
+command_(0, [{Text,Accel}|_]) when is_list(Text),is_list(Accel) -> accel(Accel);
+command_(0, [{Text,Command}|_]) when is_list(Text) -> {Command, #keymod{}};
+command_(0, [{Text,Command,Accel}|_]) when is_list(Text),is_list(Accel) -> 
+    {Command, #keymod{}};
 command_(I, [_|Elems]) -> command_(I-1, Elems);
 command_(_, []) ->  none.
 

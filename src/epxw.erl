@@ -480,31 +480,31 @@ invalidate(Area={_X,_Y,_W,_H}) ->
 %% "standard" menus
 menu(edit) ->
     [
-     {"Undo", "Ctrl+Z"},
-     {"Redo", "Ctrl+Shift+Z"},
-     {"---", ""},
-     {"Cut", "Ctrl+X"},
-     {"Copy", "Ctrl+C"},
-     {"Paste", "Ctrl+V"},
-     {"Delete", "Del"},
-     {"---", ""},
-     {"Select All", "Ctrl+A"}
+     {"Undo", undo, "Ctrl+Z"},
+     {"Redo", redo, "Ctrl+Shift+Z"},
+     {"---"},
+     {"Cut", cut, "Ctrl+X"},
+     {"Copy", copy, "Ctrl+C"},
+     {"Paste", paste, "Ctrl+V"},
+     {"Delete", delete, "Del"},
+     {"---"},
+     {"Select All", select_all, "Ctrl+A"}
     ];
 menu(file) ->
     [
-     {"Open File...",  "Ctrl+O"},
-     {"Save",  "Ctrl+S"},
-     {"---", ""},
-     {"Quit",  "Ctrl+Q"}
+     {"Open File...", open_file, "Ctrl+O"},
+     {"Save", save, "Ctrl+S"},
+     {"---"},
+     {"Quit", quit, "Ctrl+Q"}
     ];
 menu(context) ->
     [
-     {"Cut", "Ctrl+X"},
-     {"Copy", "Ctrl+C"},
-     {"Paste", "Ctrl+V"},
-     {"Delete", "Del"},
-     {"---", ""},
-     {"Select All", "Ctrl+A"}
+     {"Cut", cut, "Ctrl+X"},
+     {"Copy", copy, "Ctrl+C"},
+     {"Paste", paste, "Ctrl+V"},
+     {"Delete", delete, "Del"},
+     {"---"},
+     {"Select All", select_all, "Ctrl+A"}
     ].
 
 %%--------------------------------------------------------------------
@@ -721,7 +721,9 @@ load_callback_(UserMod, UserMap, Func, Arity) ->
 		    undefined
 	    end;
 	UserFun when is_function(UserFun, Arity) ->
-	    UserFun
+	    UserFun;
+	_UserFun  -> %% no matching arity
+	    undefined
     end.
 
 %%--------------------------------------------------------------------
@@ -1848,7 +1850,10 @@ draw_area(Draw, DrawRect, State) when is_function(Draw, 2)->
     epx:pixmap_ltm_reset(Pixels),
     epx:pixmap_set_clip(Pixels, DrawRect),
     Result = Draw(Pixels, DrawRect),
-    draw_window(Pixels, State, DrawRect),
+
+    copy_pixels(Pixels, DrawRect, State#state.screen),
+    draw_pixels(State#state.screen, DrawRect, State#state.window,
+		State#state.width,State#state.height),
     epx:sync(State#state.screen,State#state.window),
     epx:pixmap_set_clip(Pixels, SaveClip),
     Result.

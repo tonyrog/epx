@@ -333,48 +333,6 @@ typedef struct {
     int accel;  // current acceleration type
 } epx_ctx_t;
 
-static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx);
-
-/********
-static ERL_NIF_TERM backend_list(ErlNifEnv* env, int argc,
-				 const ERL_NIF_TERM argv[]);
-
-static ERL_NIF_TERM backend_open(ErlNifEnv* env, int argc,
-				 const ERL_NIF_TERM argv[]);
-
-static ERL_NIF_TERM backend_info(ErlNifEnv* env, int argc,
-				 const ERL_NIF_TERM argv[]);
-
-static ERL_NIF_TERM backend_adjust(ErlNifEnv* env, int argc,
-				   const ERL_NIF_TERM argv[]);
-
-// Windows
-static ERL_NIF_TERM window_create(ErlNifEnv* env, int argc,
-				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM window_adjust(ErlNifEnv* env, int argc,
-				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM window_info(ErlNifEnv* env, int argc,
-				const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM window_attach(ErlNifEnv* env, int argc,
-				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM window_detach(ErlNifEnv* env, int argc,
-				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM window_set_event_mask(ErlNifEnv* env, int argc,
-				  const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM window_enable_events(ErlNifEnv* env, int argc,
-					 const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM window_disable_events(ErlNifEnv* env, int argc,
-					  const ERL_NIF_TERM argv[]);
-
-static ERL_NIF_TERM simd_info(ErlNifEnv* env, int argc,
-			      const ERL_NIF_TERM argv[]);
-static ERL_NIF_TERM simd_set(ErlNifEnv* env, int argc,
-			     const ERL_NIF_TERM argv[]);
-
-static ERL_NIF_TERM debug(ErlNifEnv* env, int argc,
-			  const ERL_NIF_TERM argv[]);
-*/
-
 #undef NIF
 #ifdef NIF_TRACE
 #define NIF(name,arity,func) NIF_FUNC(name, arity, trace##_##func##_##arity),

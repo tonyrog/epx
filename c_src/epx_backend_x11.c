@@ -778,8 +778,11 @@ static int x11_window_attach(epx_backend_t* backend, epx_window_t* window)
     }
 
     if (!win) {
+	int screen = DefaultScreen(be->display);
+	Window root = RootWindow(be->display, screen);
+	
 	win = XCreateWindow(be->display, 
-			    XDefaultRootWindow(be->display), 
+			    root, // XDefaultRootWindow(be->display), 
 			    window->area.xy.x,
 			    window->area.xy.y,
 			    window->area.wh.width,
@@ -1649,6 +1652,16 @@ static int x11_window_adjust(epx_window_t *win, epx_dict_t*param)
 	if (mask0 & CWHeight) win->area.wh.height = w->height = value.height;
 
 	XConfigureWindow(b->display, w->window, mask, &value);
+	
+	if ((mask0 & (CWX|CWY)) &&
+	    (mask0 & (CWWidth|CWHeight))) 
+	    XMoveResizeWindow(b->display, w->window, value.x, value.y,
+			      value.width, value.height);
+	else if (mask0 & (CWWidth|CWHeight))
+	    XResizeWindow(b->display, w->window, value.width, value.height);
+
+	else if (mask0 & (CWX|CWY))
+	    XMoveWindow(b->display, w->window, value.x, value.y);
     }
 
     // XFlush(b->display);

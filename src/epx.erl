@@ -306,7 +306,7 @@
 	button_press | button_release |
 	focus_in | focus_out |
 	enter | leave |
-	configure | resize |
+	configure | expose | resize |
 	left | middle | right | wheel_up | wheel_down |
 	wheel_left | wheel_right | close | destroyed.
 

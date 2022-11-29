@@ -1,0 +1,7 @@
+#!/bin/sh
+#  run ask pass program
+#
+export ERL_LIBS=$HOME/erlang
+exec erl -s epx_askpass -noinput -- "$@"
+
+

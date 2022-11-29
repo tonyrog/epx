@@ -39,13 +39,24 @@
 
 -type epx_menu_profile() :: #menu_profile{}.
 
+-type menu_item() :: 
+	{Text::string()} |
+	{Text::string(), Command::term(), Accel::string()} |
+	{Text::string(), Accel::string()} |  %% Accel will be command
+	{Text::string(), Command::term()}.  %% Command not string
+
+%% seprator
+%% {"---"}
+%% {"---", Accel}
+%% {"---", separator}
+
 -record(menu_state, 
 	{
 	 profile :: #menu_profile {},
 	 info :: #menu_info {},
 	 geometry :: {[{Left::integer(),Right::integer()}],
 		      Width::integer,Height::integer()},
-	 items :: [string()],
+	 items :: [menu_item()],
 	 row  :: integer()    %% current row <0 = none
 	}).
 
