@@ -23,7 +23,7 @@
 -export([window/0, screen/0, pixels/0, width/0, height/0, keymod/0]).
 -export([zoom/0, scale/0]).
 -export([view_origin/0, view_width/0, view_height/0, view_rect/0]).
--export([set_view_size/2, set_view_rect/1]).
+-export([set_view_size/2, set_view_rect/1, set_view_xpos/1, set_view_ypos/1]).
 -export([visible_rect/0]).
 -export([invalidate/0, invalidate/1]).
 -export([set_status_text/1]).
@@ -290,8 +290,11 @@
 -type draw4_cb() :: fun((Where::where(),
 			 Pixmap::epx:epx_pixmap(),DirtyArea::region(),
 			 State::term()) -> NewState::term()).
--type select_cb() :: fun((Rect::epx:epx_rect(),State::term()) ->
-				NewState::term()).
+
+-type select_phase() :: start|stop|continue.
+
+-type select_cb() :: fun(({Phase::select_phase(),Rect::epx:epx_rect()},
+			  State::term()) -> NewState::term()).
 -type motion_cb() :: fun((Pos::epx:epx_point(),State::term()) ->
 				NewState::term()).
 -type command_cb() :: fun((Command::term(), Mod::epx_keymod(), State::term()) ->
@@ -339,6 +342,7 @@
 	 window :: epx:epx_window(),
 	 screen :: epx:epx_pixmap(),   %% on-screen pixels
 	 pixels :: epx:epx_pixmap(),   %% off-screen pixels
+	 pixel_format :: epx:epx_pixel_format(),
 	 font   :: epx:epx_font(),
 	 width  :: integer(),      %% window width
 	 height :: integer(),      %% window height
@@ -457,6 +461,16 @@ set_view_rect(R={X, Y, W, H}) when X >= 0, Y >= 0, W >= 0, H >= 0 ->
     S1 = set_view_rect(S0, R),
     export_state(S1).
 
+set_view_xpos(X) when X >= 0 ->
+    S0 = state(),
+    S1 = set_view_xpos(S0, X),
+    export_state(S1).
+
+set_view_ypos(Y) when Y >= 0 ->
+    S0 = state(),
+    S1 = set_view_ypos(S0, Y),
+    export_state(S1).
+
 set_status_text(Text) ->
     S0 = state(),
     S1 = S0#state { status = lists:flatten(Text) },
@@ -538,6 +552,7 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
     Width = proplists:get_value(width, Env, 640),
     Height = proplists:get_value(height, Env, 480),
     Title  = proplists:get_value(title, Env, "Untitled"),
+    PixelFormat = proplists:get_value(pixel_format, Env, argb),
 
     {ok,Font} = epx_font:match([{name,WProfile#window_profile.font_name},
 				{size,WProfile#window_profile.font_size}]),
@@ -601,7 +616,7 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 	WInfo#window_info.bottom_bar +
 	WInfo#window_info.scroll_bar_size,
 
-    Screen = epx:pixmap_create(Width1, Height1, argb),
+    Screen = epx:pixmap_create(Width1, Height1, PixelFormat),
     Pixels = undefined, %% epx:pixmap_create(Width1, Height1, argb),
     ScreenColor = epx_profile:color(WProfile#window_profile.scheme,
 				    WProfile#window_profile.background_color),
@@ -619,6 +634,7 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 		window = Window,
 		screen = Screen,
 		pixels = Pixels,  %% (off-screen = true)
+		pixel_format = PixelFormat,
 		font   = Font,    %% window font
 		width  = Width,
 		height = Height,
@@ -862,9 +878,11 @@ epx_event(_Event={configure,Rect0}, State) ->
 		WInfo#window_info.top_bar +
 		WInfo#window_info.bottom_bar +
 		WInfo#window_info.scroll_bar_size,
-	    Screen = resize_pixmap(State#state.screen, W1, H1, true),
+	    Screen = resize_pixmap(State#state.screen, W1, H1, 
+				   State#state.pixel_format, true),
 	    Pixels = if State#state.pixels =:= undefined -> undefined;
-			true -> resize_pixmap(State#state.pixels, W1, H1, false)
+			true -> resize_pixmap(State#state.pixels, W1, H1,
+					      State#state.pixel_format, false)
 		     end,
 	    State1 = State#state { screen = Screen, pixels = Pixels,
 				   width=W, height=H },
@@ -2401,30 +2419,30 @@ create_window_profile(Profile) ->
        status_font_color = Profile#profile.status_font_color
       }.
 
-resize_pixmap(undefined, W, H, Attached) ->
-    Pixmap = next_pixmap(W,H),
+resize_pixmap(undefined, W, H, PixelFormat, Attached) ->
+    Pixmap = next_pixmap(W,H,PixelFormat),
     if Attached ->
 	    epx:pixmap_attach(Pixmap);
        true ->
 	    ok
     end,
     Pixmap;
-resize_pixmap(Pixmap, W, H, Attached) ->
+resize_pixmap(Pixmap, W, H, PixelFormat, Attached) ->
     case epx:pixmap_info(Pixmap,[width,height]) of
 	[{width,PW},{height,PH}] when PW < W; PH < H ->
 	    if Attached ->
 		    epx:pixmap_detach(Pixmap),
-		    Pixmap1 = next_pixmap(W,H),
+		    Pixmap1 = next_pixmap(W,H,PixelFormat),
 		    epx:pixmap_attach(Pixmap1),
 		    Pixmap1;
 	       true ->
-		    next_pixmap(W,H)
+		    next_pixmap(W,H,PixelFormat)
 	    end;
 	_ ->
 	    Pixmap
     end.
 
-next_pixmap(W,H) ->
+next_pixmap(W,H,PixelFormat) ->
     NPW = 1 bsl ceil(math:log2(W)),
     NPH = 1 bsl ceil(math:log2(H)),
-    epx:pixmap_create(NPW, NPH, argb).
+    epx:pixmap_create(NPW, NPH, PixelFormat).
