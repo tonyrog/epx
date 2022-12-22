@@ -22,8 +22,10 @@
 %% api callable from callbacks
 -export([window/0, screen/0, pixels/0, width/0, height/0, keymod/0]).
 -export([zoom/0, scale/0]).
--export([view_origin/0, view_width/0, view_height/0, view_rect/0]).
--export([set_view_size/2, set_view_rect/1, set_view_xpos/1, set_view_ypos/1]).
+-export([view_pos/0, view_xpos/0, view_ypos/0, 
+	 view_width/0, view_height/0, view_rect/0]).
+-export([set_view_size/2, set_view_rect/1, 
+	 set_view_pos/2, set_view_xpos/1, set_view_ypos/1]).
 -export([visible_rect/0]).
 -export([invalidate/0, invalidate/1]).
 -export([set_status_text/1]).
@@ -420,7 +422,9 @@ pixels() -> pixels(state()). %% screen or off-screen pixmap
 width()  -> (state())#state.width.
 height() -> (state())#state.height.
 keymod() -> (state())#state.keymod.
-view_origin() -> get_view_origin(state()).
+view_pos() -> get_view_pos(state()).
+view_xpos() -> get_view_xpos(state()).
+view_ypos() -> get_view_ypos(state()).
 view_width() -> get_view_width(state()).
 view_height() -> get_view_height(state()).
 view_rect() -> get_view_rect(state()).
@@ -469,6 +473,11 @@ set_view_xpos(X) when X >= 0 ->
 set_view_ypos(Y) when Y >= 0 ->
     S0 = state(),
     S1 = set_view_ypos(S0, Y),
+    export_state(S1).
+
+set_view_pos(X, Y) when X >= 0, Y >= 0 ->
+    S0 = state(),
+    S1 = set_view_pos(S0, X, Y),
     export_state(S1).
 
 set_status_text(Text) ->
@@ -1665,7 +1674,7 @@ draw_(State = #state { profile = Profile }, Dirty) ->
     Scheme = Profile#profile.scheme,
     ScreenColor = epx_profile:color(Scheme, Profile#profile.screen_color),
     Pixels = pixels(State),
-    {Tx,Ty} = get_view_origin(State),
+    {Tx,Ty} = get_view_pos(State),
     ScrollBars = {HBar,VBar} = scrollbars(State),
     {Cx,Cy} = drawing_origin_(State,ScrollBars),
     {Sx,Sy} = State#state.scale,
@@ -1881,7 +1890,7 @@ draw(Draw) when is_function(Draw) ->
     State = state(),
     Pixels = pixels(State),
     SaveClip = epx:pixmap_info(Pixels, clip),
-    {Tx,Ty} = get_view_origin(State),
+    {Tx,Ty} = get_view_pos(State),
     ScrollBars={HBar,VBar} = scrollbars(State),
     {Cx,Cy} = drawing_origin_(State,ScrollBars),
     W = drawing_width_(VBar,State),
@@ -2199,15 +2208,15 @@ get_view_xpos(#state { content = WD }) -> WD#window_content.view_xpos.
 get_view_ypos(#state { content = WD }) -> WD#window_content.view_ypos.
 
 %% view position that is displayed in drawing area
-get_view_origin(#state { content = WD }) -> 
+get_view_pos(#state { content = WD }) -> 
     {WD#window_content.view_xpos,WD#window_content.view_ypos}.
 
 set_view_xpos(S = #state{ content = WD}, X) ->
     S#state { content = WD#window_content { view_xpos = X }}.
 set_view_ypos(S = #state{ content = WD}, Y) ->
     S#state { content = WD#window_content { view_ypos = Y }}.
-%% set_view_pos(S = #state{ content = WD}, X, Y) ->
-%%    S#state { content = WD#window_content { view_xpos = X, view_ypos = Y }}.
+set_view_pos(S = #state{ content = WD}, X, Y) ->
+    S#state { content = WD#window_content { view_xpos = X, view_ypos = Y }}.
 
 get_view_left(#state { content = WD }) -> WD#window_content.view_left.
 get_view_right(#state { content = WD }) -> WD#window_content.view_right.
@@ -2230,7 +2239,7 @@ set_view_rect(S=#state { content = WD }, {X,Y,W,H}) ->
 
 %% Get the visible content rectangle in view coodinates
 get_visible_rect(State) ->
-    {Tx,Ty} = get_view_origin(State),
+    {Tx,Ty} = get_view_pos(State),
     W = drawing_width0(State),
     H = drawing_height0(State),
     {Sx,Sy} = State#state.scale,
