@@ -296,7 +296,7 @@ int epx_font_map(epx_font_t* font)
 					     PROT_READ, MAP_SHARED, 
 					     fd, 0);
     close(fd);
-    if ((unsigned char*) font->font_map == (unsigned char *) 0xFFFFFFFF) {
+    if ((void*) font->font_map == MAP_FAILED) {
 	fprintf(stderr, "epx_font: file %s, map error : %s\r\n",
 		font->file_name, strerror(errno));
 	font->font_map = 0;
