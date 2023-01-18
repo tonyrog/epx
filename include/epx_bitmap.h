@@ -33,11 +33,11 @@ typedef struct _epx_bitmap_t {
     /*! Clip rectangle restrict pixels drawn within boundary */
     struct _epx_bitmap_t* parent;         // parent bitmap (for sub_bitmap)    
     epx_rect_t clip;               
-    /*! total width in pixels  */
-    unsigned int width;         
+    /*! total width in bits  */
+    unsigned int width;
     /*! total width in bytes  */
-    unsigned int bytes_per_row;   
-    /*! total height in pixels */
+    unsigned int bytes_per_row;
+    /*! total height in bits */
     unsigned int height;
     /*! 1 */
     unsigned int d;
@@ -66,6 +66,22 @@ typedef struct _epx_bitmap_t {
 /* bit mask */
 #define EPX_BIT_MASK(x)   (1 << EPX_BIT_NUMBER(x))
 
+// api lowlevel
+extern void copy_bits(
+    uint8_t* src,    // Base pointer to source.
+    size_t soffs,    // Bit offset for source relative to src.
+    int sdir,	     // Direction: 1 (forward) or -1 (backward).
+    uint8_t* dst,    // Base pointer to destination.
+    size_t doffs,    // Bit offset for destination relative to dst.
+    int ddir,        // Direction: 1 (forward) or -1 (backward). */
+    size_t n);	     // Number of bits to copy.
+
+extern void set_bits(
+    uint8_t pattern,   // 8bit bit pattern
+    uint8_t* dst,      // Base pointer to destination.
+    size_t doffs,      // Bit offset for destination relative to dst.
+    int ddir,	       // Direction: 1 (forward) or -1 (backward).
+    size_t n);	       // Number of bits to set.
 
 extern epx_bitmap_t* epx_bitmap_create(unsigned int width, unsigned int height);
 extern epx_bitmap_t* epx_bitmap_copy(epx_bitmap_t* src);

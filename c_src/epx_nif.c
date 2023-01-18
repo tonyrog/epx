@@ -52,12 +52,6 @@ static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
 			 ERL_NIF_TERM load_info);
 static void epx_unload(ErlNifEnv* env, void* priv_data);
 
-/*
-    NIF("bitmap_put_bits", 8, bitmap_put_bits)			\
-    NIF("bitmap_copy_to", 2, bitmap_copy_to)			\
-    NIF("bitmap_scroll", 6, bitmap_scroll)			\
-*/
-
 #define NIF_LIST \
     NIF("debug",         1,  debug)				\
     NIF("simd_info_",    1,  simd_info)				\
@@ -106,7 +100,11 @@ static void epx_unload(ErlNifEnv* env, void* priv_data);
     NIF("bitmap_create", 2, bitmap_create)			\
     NIF("bitmap_put_bit", 4, bitmap_put_bit)			\
     NIF("bitmap_get_bit", 3, bitmap_get_bit)			\
+    NIF("bitmap_get_bits", 5, bitmap_get_bits)			\
+    NIF("bitmap_put_bits", 6, bitmap_put_bits)			\
+    NIF("bitmap_scroll", 6, bitmap_scroll)			\
     NIF("bitmap_copy", 1, bitmap_copy)				\
+    NIF("bitmap_copy_to", 2, bitmap_copy_to)			\
     NIF("bitmap_copy_area", 8, bitmap_copy_area)		\
     NIF("bitmap_info_",  2, bitmap_info)			\
     NIF("bitmap_set_clip", 2, bitmap_set_clip)			\
@@ -3966,6 +3964,163 @@ static ERL_NIF_TERM bitmap_get_bit(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     bit = epx_bitmap_get_bit(bitmap, x, y);
     return enif_make_int(env, bit);
+}
+
+// get bitmap bits as a binary
+static ERL_NIF_TERM bitmap_get_bits(ErlNifEnv* env, int argc,
+				    const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* bitmap;
+    int x, y;
+    unsigned int w;
+    unsigned int h;
+    epx_rect_t r;
+    epx_rect_t sr;
+    ErlNifBinary bin;    
+    ERL_NIF_TERM bt;
+    size_t nb;
+    uint8_t* src;
+    uint8_t* dst;
+    size_t doffs;
+    
+    if (!get_bitmap(env, argv[0], &bitmap))
+	return enif_make_badarg(env);
+    if (!get_coord(env, NULL, argv[1], argv[2], &x, &y))
+	return enif_make_badarg(env);
+    if (!get_dim(env, NULL, argv[3], argv[4], &w, &h))
+	return enif_make_badarg(env);
+
+    epx_rect_set(&r, x, y, w, h);
+    epx_rect_set(&sr, 0, 0, bitmap->width, bitmap->height);
+    epx_rect_intersect(&sr, &r, &r);
+    
+    x = r.xy.x;
+    y = r.xy.y;
+    w = r.wh.width;
+    h = r.wh.height;
+    nb = (w*h + 7) / 8;
+    if (!enif_alloc_binary(nb, &bin))
+	return enif_make_badarg(env);
+    src = bitmap->data + y*bitmap->bytes_per_row;
+    dst = bin.data;
+    doffs = 0;
+    while(h--) {
+	copy_bits(src, x, 1, dst, doffs, 1, w);
+	src   += bitmap->bytes_per_row;
+	doffs += w;
+    }
+    bt = enif_make_binary(env, &bin);
+    enif_release_binary(&bin);
+    return bt;
+}
+
+static inline size_t usub(size_t a, size_t b)
+{
+    return (a >= b) ? a-b : 0;
+}
+
+// put bits into a bitmap
+// -spec bitmap_put_bits(Dst::epx_pixmap(),X::coord(),Y::coord(),
+//		         Width::dim(),Height::dim(),
+//		         Bits::iolist()) ->
+//	  void().
+//
+//  FIXME: rethink what data is copied... now we intersect
+//  destination and ignore the new width for the source..?
+//  maybe more realistic to assume that the original rect
+//  {w,h} reflect the source data orientation and layout
+//
+static ERL_NIF_TERM bitmap_put_bits(ErlNifEnv* env, int argc,
+				    const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* bitmap;
+    int x, y;
+    unsigned int w;
+    unsigned int h;
+    epx_rect_t r;
+    epx_rect_t dr;
+    ErlNifBinary bin;
+    ssize_t nb;
+    uint8_t* src;
+    uint8_t* dst;
+    size_t soffs;
+    
+    if (!get_bitmap(env, argv[0], &bitmap))
+	return enif_make_badarg(env);
+    if (!get_coord(env, NULL, argv[1], argv[2], &x, &y))
+	return enif_make_badarg(env);
+    if (!get_dim(env, NULL, argv[3], argv[4], &w, &h))
+	return enif_make_badarg(env);
+    if (!enif_inspect_iolist_as_binary(env, argv[5], &bin))
+	return 0;
+    
+    epx_rect_set(&r, x, y, w, h);
+    epx_rect_set(&dr, 0, 0, bitmap->width, bitmap->height);
+    epx_rect_intersect(&dr, &r, &r);
+    
+    x = r.xy.x;
+    y = r.xy.y;
+    w = r.wh.width;
+    h = r.wh.height;
+    nb = (w*h + 7) / 8;
+    dst = bitmap->data + y*bitmap->bytes_per_row;
+    src = bin.data;
+    nb  = bin.size*8;  // #bits avaiable in source
+    soffs = 0;
+    while(h-- && nb) {
+	size_t n = (nb > w) ? w : nb;
+	copy_bits(src, soffs, 1, dst, x, 1, n);
+	dst   += bitmap->bytes_per_row;
+	soffs += w;  // soffs += orig_w ?
+	// n = (nb > orig_w) ? orig_w : nb
+	nb -= n;
+    }
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM bitmap_copy_to(ErlNifEnv* env, int argc,
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_bitmap_t* src;
+    epx_bitmap_t* dst;
+
+    if (!get_bitmap(env, argv[0], &src))
+	return enif_make_badarg(env);
+    if (!get_bitmap(env, argv[1], &dst))
+	return enif_make_badarg(env);
+    epx_bitmap_copy_to(src, dst);
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM bitmap_scroll(ErlNifEnv* env, int argc,
+				  const ERL_NIF_TERM argv[])
+{
+
+    (void) argc;
+    epx_bitmap_t* src;
+    epx_bitmap_t* dst;
+    int horizontal;
+    int vertical;
+    int rotate;
+    int pat;
+
+    if (!get_bitmap(env, argv[0], &src))
+	return enif_make_badarg(env);
+    if (!get_bitmap(env, argv[1], &dst))
+	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[2], &horizontal))
+    	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[3], &vertical))
+    	return enif_make_badarg(env);
+    if (!get_bool(env, argv[4], &rotate))
+    	return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[5], &pat))
+    	return enif_make_badarg(env);
+    epx_bitmap_scroll(src, dst, horizontal, vertical, rotate, (uint8_t) pat);
+    return ATOM(ok);    
 }
 
 static ERL_NIF_TERM bitmap_fill(ErlNifEnv* env, int argc,

@@ -37,9 +37,9 @@ void epx_bitmap_set_clip(epx_bitmap_t* bitmap, epx_rect_t* clip)
  * copied bits (bytes actually)
  */
 
-static void  copy_bits(
-    uint8_t* src,   // Base pointer to source.
-    size_t soffs,    //Bit offset for source relative to src.
+void copy_bits(
+    uint8_t* src,    // Base pointer to source.
+    size_t soffs,    // Bit offset for source relative to src.
     int sdir,	     // Direction: 1 (forward) or -1 (backward).
     uint8_t* dst,    // Base pointer to destination.
     size_t doffs,    // Bit offset for destination relative to dst.
@@ -165,7 +165,7 @@ static void  copy_bits(
 }
 
 
-static void set_bits(
+void set_bits(
     uint8_t pattern,   // 8bit bit pattern
     uint8_t* dst,      // Base pointer to destination.
     size_t doffs,      // Bit offset for destination relative to dst.

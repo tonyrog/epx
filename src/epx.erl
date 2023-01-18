@@ -81,9 +81,13 @@
 %% Bitmaps
 -export([bitmap_create/2]).
 -export([bitmap_copy/1]).
+-export([bitmap_copy_to/2]).
 -export([bitmap_copy_area/8]).
 -export([bitmap_put_bit/4]).
 -export([bitmap_get_bit/3]).
+-export([bitmap_get_bits/5]).
+-export([bitmap_put_bits/6]).
+-export([bitmap_scroll/6]).
 -export([bitmap_fill/2]).
 -export([bitmap_draw_rectangle/6]).
 -export([bitmap_fill_rectangle/6]).
@@ -999,6 +1003,15 @@ bitmap_copy(_SrcBitmap) ->
 
 
 %% @doc
+%%   Copy bits from `Src' bitmap to `Dst' bitmap, ignoring clip rectangle
+%% @end
+-spec bitmap_copy_to(Src::epx_bitmap(),Dst::epx_bitmap()) -> void().
+
+bitmap_copy_to(_Src, _Dst) ->
+    ?nif_stub().
+
+
+%% @doc
 %%  Copy bits from the area ('XSrc','YSrc','Width','Height') in 'Src' bitmap
 %%  to the area ('XDst','YDst','Width','Height') in the 'Dst' bitmap. The bits
 %%  are clipped according to the 'Dst' clip rectangle.
@@ -1030,12 +1043,40 @@ bitmap_put_bit(_Bitmap,_X,_Y,_Bit) ->
 bitmap_get_bit(_Bitmap,_X,_Y) ->
     ?nif_stub().
 
+-spec bitmap_get_bits(Src::epx_bitmap(), X::coord(), Y::coord(),
+		      Width::dim(), Height::dim()) ->
+	  binary().
+bitmap_get_bits(_Bitmap,_X,_Y,_W,_H) ->
+    ?nif_stub().
+
+
+%% @doc
+%%  Write the bits in Bits into
+%%  the rectangular area given by ('X','Y','Width','Height') in the
+%%  bitmap 'Dst'.
+%% @end
+-spec bitmap_put_bits(Dst::epx_bitmap(),X::coord(),Y::coord(),
+		      Width::dim(),Height::dim(),
+		      Bits::iolist()) ->
+	  void().
+
+bitmap_put_bits(_Dst,_X,_Y,_Width,_Height,_Bits) ->
+    ?nif_stub().
+
+-spec bitmap_scroll(Src::epx_bitmap(),Dst::epx_bitmap(),
+		    Horizontal::integer(), Vertical::integer(),
+		    Rotate::boolean(), FillPat::byte()) ->
+	  void().
+
+bitmap_scroll(_Src,_Dst,_Horizontal,_Vertical,_Rotate,_FillPat) ->
+    ?nif_stub().
+
 %% @doc
 %%   Fill bitmap with pattern
 %% @end
--spec bitmap_fill(Bitmap::epx_bitmap(),Pat::byte()) -> ok.
+-spec bitmap_fill(Dst::epx_bitmap(),Pat::byte()) -> ok.
 
-bitmap_fill(_Bitmap, _Pat) ->
+bitmap_fill(_Dst, _Pat) ->
     ?nif_stub().    
 
 %% @doc
