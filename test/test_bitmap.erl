@@ -15,11 +15,27 @@ test() ->
     ok = test_fill_rect(),
     ok = test_fill_circle(),
     ok = test_draw_circle(),
+    ok = test_put_get_bits(),
     ok.
+
+test_put_get_bits() ->
+    Bitmap = epx:bitmap_create(32, 32, 0),
+    epx:bitmap_put_bits(Bitmap, 16, 16, 8, 4,
+			<<2#11001100,
+			  2#00110011,
+			  2#11001100,
+			  2#00110011 >>),
+    Data = epx:bitmap_get_bits(Bitmap, 16, 16, 8, 4),
+    epx:bitmap_put_bits(Bitmap, 24, 24, 8, 4, Data),
+    plot_bitmap(Bitmap),
+    ok.
+
+			  
     
 test_image() ->
     BitLists = ascii_bits_to_bits(bits0()),
     Bitmap = make_bitmap(BitLists),
+    plot_bitmap(Bitmap),
     BitLists = get_bitlist(Bitmap),
     verify_bitmap(Bitmap, BitLists).
 
@@ -31,7 +47,7 @@ test_fill_rect() ->
     epx:bitmap_fill(Bitmap, 2#00000000),
     epx:bitmap_fill_rectangle(Bitmap, 3, 3, 6, 3, 2#11111111),
     epx:bitmap_fill_rectangle(Bitmap, 3, 7, 5, 3, 2#11111111),
-    %% plot_bitmap(Bitmap),
+    plot_bitmap(Bitmap),
     verify_bitmap(Bitmap, BitLists).
 
 test_fill_circle() ->
@@ -63,7 +79,7 @@ test_pattern() ->
     33 = epx:bitmap_info(Bitmap, width),
     64 = epx:bitmap_info(Bitmap, height),
     ok = epx:bitmap_fill(Bitmap, 2#10110010),
-    %% plot_bitmap(Bitmap),
+    plot_bitmap(Bitmap),
     BitLists = get_bitlist(Bitmap),
     BitRow = [(C-$0) || 
 		 C <- integer_to_list(2#101100101011001010110010101100101, 2)],
@@ -72,7 +88,6 @@ test_pattern() ->
 	      true = (Row =:= BitRow)
       end, BitLists),
     ok.
-
 
 get_bitlist(Bitmap) ->
     W = epx:bitmap_info(Bitmap, width),
@@ -115,7 +130,6 @@ verify_bitmap(Bitmap, BitLists) ->
 			      Bit = epx:bitmap_get_bit(Bitmap, X, Y)
 		      end, Row)
 	 end, BitLists).
-
 
 %% iterator with element index
 each(Fun, List) ->

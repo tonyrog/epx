@@ -79,7 +79,7 @@
 -export([pixmap_ltm_rotate/2]).
 -export([pixmap_ltm_reset/1]).
 %% Bitmaps
--export([bitmap_create/2]).
+-export([bitmap_create/2, bitmap_create/3]).
 -export([bitmap_copy/1]).
 -export([bitmap_copy_to/2]).
 -export([bitmap_copy_area/8]).
@@ -991,6 +991,14 @@ pixmap_ltm_reset(_Pixmap) ->
 -spec bitmap_create(Width::dim(), Height::dim()) ->
 	  epx_bitmap().
 bitmap_create(_Width,_Height) ->
+    ?nif_stub().
+
+%% @doc
+%%   Create a bitmap of size WidthxHeight bits and fill with FillPat
+%% @end
+-spec bitmap_create(Width::dim(), Height::dim(), FillPat::integer()) ->
+	  epx_bitmap().
+bitmap_create(_Width,_Height,_FillPat) ->
     ?nif_stub().
 
 %% @doc

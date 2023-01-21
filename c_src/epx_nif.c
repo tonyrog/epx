@@ -98,6 +98,7 @@ static void epx_unload(ErlNifEnv* env, void* priv_data);
     NIF("pixmap_ltm_rotate", 2, pixmap_ltm_rotate)		\
     NIF("pixmap_ltm_reset", 1, pixmap_ltm_reset)		\
     NIF("bitmap_create", 2, bitmap_create)			\
+    NIF("bitmap_create", 3, bitmap_create)			\
     NIF("bitmap_put_bit", 4, bitmap_put_bit)			\
     NIF("bitmap_get_bit", 3, bitmap_get_bit)			\
     NIF("bitmap_get_bits", 5, bitmap_get_bits)			\
@@ -3814,6 +3815,7 @@ static ERL_NIF_TERM pixmap_draw_strip(ErlNifEnv* env, int argc,
  *
  *****************************************************************************/
 
+// bitmap_create(Width, Height [, FillPat ]) -> bitmap()
 static ERL_NIF_TERM bitmap_create(ErlNifEnv* env, int argc,
 				  const ERL_NIF_TERM argv[])
 {
@@ -3823,14 +3825,20 @@ static ERL_NIF_TERM bitmap_create(ErlNifEnv* env, int argc,
     epx_bitmap_t* bitmap;
     epx_nif_object_t* obj;
     ERL_NIF_TERM t;
+    int pat = -1;
       
     if (!get_unsigned(env, argv[0], &width))
 	return enif_make_badarg(env);
     if (!get_unsigned(env, argv[1], &height))
 	return enif_make_badarg(env);
-
+    if (argc == 3) {
+	if (!enif_get_int(env, argv[2], &pat) || (pat < 0))
+	    return enif_make_badarg(env);
+    }
     if ((bitmap = epx_bitmap_create(width, height)) == NULL)
 	return enif_make_badarg(env);
+    if (pat >= 0)
+	memset(bitmap->data, pat, bitmap->sz);
     obj = alloc_object(bitmap_res, (epx_object_t*)bitmap);
     t = make_object(env,(epx_object_t*)bitmap);
     enif_release_resource(obj);
@@ -3966,58 +3974,73 @@ static ERL_NIF_TERM bitmap_get_bit(ErlNifEnv* env, int argc,
     return enif_make_int(env, bit);
 }
 
-// get bitmap bits as a binary
+// pixmap_get_bits(Bitmap, X, Y, W, H)
+//  if R={X,Y,W,H} is outside bitmap (clip) value 0 is assumed
+//  => always return W*H bits = (W*H+7) div 8 bytes
+
 static ERL_NIF_TERM bitmap_get_bits(ErlNifEnv* env, int argc,
 				    const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_bitmap_t* bitmap;
+    epx_bitmap_t* src;
     int x, y;
-    unsigned int w;
+    unsigned int w, w1;
     unsigned int h;
-    epx_rect_t r;
-    epx_rect_t sr;
-    ErlNifBinary bin;    
+    ErlNifBinary bin;
     ERL_NIF_TERM bt;
     size_t nb;
-    uint8_t* src;
-    uint8_t* dst;
+    uint8_t* src_ptr;
+    uint8_t* dst_ptr;
     size_t doffs;
+    int x1, y1;
+    int x2, y2;
+    int rx1, ry1, rx2, ry2;    
     
-    if (!get_bitmap(env, argv[0], &bitmap))
+    if (!get_bitmap(env, argv[0], &src))
 	return enif_make_badarg(env);
     if (!get_coord(env, NULL, argv[1], argv[2], &x, &y))
 	return enif_make_badarg(env);
     if (!get_dim(env, NULL, argv[3], argv[4], &w, &h))
 	return enif_make_badarg(env);
 
-    epx_rect_set(&r, x, y, w, h);
-    epx_rect_set(&sr, 0, 0, bitmap->width, bitmap->height);
-    epx_rect_intersect(&sr, &r, &r);
-    
-    x = r.xy.x;
-    y = r.xy.y;
-    w = r.wh.width;
-    h = r.wh.height;
-    nb = (w*h + 7) / 8;
-    if (!enif_alloc_binary(nb, &bin))
-	return enif_make_badarg(env);
-    src = bitmap->data + y*bitmap->bytes_per_row;
-    dst = bin.data;
-    doffs = 0;
-    while(h--) {
-	copy_bits(src, x, 1, dst, doffs, 1, w);
-	src   += bitmap->bytes_per_row;
-	doffs += w;
-    }
-    bt = enif_make_binary(env, &bin);
-    enif_release_binary(&bin);
-    return bt;
-}
+    /* clip source */
+    rx1 = src->clip.xy.x;
+    ry1 = src->clip.xy.y;
+    rx2 = rx1+src->clip.wh.width-1;
+    ry2 = ry1+src->clip.wh.height-1;
+    x1 = epx_clip_range(x, rx1, rx2);
+    y1 = epx_clip_range(y, ry1, ry2);
+    x2 = epx_clip_range(x+w-1, rx1, rx2);
+    y2 = epx_clip_range(y+h-1, ry1, ry2);
 
-static inline size_t usub(size_t a, size_t b)
-{
-    return (a >= b) ? a-b : 0;
+    /* clip "physical" limits */
+    x1 = epx_clip_range(x1, 0, src->width-1);
+    y1 = epx_clip_range(y1, 0, src->height-1);
+    x2 = epx_clip_range(x2, 0, src->width-1);
+    y2 = epx_clip_range(y2, 0, src->height-1);
+    
+    if ((nb = (w*h + 7) / 8) == 0) { // either w or h = 0 ?
+	enif_make_new_binary(env, 0, &bt);
+    }
+    else {
+	if (!enif_alloc_binary(nb, &bin))
+	    return enif_make_badarg(env);
+	memset(bin.data, 0, nb);
+    
+	src_ptr = src->data + y1*src->bytes_per_row;
+	dst_ptr = bin.data;
+	doffs   = (y1-y)*w + (x1-x);
+	w1 = (x2-x1)+1;
+	while(y1 < y2) {
+	    copy_bits(src_ptr, x1, 1, dst_ptr, doffs, 1, w1);
+	    src_ptr   += src->bytes_per_row;
+	    doffs += w;
+	    y1++;
+	}
+	bt = enif_make_binary(env, &bin);
+	enif_release_binary(&bin);
+    }
+    return bt;
 }
 
 // put bits into a bitmap
@@ -4035,19 +4058,16 @@ static ERL_NIF_TERM bitmap_put_bits(ErlNifEnv* env, int argc,
 				    const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_bitmap_t* bitmap;
+    epx_bitmap_t* dst;
     int x, y;
-    unsigned int w;
+    unsigned int w, w1;
     unsigned int h;
-    epx_rect_t r;
-    epx_rect_t dr;
     ErlNifBinary bin;
-    ssize_t nb;
-    uint8_t* src;
-    uint8_t* dst;
-    size_t soffs;
+    int x1, y1;
+    int x2, y2;
+    int rx1, ry1, rx2, ry2;    
     
-    if (!get_bitmap(env, argv[0], &bitmap))
+    if (!get_bitmap(env, argv[0], &dst))
 	return enif_make_badarg(env);
     if (!get_coord(env, NULL, argv[1], argv[2], &x, &y))
 	return enif_make_badarg(env);
@@ -4055,27 +4075,36 @@ static ERL_NIF_TERM bitmap_put_bits(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!enif_inspect_iolist_as_binary(env, argv[5], &bin))
 	return 0;
-    
-    epx_rect_set(&r, x, y, w, h);
-    epx_rect_set(&dr, 0, 0, bitmap->width, bitmap->height);
-    epx_rect_intersect(&dr, &r, &r);
-    
-    x = r.xy.x;
-    y = r.xy.y;
-    w = r.wh.width;
-    h = r.wh.height;
-    nb = (w*h + 7) / 8;
-    dst = bitmap->data + y*bitmap->bytes_per_row;
-    src = bin.data;
-    nb  = bin.size*8;  // #bits avaiable in source
-    soffs = 0;
-    while(h-- && nb) {
-	size_t n = (nb > w) ? w : nb;
-	copy_bits(src, soffs, 1, dst, x, 1, n);
-	dst   += bitmap->bytes_per_row;
-	soffs += w;  // soffs += orig_w ?
-	// n = (nb > orig_w) ? orig_w : nb
-	nb -= n;
+
+    /* clip destination */
+    rx1 = dst->clip.xy.x;
+    ry1 = dst->clip.xy.y;
+    rx2 = rx1+dst->clip.wh.width-1;
+    ry2 = ry1+dst->clip.wh.height-1;
+    x1 = epx_clip_range(x, rx1, rx2);
+    y1 = epx_clip_range(y, ry1, ry2);
+    x2 = epx_clip_range(x+w-1, rx1, rx2);
+    y2 = epx_clip_range(y+h-1, ry1, ry2);
+
+    /* clip "physical" limits */
+    x1 = epx_clip_range(x1, 0, dst->width-1);
+    y1 = epx_clip_range(y1, 0, dst->height-1);
+    x2 = epx_clip_range(x2, 0, dst->width-1);
+    y2 = epx_clip_range(y2, 0, dst->height-1);
+
+    w1 = (x2-x1)+1;
+    if ((w > 0) && (w1 > 0) && (h > 0) && (bin.size > 0)) {
+	ssize_t nb = bin.size*8;  // #bits avaiable in source
+	ssize_t soffs = (y1-y)*w + (x1-x);   // start offset
+	uint8_t* src_ptr = bin.data;
+	uint8_t* dst_ptr = dst->data + y1*dst->bytes_per_row;
+	
+	while((y1 < y2) && (soffs+w1 <= nb)) {
+	    copy_bits(src_ptr, soffs, 1, dst_ptr, x1, 1, w1);
+	    soffs   += w;
+	    dst_ptr += dst->bytes_per_row;
+	    y1++;
+	}
     }
     return ATOM(ok);
 }

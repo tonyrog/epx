@@ -219,20 +219,6 @@ void set_bits(
     }
 }
 
-static inline int clip_range(int a, int low, int high)
-{
-    if (a < low) return low;
-    if (a > high) return high;
-    return a;
-}
-
-static inline int in_range(int a, int low, int high)
-{
-    if (a < low) return 0;
-    if (a > high) return 0;
-    return 1;
-}
-
 int epx_bitmap_init(epx_bitmap_t* dst, unsigned int width, unsigned int height)
 {
     uint8_t* data0;
@@ -343,16 +329,16 @@ void epx_bitmap_put_bits(epx_bitmap_t* dst, int x_dst, int y_dst,
     /* clip destination with updates */
     rx1 = dst->clip.xy.x; ry1 = dst->clip.xy.y;
     rx2 = rx1+dst->clip.wh.width-1; ry2 = ry1+dst->clip.wh.height-1;
-    x3 = clip_range(x_dst, rx1, rx2);
-    y3 = clip_range(y_dst, ry1, ry2);
-    x4 = clip_range(x_dst+width-1, rx1, rx2);
-    y4 = clip_range(y_dst+height-1, ry1, ry2);
+    x3 = epx_clip_range(x_dst, rx1, rx2);
+    y3 = epx_clip_range(y_dst, ry1, ry2);
+    x4 = epx_clip_range(x_dst+width-1, rx1, rx2);
+    y4 = epx_clip_range(y_dst+height-1, ry1, ry2);
 
     /* clip against destination */
-    x3 = clip_range(x3, 0, dst->width-1);
-    y3 = clip_range(y3, 0, dst->height-1);
-    x4 = clip_range(x4, 0, dst->width-1);
-    y4 = clip_range(y4, 0, dst->height-1);
+    x3 = epx_clip_range(x3, 0, dst->width-1);
+    y3 = epx_clip_range(y3, 0, dst->height-1);
+    x4 = epx_clip_range(x4, 0, dst->width-1);
+    y4 = epx_clip_range(y4, 0, dst->height-1);
 
     /* calculate relative change in x, y, w, h */
     dx = x3 - x_dst;
@@ -768,16 +754,16 @@ int epx_bitmap_fill_rectangle(epx_bitmap_t* bmp,
     /* clip against clip rect */
     rx1 = bmp->clip.xy.x; ry1 = bmp->clip.xy.y;
     rx2 = rx1+bmp->clip.wh.width-1; ry2 = ry1+bmp->clip.wh.height-1;
-    x1 = clip_range(x, rx1, rx2);
-    y1 = clip_range(y, ry1, ry2);
-    x2 = clip_range(x+width-1, rx1, rx2);
-    y2 = clip_range(y+height-1, ry1, ry2);
+    x1 = epx_clip_range(x, rx1, rx2);
+    y1 = epx_clip_range(y, ry1, ry2);
+    x2 = epx_clip_range(x+width-1, rx1, rx2);
+    y2 = epx_clip_range(y+height-1, ry1, ry2);
 
     /* clip "physical" limits */
-    x1 = clip_range(x1, 0, bmp->width-1);
-    y1 = clip_range(y1, 0, bmp->height-1);
-    x2 = clip_range(x2, 0, bmp->width-1);
-    y2 = clip_range(y2, 0, bmp->height-1);
+    x1 = epx_clip_range(x1, 0, bmp->width-1);
+    y1 = epx_clip_range(y1, 0, bmp->height-1);
+    x2 = epx_clip_range(x2, 0, bmp->width-1);
+    y2 = epx_clip_range(y2, 0, bmp->height-1);
 
     ptr = EPX_BIT_ADDR(bmp,0,y1);
     width  = (x2-x1)+1;
@@ -805,16 +791,16 @@ int epx_bitmap_copy_area(epx_bitmap_t* src, epx_bitmap_t* dst,
     /* clip source */
     rx1 = src->clip.xy.x; ry1 = src->clip.xy.y;
     rx2 = rx1+src->clip.wh.width-1; ry2 = ry1+src->clip.wh.height-1;
-    x1 = clip_range(x_src, rx1, rx2);
-    y1 = clip_range(y_src, ry1, ry2);
-    x2 = clip_range(x_src+width-1, rx1, rx2);
-    y2 = clip_range(y_src+height-1, ry1, ry2);
+    x1 = epx_clip_range(x_src, rx1, rx2);
+    y1 = epx_clip_range(y_src, ry1, ry2);
+    x2 = epx_clip_range(x_src+width-1, rx1, rx2);
+    y2 = epx_clip_range(y_src+height-1, ry1, ry2);
 
     /* clip "physical" limits */
-    x1 = clip_range(x1, 0, src->width-1);
-    y1 = clip_range(y1, 0, src->height-1);
-    x2 = clip_range(x2, 0, src->width-1);
-    y2 = clip_range(y2, 0, src->height-1);
+    x1 = epx_clip_range(x1, 0, src->width-1);
+    y1 = epx_clip_range(y1, 0, src->height-1);
+    x2 = epx_clip_range(x2, 0, src->width-1);
+    y2 = epx_clip_range(y2, 0, src->height-1);
 
     /* calculate relative change in x, y, w, h */
     dx = x1 - x_src;
@@ -827,16 +813,16 @@ int epx_bitmap_copy_area(epx_bitmap_t* src, epx_bitmap_t* dst,
     rx2 = rx1+dst->clip.wh.width-1; ry2 = ry1+dst->clip.wh.height-1;
     x_dst += dx;
     y_dst += dy;
-    x3 = clip_range(x_dst, rx1, rx2);
-    y3 = clip_range(y_dst, ry1, ry2);
-    x4 = clip_range(x_dst+(width+dw)-1, rx1, rx2);
-    y4 = clip_range(y_dst+(height+dh)-1, ry1, ry2);
+    x3 = epx_clip_range(x_dst, rx1, rx2);
+    y3 = epx_clip_range(y_dst, ry1, ry2);
+    x4 = epx_clip_range(x_dst+(width+dw)-1, rx1, rx2);
+    y4 = epx_clip_range(y_dst+(height+dh)-1, ry1, ry2);
 
     /* clip against destination */
-    x3 = clip_range(x3, 0, dst->width-1);
-    y3 = clip_range(y3, 0, dst->height-1);
-    x4 = clip_range(x4, 0, dst->width-1);
-    y4 = clip_range(y4, 0, dst->height-1);
+    x3 = epx_clip_range(x3, 0, dst->width-1);
+    y3 = epx_clip_range(y3, 0, dst->height-1);
+    x4 = epx_clip_range(x4, 0, dst->width-1);
+    y4 = epx_clip_range(y4, 0, dst->height-1);
 
     /* calculate relative change in x, y, w, h */
     dx = x3 - x_dst;
@@ -886,16 +872,16 @@ int epx_bitmap_draw(epx_bitmap_t* src, epx_pixmap_t* dst,
     /* clip source */
     rx1 = src->clip.xy.x; ry1 = src->clip.xy.y;
     rx2 = rx1+src->clip.wh.width-1; ry2 = ry1+src->clip.wh.height-1;
-    x1 = clip_range(x_src, rx1, rx2);
-    y1 = clip_range(y_src, ry1, ry2);
-    x2 = clip_range(x_src+width-1, rx1, rx2);
-    y2 = clip_range(y_src+height-1, ry1, ry2);
+    x1 = epx_clip_range(x_src, rx1, rx2);
+    y1 = epx_clip_range(y_src, ry1, ry2);
+    x2 = epx_clip_range(x_src+width-1, rx1, rx2);
+    y2 = epx_clip_range(y_src+height-1, ry1, ry2);
 
     /* clip physical limits */
-    x1 = clip_range(x1, 0, src->width-1);
-    y1 = clip_range(y1, 0, src->height-1);
-    x2 = clip_range(x2, 0, src->width-1);
-    y2 = clip_range(y2, 0, src->height-1);
+    x1 = epx_clip_range(x1, 0, src->width-1);
+    y1 = epx_clip_range(y1, 0, src->height-1);
+    x2 = epx_clip_range(x2, 0, src->width-1);
+    y2 = epx_clip_range(y2, 0, src->height-1);
 
     /* calculate relative change in x, y, w, h */
     dx = x1 - x_src;
@@ -908,16 +894,16 @@ int epx_bitmap_draw(epx_bitmap_t* src, epx_pixmap_t* dst,
     rx2 = rx1+dst->clip.wh.width-1; ry2 = ry1+dst->clip.wh.height-1;
     x_dst += dx;
     y_dst += dy;
-    x3 = clip_range(x_dst, rx1, rx2);
-    y3 = clip_range(y_dst, ry1, ry2);
-    x4 = clip_range(x_dst+(width+dw)-1, rx1, rx2);
-    y4 = clip_range(y_dst+(height+dh)-1, ry1, ry2);
+    x3 = epx_clip_range(x_dst, rx1, rx2);
+    y3 = epx_clip_range(y_dst, ry1, ry2);
+    x4 = epx_clip_range(x_dst+(width+dw)-1, rx1, rx2);
+    y4 = epx_clip_range(y_dst+(height+dh)-1, ry1, ry2);
 
     /* clip against destination */
-    x3 = clip_range(x3, 0, dst->width-1);
-    y3 = clip_range(y3, 0, dst->height-1);
-    x4 = clip_range(x4, 0, dst->width-1);
-    y4 = clip_range(y4, 0, dst->height-1);
+    x3 = epx_clip_range(x3, 0, dst->width-1);
+    y3 = epx_clip_range(y3, 0, dst->height-1);
+    x4 = epx_clip_range(x4, 0, dst->width-1);
+    y4 = epx_clip_range(y4, 0, dst->height-1);
 
     /* calculate relative change in x, y, w, h */
     dx = x3 - x_dst;
@@ -995,10 +981,10 @@ int epx_bitmap_draw_line(epx_bitmap_t* bmp,
     x3 = x2 + (bmp->clip.wh.width-1);
     y3 = y2 + (bmp->clip.wh.height-1);
 
-    x2 = clip_range(x2, 0, bmp->width-1);
-    y2 = clip_range(y2, 0, bmp->height-1);
-    x3 = clip_range(x3, 0, bmp->width-1);
-    y3 = clip_range(y3, 0, bmp->height-1);
+    x2 = epx_clip_range(x2, 0, bmp->width-1);
+    y2 = epx_clip_range(y2, 0, bmp->height-1);
+    x3 = epx_clip_range(x3, 0, bmp->width-1);
+    y3 = epx_clip_range(y3, 0, bmp->height-1);
 
     if (dy < 0) {
 	dy=-dy; sy=-1; syw=-bmp->bytes_per_row;
@@ -1018,7 +1004,7 @@ int epx_bitmap_draw_line(epx_bitmap_t* bmp,
     ptr = EPX_BIT_ADDR(bmp,x0,y0);
     xt  = BYTE_OFFSET(x0);       /* save the byte number */
 
-    if (in_range(x0, x2, x3) && in_range(y0, y2, y3))
+    if (epx_in_range(x0, x2, x3) && epx_in_range(y0, y2, y3))
 	put_abit(ptr, x0, val);
 
     if (dx > dy) {
@@ -1036,7 +1022,7 @@ int epx_bitmap_draw_line(epx_bitmap_t* bmp,
 		xt = xtt;
 	    }
 	    f += dy;
-	    if (in_range(x0, x2, x3) && in_range(y0, y2, y3))
+	    if (epx_in_range(x0, x2, x3) && epx_in_range(y0, y2, y3))
 		put_abit(ptr, x0, val);
 	}
     }
@@ -1055,7 +1041,7 @@ int epx_bitmap_draw_line(epx_bitmap_t* bmp,
 	    ptr += syw;
 	    y0 += sy;
 	    f += dx;
-	    if (in_range(x0, x2, x3) && in_range(y0, y2, y3))
+	    if (epx_in_range(x0, x2, x3) && epx_in_range(y0, y2, y3))
 		put_abit(ptr, x0, val);
 	}
     }
