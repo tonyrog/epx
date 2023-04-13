@@ -28,11 +28,13 @@
 #include "epx_t2d.h"
 #include "epx_simd.h"
 
+#define MAX_STORED_FACTORS 64
+
 typedef struct _epx_filter_ {
     epx_dimension_t wh;
-    uint32_t fsum;       // sum(abs(factor[i]))
-    uint8_t* factor;     // factors 
-    uint8_t  data[1];    // factor if stored 
+    float    fsum;       // sum(abs(factor[i]))
+    float*   factor;     // factors
+    float    data[MAX_STORED_FACTORS];    // factor if stored 
 } epx_filter_t;
 
 #define EPX_PIXEL_ADDR(map,x,y) \
