@@ -1283,7 +1283,7 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
  {
      int n = filter->wh.width;
      if ((filter->wh.height == 1) && (n <= EPX_AVG_MAX_N) &&
-	 (filter->fsum == (unsigned int) n)) { /* NOT Completly true ! */
+	 ((int)filter->fsum == n)) { /* NOT Completly true ! */
 	 filter_avg_N_1_area(src, src_wb, src_pt, dst, dst_wb, dst_pt,
 			     width, height, n, flags);
      }
@@ -1311,7 +1311,7 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 		 epx_pixel_t d;
 		 epx_pixel_t s;
 		 uint8_t* src2  = src1;
-		 uint8_t* fptr  = filter->factor;
+		 float* fptr  = filter->factor;
 		 uint32_t acc_a = 0;
 		 uint32_t acc_r = 0;
 		 uint32_t acc_g = 0;
@@ -1323,7 +1323,7 @@ static void filter_area(uint8_t* src, int src_wb, epx_format_t src_pt,
 
 		     // Should be able to use SIMD here!
 		     while(fw--) {
-			 uint8_t factor = *fptr++;
+			 float factor = *fptr++;
 			 epx_pixel_t t = unpack_src(sptr);
 			 acc_a += factor*t.a;
 			 acc_r += factor*t.r;

@@ -869,6 +869,7 @@ pixmap_operation_area(_Src,_Dst,_Op,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
 		    Horizontal::integer(), Vertical::integer(),
 		    Rotate::boolean(), FillColor::epx_color()) ->
 			   void().
+%% Fixme add SrcX,SrcY,DstX,DstY,Width,Height (scroll area)
 
 pixmap_scroll(_Src,_Dst,_Horizontal,_Vertical,_Rotate,_FillColor) ->
     ?nif_stub().
@@ -1071,6 +1072,7 @@ bitmap_get_bits(_Bitmap,_X,_Y,_W,_H) ->
 bitmap_put_bits(_Dst,_X,_Y,_Width,_Height,_Bits) ->
     ?nif_stub().
 
+%% Fixme add SrcX,SrcY,DstX,DstY,Width,Height (scroll area)
 -spec bitmap_scroll(Src::epx_bitmap(),Dst::epx_bitmap(),
 		    Horizontal::integer(), Vertical::integer(),
 		    Rotate::boolean(), FillPat::byte()) ->
@@ -1095,8 +1097,6 @@ bitmap_fill(_Dst, _Pat) ->
 
 bitmap_draw_rectangle(_Bitmap,_X,_Y,_W,_H,_Val) ->
     ?nif_stub().
-
-
 
 %% @doc
 %%   Fill a rectangle with BYTE! pattern,  note that a single 1
@@ -1396,8 +1396,6 @@ dict_info_keys() ->
 
 dict_info(Dict) ->
     [{K,dict_info(Dict,K)} || K <- dict_info_keys()].
-
-
 
 -type epx_gc_info_key() ::
 	'fill_style' |

@@ -26,9 +26,11 @@
 -export([magic/1, mime_type/0, extensions/0,
 	 read_info/1, write_info/2,
 	 read/2, write/2]).
--export([write_data/5, write_data/8]).
--export([format_data/4, format_data/7]).
+-export([write_data/5, write_data/6, write_data/8, write_data/9]).
+-export([format_data/4, format_data/7, format_data/8]).
 -export([format_pixel_data/2]).
+
+-define(debug, true).
 
 -include("../include/epx_image.hrl").
 -include("dbg.hrl").
@@ -83,8 +85,8 @@ scan_info(Fd, IMG, First) ->
 scan_info(Fd, IMG, true, ?IHDR, Length) ->
     case read_chunk_crc(Fd,Length) of
 	{ok,  <<Width:32, Height:32, BitDepth:8,
-	       ColorType:8, CompressionMethod:8,
-	       FilterMethod:8, InterlaceMethod:8, _/binary >>} ->
+		ColorType:8, CompressionMethod:8,
+		FilterMethod:8, InterlaceMethod:8, _/binary >>} ->
 	    scan_info(Fd, IMG#epx_image {
 			    width = Width,
 			    height = Height,
@@ -182,7 +184,7 @@ bytes_per_row(l16a16,W) -> W*4;
 bytes_per_row(r8g8b8a8,W) -> W*4;
 bytes_per_row(r16g16b16a16,W) -> W*8.
 
-
+%% bytes per pixel
 bpp(l1) -> 1;
 bpp(l2) -> 1;
 bpp(l4) -> 1;
@@ -217,23 +219,24 @@ format(6, 8)  -> r8g8b8a8;
 format(6, 16) -> r16g16b16a16.
 
 %% return ColorType and BitDepth from format
-color_type(l1) -> {0, 1};
-color_type(l2) -> {0, 2};
-color_type(l4) -> {0, 4};
-color_type(l8) -> {0, 8};
-color_type(l16) -> {0, 16};
-color_type(r8g8b8) -> {2, 8};
-color_type(rgb) -> {2, 8};
-color_type(r16g16b16) -> {2, 16};
-color_type(palette1) -> {3, 1};
-color_type(palette2) -> {3, 2};
-color_type(palette4) -> {3, 4};
-color_type(palette8) -> {3, 8};
-color_type(l8a8) -> {4, 8};
-color_type(l16a16) -> {4, 16};
-color_type(r8g8b8a8) -> {6, 8};
-color_type(rgba) -> {6, 8};
-color_type(r16g16b16a16) -> {6, 16}.
+color_type(_,l1) -> {0, 1};
+color_type(_,l2) -> {0, 2};
+color_type(_,l4) -> {0, 4};
+color_type(_,l8) -> {0, 8};
+color_type(_,l16) -> {0, 16};
+color_type(Bpp,l) -> {0, Bpp};
+color_type(_,r8g8b8) -> {2, 8};
+color_type(_,rgb) -> {2, 8};
+color_type(_,r16g16b16) -> {2, 16};
+color_type(_,palette1) -> {3, 1};
+color_type(_,palette2) -> {3, 2};
+color_type(_,palette4) -> {3, 4};
+color_type(_,palette8) -> {3, 8};
+color_type(_,l8a8) -> {4, 8};
+color_type(_,l16a16) -> {4, 16};
+color_type(_,r8g8b8a8) -> {6, 8};
+color_type(_,rgba) -> {6, 8};
+color_type(_,r16g16b16a16) -> {6, 16}.
 
 %% scan for a keyword, null terminated (max 79 characters or fail)
 keyword(Bin) ->
@@ -244,20 +247,19 @@ keyword(<<0,Bin/binary>>,_I,Key) ->
 keyword(<<C,Bin/binary>>,I,Key) when I >= 0 ->
     keyword(Bin,I-1,[C|Key]).
 
-
 %% read palette
 plte(<<R,G,B, Data/binary>>) ->
     [{R,G,B} | plte(Data)];
 plte(<<>>) -> [].
-
 
 write_info(Fd, IMG) ->
     [Pixmap] = IMG#epx_image.pixmaps,
     Width  = epx:pixmap_info(Pixmap, width),
     Height = epx:pixmap_info(Pixmap, height),
     Format = epx:pixmap_info(Pixmap, pixel_format),
-    MAGIC = <<137, 80, 78, 71, 13, 10, 26, 10>>,
-    {ColorType,BitDepth} = color_type(Format),
+    Bpp    = epx:pixmap_info(Pixmap, bits_per_pixel),
+    MAGIC = <<?MAGIC>>,
+    {ColorType,BitDepth} = color_type(Bpp,Format),
     CompressionMethod = 0,
     FilterMethod = 0,
     InterlaceMethod = 0,
@@ -266,7 +268,6 @@ write_info(Fd, IMG) ->
 				   CompressionMethod:8,FilterMethod:8, 
 				   InterlaceMethod:8 >>),
     file:write(Fd, <<MAGIC/binary, IHDR/binary>>).
-
 
 
 read(Fd, IMG) ->
@@ -418,25 +419,42 @@ write(Fd, IMG) ->
     Width  = epx:pixmap_info(Pixmap, width),
     Height = epx:pixmap_info(Pixmap, height),
     Format = epx:pixmap_info(Pixmap, pixel_format),
+    Bpp    = epx:pixmap_info(Pixmap, bits_per_pixel),
     PixelData = get_pixel_data(Pixmap,Width,Height),
-    write_data(Fd,PixelData,Width,Height,Format).
+    write_data(Fd,PixelData,Width,Height,Format,Bpp).
 
 write_data(Fd, PixelData, Width, Height, Format) ->
-    write_data(Fd, PixelData, Width, Height, Format, 0, 0, 0).
-    
+    write_data(Fd, PixelData, Width, Height, Format, 0).
+
+write_data(Fd, PixelData, Width, Height, Format, Bpp) ->
+    write_data(Fd, PixelData, Width, Height, Format, Bpp, 0, 0, 0).
+
 write_data(Fd, PixelData, Width, Height, Format,
 	   CompressionMethod, FilterMethod, InterlaceMethod) ->
-    PngData = format_data(PixelData, Width, Height, Format,
+    write_data(Fd, PixelData, Width, Height, Format, 0,
+	       CompressionMethod, FilterMethod, InterlaceMethod).
+    
+write_data(Fd, PixelData, Width, Height, Format, Bpp,
+	   CompressionMethod, FilterMethod, InterlaceMethod) ->
+    PngData = format_data(PixelData, Width, Height, Format, Bpp,
 			  CompressionMethod, FilterMethod, InterlaceMethod),
     file:write(Fd, PngData).
 
 format_data(PixelData, Width, Height, Format) ->
-    format_data(PixelData, Width, Height, Format, 0,0,0).
+    format_data(PixelData, Width, Height, Format, 0).
+
+format_data(PixelData, Width, Height, Format, Bpp) ->
+    format_data(PixelData, Width, Height, Format, Bpp, 0,0,0).
 
 format_data(PixelData, Width, Height, Format,
 	    CompressionMethod, FilterMethod, InterlaceMethod) ->
-    {ColorType,BitDepth} = color_type(Format), 
-    MAGIC = <<137, 80, 78, 71, 13, 10, 26, 10>>,
+    format_data(PixelData, Width, Height, Format, 0, 
+		CompressionMethod, FilterMethod, InterlaceMethod).
+
+format_data(PixelData, Width, Height, Format, Bpp,
+	    CompressionMethod, FilterMethod, InterlaceMethod) ->
+    {ColorType,BitDepth} = color_type(Bpp, Format), 
+    MAGIC = <<?MAGIC>>,
     IHDR = png_chunk(<<"IHDR">>,<< Width:32, Height:32,
 				   BitDepth:8,ColorType:8,
 				   CompressionMethod:8,FilterMethod:8, 
@@ -467,7 +485,6 @@ png_chunk(Type, Bin) ->
     Length = byte_size(Bin),
     CRC = erlang:crc32(<<Type/binary, Bin/binary>>),
     <<Length:32, Type/binary, Bin/binary, CRC:32>>.
-
 
 read_image(Fd, Acc, Palette, Z) ->
     case read_chunk_hdr(Fd) of
@@ -534,9 +551,10 @@ skip_chunk(Fd, Length) ->
     file:position(Fd, {cur,Length+4}).
 
 valid_crc32(Binary, CRC32) ->
-    Z = zlib:open(),
-    Value = zlib:crc32(Z, Binary),
-    zlib:close(Z),
+    %% Z = zlib:open(),
+    %% Value = zlib:crc32(Z, Binary),
+    Value = erlang:crc32(Binary),
+    %% zlib:close(Z),
     ?dbg("crc check: ~p == ~p\n", [CRC32, Value]),
     CRC32 == Value.
 
