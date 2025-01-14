@@ -44,6 +44,9 @@
 #define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr)}
 #endif
 
+#define EXCP_ERROR_N(env, arg_num, str)  raise_exception((env), ATOM(error),  (arg_num), (str), __FILE__, __LINE__)
+#define EXCP_NOTSUP_N(env, arg_num, str) raise_exception((env), ATOM(notsup), (arg_num), (str), __FILE__, __LINE__)
+#define EXCP_BADARG_N(env, arg_num, str) raise_exception((env), ATOM(badarg), (arg_num), (str), __FILE__, __LINE__)
 
 #define MAX_PATH 1024
 
@@ -178,7 +181,14 @@ static void epx_unload(ErlNifEnv* env, void* priv_data);
     NIF("poly_set",    3, poly_set)				\
     NIF("poly_draw",   5, poly_draw)				\
     NIF("poly_info",   2, poly_info)				\
-    NIF("poly_info",   3, poly_info)
+    NIF("poly_info",   3, poly_info)				\
+    NIF("sft_fileopen", 2, sft_fileopen_)			\
+    NIF("sft_info_", 2, sft_info)				\
+    NIF("sft_glyph", 2, sft_glyph)				\
+    NIF("sft_glyph_info", 2, sft_glyph_info)			\
+    NIF("sft_glyph_kerning", 3, sft_glyph_kerning)		\
+    NIF("sft_glyph_render", 3, sft_glyph_render)		\
+    NIF("sft_glyph_render_to", 7, sft_glyph_render_to)
 
 // Declare all nif functions
 #undef NIF
@@ -347,6 +357,7 @@ ErlNifFunc epx_funcs[] =
 ErlNifResourceType* dict_res;
 ErlNifResourceType* gc_res;
 ErlNifResourceType* font_res;
+ErlNifResourceType* sft_res;
 ErlNifResourceType* backend_res;
 ErlNifResourceType* animation_res;
 ErlNifResourceType* canvas_res;
@@ -395,6 +406,9 @@ DECL_ATOM(epx_font);
 DECL_ATOM(epx_animation);
 DECL_ATOM(epx_canvas);
 DECL_ATOM(epx_poly);
+DECL_ATOM(epx_sft);
+// types
+DECL_ATOM(t2d);
 
 // simd
 DECL_ATOM(emu);
@@ -529,6 +543,7 @@ DECL_ATOM(file_name);
 DECL_ATOM(file_size);
 DECL_ATOM(foundry_name);
 DECL_ATOM(family_name);
+DECL_ATOM(subfamily_name);
 DECL_ATOM(weight);
 DECL_ATOM(slant);
 //DECL_ATOM(width);
@@ -542,6 +557,8 @@ DECL_ATOM(resolution_x);
 DECL_ATOM(resolution_y);
 DECL_ATOM(descent);
 DECL_ATOM(ascent);
+DECL_ATOM(line_gap);
+DECL_ATOM(gmetrics);
 
 // epx_font_spacing_t
 // DECL_ATOM(none);
@@ -700,6 +717,44 @@ DECL_ATOM(red);
 DECL_ATOM(green);
 DECL_ATOM(blue);
 DECL_ATOM(calpha);
+
+
+ERL_NIF_TERM raise_exception(ErlNifEnv* env, ERL_NIF_TERM id, int arg_num, char* explanation, char* file, int line)
+{
+    ERL_NIF_TERM file_info, exception;
+    char *error_msg = explanation;
+    (void) file;
+    (void) line;
+
+//  enif_fprintf(stderr, "exeception %s:%d: arg_num=%d, msg=%s\n",
+//	    file, line, arg_num, error_msg);
+
+    /* Make the data for exception */
+    file_info = enif_make_new_map(env);
+//    enif_make_map_put(env, file_info,
+//                      enif_make_atom(env,"c_file_name"),
+//                      enif_make_string(env, file, (ERL_NIF_LATIN1)),
+//                      &file_info);
+//    enif_make_map_put(env, file_info,
+//                      enif_make_atom(env,"c_file_line_num"),
+//                      enif_make_int(env, line),
+//                      &file_info);
+//    enif_make_map_put(env, file_info,
+//                      enif_make_atom(env,"c_function_arg_num"),
+//                      enif_make_int(env, arg_num+1),  // +1 for erlang
+//                      &file_info);
+    enif_make_map_put(env, file_info,
+                      enif_make_atom(env,"argument"),
+                      enif_make_int(env, arg_num+1),  // +1 for erlang
+                      &file_info);
+    exception =
+        enif_make_tuple3(env,
+                         id,
+                         file_info,
+                         enif_make_string(env, error_msg, (ERL_NIF_LATIN1))
+                         );
+    return enif_raise_exception(env, exception);
+}
 
 static void nif_emit_log(int level, char* file, int line, ...)
 {
@@ -1172,7 +1227,8 @@ static ERL_NIF_TERM* object_type[] =
     [EPX_FONT_TYPE]    = &ATOM(epx_font),
     [EPX_ANIM_TYPE]    = &ATOM(epx_animation),
     [EPX_CANVAS_TYPE]  = &ATOM(epx_canvas),
-    [EPX_POLY_TYPE]    = &ATOM(epx_poly)
+    [EPX_POLY_TYPE]    = &ATOM(epx_poly),
+    [EPX_SFT_TYPE]     = &ATOM(epx_sft),    
 };
 
 
@@ -1186,7 +1242,8 @@ static create_fn_t object_create[] =
     [EPX_FONT_TYPE]    = (create_fn_t) epx_font_create,
     [EPX_ANIM_TYPE]    = (create_fn_t) epx_anim_create,
     [EPX_CANVAS_TYPE]  = (create_fn_t) epx_canvas_create,
-    [EPX_POLY_TYPE]    = (create_fn_t) epx_poly_create
+    [EPX_POLY_TYPE]    = (create_fn_t) epx_poly_create,
+    [EPX_SFT_TYPE]     = (create_fn_t) epx_sft_create,
 };
 
 static copy_fn_t object_copy[] =
@@ -1520,6 +1577,14 @@ static int get_pixmap(ErlNifEnv* env, const ERL_NIF_TERM arg,
 	return 0;
     *pixmap_ptr = ptr->pixmap;
     return 1;    
+}
+
+static int get_sft(ErlNifEnv* env, const ERL_NIF_TERM arg,
+		   epx_sft_t** sft)
+{
+    if (!get_object(env, arg, sft_res, (epx_object_t**) sft))
+	return 0;
+    return 1;
 }
 
 static int get_texture(ErlNifEnv* env, const ERL_NIF_TERM term,
@@ -6002,6 +6067,423 @@ static ERL_NIF_TERM font_draw_utf8(ErlNifEnv* env, int argc,
     return enif_make_tuple2(env, enif_make_int(env,x), enif_make_int(env,y));
 }
 
+
+
+/******************************************************************************
+ *
+ * SFT schrift true type fonts
+ *
+ *****************************************************************************/
+
+static ERL_NIF_TERM sft_fileopen_(ErlNifEnv* env, int argc,
+				  const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    char path[MAX_PATH];
+    int r;
+    uint16_t len;
+    SFT_Font* font;
+    epx_nif_object_t* obj;
+    epx_sft_t* sft;
+    ERL_NIF_TERM t;
+    double point_size;
+    int scale = 1;
+    
+    if (!(r=enif_get_string(env, argv[0], path, sizeof(path), ERL_NIF_LATIN1))
+	|| (r < 0))
+	return enif_make_badarg(env);
+
+    if (!get_number(env, argv[1], &point_size))
+	return enif_make_badarg(env);
+
+    if ((font = sft_loadfile((const char*) path)) == NULL)
+	return enif_make_badarg(env);
+
+    if ((sft = epx_sft_create()) == NULL)
+	return enif_make_badarg(env);
+    obj = alloc_object(sft_res, (epx_object_t*)sft);    
+    sft->sft.font = font;
+    sft->sft.xScale = scale*point_size;
+    sft->sft.yScale = scale*point_size;
+    sft->sft.xOffset = 0.0;
+    sft->sft.yOffset = 0.0;
+    sft->sft.flags = SFT_DOWNWARD_Y;
+    sft_lmetrics(&sft->sft, &sft->lmetrics);
+    
+    t = make_object(env,(epx_object_t*)sft);
+    enif_release_resource(obj);
+
+    // debug
+    // sft_print_table_names(stdout, font);
+    // sft_print_name_table(stdout, font);
+    
+    sft->font_family_name = sft_name(font, 1, &len);
+    sft->font_family_name_len = len;
+
+    sft->font_subfamily_name = sft_name(font, 2, &len);  // style
+    sft->font_subfamily_name_len = len;
+    
+    return t;
+}
+
+static ERL_NIF_TERM sft_info(ErlNifEnv* env, int argc,
+			      const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_sft_t* esft;
+
+    if (!get_sft(env, argv[0], &esft))
+	return enif_make_badarg(env);
+    
+    else if (argv[1] == ATOM(line_gap))
+	return enif_make_double(env, esft->lmetrics.lineGap);
+    else if (argv[1] == ATOM(descent))
+	return enif_make_double(env, esft->lmetrics.descender);
+    else if (argv[1] == ATOM(ascent))
+	return enif_make_double(env, esft->lmetrics.ascender);
+    else if (argv[1] == ATOM(family_name))
+	return enif_make_string_len(env, esft->font_family_name,
+				    esft->font_family_name_len,
+				    ERL_NIF_LATIN1);	
+    else if (argv[1] == ATOM(subfamily_name))
+	return enif_make_string_len(env, esft->font_subfamily_name,
+				    esft->font_subfamily_name_len,
+				    ERL_NIF_LATIN1);
+    else
+	return enif_make_badarg(env);
+}
+
+
+static ERL_NIF_TERM sft_glyph(ErlNifEnv* env, int argc,
+			      const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_sft_t* esft;
+    unsigned int codepoint;
+    SFT_Glyph glyph;
+    
+    if (!get_sft(env, argv[0], &esft))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[1], &codepoint))
+	return enif_make_badarg(env);
+    if (sft_lookup(&esft->sft, (SFT_UChar) codepoint, &glyph) < 0)
+	return enif_make_badarg(env);
+    return enif_make_uint(env, glyph);
+}
+
+static ERL_NIF_TERM sft_glyph_info(ErlNifEnv* env, int argc,
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_sft_t* sft;
+    unsigned int glyph;
+    SFT_GMetrics gm;
+
+    if (!get_sft(env, argv[0], &sft))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[1], &glyph))
+	return enif_make_badarg(env);
+    if (sft_gmetrics(&sft->sft, (SFT_Glyph) glyph, &gm) < 0)
+	return enif_make_badarg(env);
+    return enif_make_tuple6(env,
+			   ATOM(gmetrics),
+			   enif_make_double(env, gm.advanceWidth),
+			   enif_make_double(env, gm.leftSideBearing),
+			   enif_make_int(env, gm.yOffset),
+			   enif_make_int(env, gm.minWidth),
+			   enif_make_int(env, gm.minHeight));
+}
+
+
+static ERL_NIF_TERM sft_glyph_kerning(ErlNifEnv* env, int argc,
+				      const ERL_NIF_TERM argv[])
+
+{
+
+    (void) argc;
+    epx_sft_t* sft;
+    unsigned int lglyph, rglyph;
+    SFT_Kerning kerning;
+    
+    if (!get_sft(env, argv[0], &sft))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[1], &lglyph))
+	return enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[2], &rglyph))
+	return enif_make_badarg(env);
+    if (sft_kerning(&sft->sft, (SFT_Glyph) lglyph, (SFT_Glyph) rglyph,
+		    &kerning) < 0)
+	return enif_make_badarg(env);
+    return enif_make_tuple2(env, enif_make_double(env, kerning.xShift),
+			    enif_make_double(env, kerning.yShift));
+}
+
+// Fetch SFT_Transform FIXME! use same t2d for schrift and epx....
+static int get_t2d(ErlNifEnv* env, const ERL_NIF_TERM arg, SFT_Transform t)
+{
+    const ERL_NIF_TERM* elem;
+    int i, arity;
+
+    if (arg == ATOM(undefined)) {
+	t[SFT_SX] = 1.0; t[SFT_RY] = 0.0; t[SFT_TX] = 0.0;
+	t[SFT_RX] = 0.0; t[SFT_SY] = 1.0; t[SFT_TY] = 0.0;
+    }
+    else {
+	if (!enif_get_tuple(env, arg, &arity, &elem) || (arity != 7))		
+	    return 0;
+	if (elem[0] != ATOM(t2d))
+	    return 0;
+	for (i = 1; i < arity; i++) {
+	    double dval;
+	    if (!get_number(env, elem[i], &dval))
+		return 0;
+	    t[i-1] = dval;
+	}
+    }
+    return 1;
+}
+
+static void transform_point(SFT_Transform t, float* xp, float* yp)
+{
+    float x = *xp;
+    float y = *yp;
+    *xp = x*t[SFT_SX] + y*t[SFT_RY] + t[SFT_TX];
+    *yp = x*t[SFT_RX] + y*t[SFT_SY] + t[SFT_TY];    
+}
+
+static void transform_points(SFT_Transform t, float* xp, float* yp, size_t n)
+{
+    while(n--) {
+	transform_point(t, xp, yp);
+	xp++;
+	yp++;
+    }
+}
+
+static void transform_box(SFT_Transform t, float* wp, float* hp)
+{
+    float w = *wp;
+    float h = *hp;
+    float min_x, max_x;
+    float min_y, max_y;
+    float xs[] = {0, w, w, 0};
+    float ys[] = {0, 0, h, h};
+    int i;
+    
+    transform_points(t, xs, ys, 4);
+    min_x = max_x = xs[0];
+    min_y = max_y = ys[0];
+    for (i = 1; i < 4; i++) {
+	min_x = fminf(min_x, xs[i]);
+	max_x = fmaxf(max_x, xs[i]);
+	
+	min_y = fminf(min_y, ys[i]);
+	max_y = fmaxf(max_y, ys[i]);
+    }
+    *wp = max_x - min_x;
+    *hp = max_y - min_y;
+}
+
+// dst could be any of s and t that maybe the same like compose(a, a, a)
+static void compose(SFT_Transform t, SFT_Transform s, SFT_Transform dst)
+{
+    Float_t tsx = t[SFT_SX];
+    Float_t try = t[SFT_RY];
+    Float_t trx = t[SFT_RX];
+    Float_t tsy = t[SFT_SY];
+    Float_t ssx = s[SFT_SX];
+    Float_t sry = s[SFT_RY];
+    Float_t stx = s[SFT_TY];
+    Float_t sty = s[SFT_TY];
+    dst[SFT_SX] = tsx*ssx + try*s[SFT_RX];
+    dst[SFT_RY] = tsx*sry + try*s[SFT_SY];
+    dst[SFT_RX] = trx*ssx + tsy*s[SFT_RX];
+    dst[SFT_SY] = trx*sry + tsy*s[SFT_SY];
+    dst[SFT_TX] = tsx*stx + try*sty + t[SFT_TX];
+    dst[SFT_TY] = trx*stx + tsy*sty + t[SFT_TY];
+}
+
+static void translate(SFT_Transform t, float tx, float ty, SFT_Transform dst)
+{
+    dst[SFT_TX] = t[SFT_TX] + t[SFT_SX]*tx + t[SFT_RY]*ty;
+    dst[SFT_TY] = t[SFT_TY] + t[SFT_RX]*tx + t[SFT_SY]*ty;
+    dst[SFT_SX] = t[SFT_SX];
+    dst[SFT_RY] = t[SFT_RY];
+    dst[SFT_SY] = t[SFT_SY];
+    dst[SFT_RX] = t[SFT_RX];
+}    
+
+//
+// sft_glyph_render(Sft::epx_sft(), Glyph::integer(), Transform::t2d()) ->
+//         Pixmap::epx_pixmap().
+static ERL_NIF_TERM sft_glyph_render(ErlNifEnv* env, int argc,
+				     const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_sft_t* sft;
+    epx_nif_pixmap_t* pm;
+    epx_pixmap_t* pixmap = NULL;
+    int w, h;
+    float width, height;
+    unsigned int glyph;
+    SFT_Transform form;
+    SFT_Image img;
+    ERL_NIF_TERM t;
+    SFT_GMetrics mtx;    
+
+    if (!get_sft(env, argv[0], &sft))
+	return EXCP_ERROR_N(env, 0, "sft object expected");
+    if (!enif_get_uint(env, argv[1], &glyph))
+	return EXCP_ERROR_N(env, 1, "glyph id expected");
+    if (sft_gmetrics(&sft->sft, glyph, &mtx) < 0)
+	return EXCP_ERROR_N(env, 1, "glyph id is not valid");
+    if (!get_t2d(env, argv[2], form))
+	return EXCP_ERROR_N(env, 2, "transform expected");
+
+    width = (float) ( (mtx.minWidth + 3) & ~3 );
+    height = (float) mtx.minHeight;
+    enif_fprintf(stderr, "render: width=%f, heigt=%f\r\n", width, height);
+    transform_box(form, &width, &height);
+    // translate(form, width / 2, height / 2, form);
+    enif_fprintf(stderr, "render': width=%f, heigt=%f\r\n", width, height);
+    w = (int) roundf(width);
+    h = (int) roundf(height);
+    
+    if ((pixmap = epx_pixmap_create(w, h, EPX_FORMAT_L8)) == NULL)
+	return enif_make_badarg(env);
+    pm = enif_alloc_resource(pixmap_res, sizeof(epx_nif_pixmap_t));
+    pm->pixmap = pixmap;
+    pixmap->owner = (void*) enif_self(env, &pm->own);
+    pixmap->res = pm;
+
+    // draw the glyph into the pixmap
+    img.pixels = EPX_PIXEL_ADDR(pixmap, 0, 0);
+    img.bytes_per_row = pixmap->bytes_per_row;
+    img.bytes_per_pixel = pixmap->bytes_per_pixel;    
+    img.width  = w;
+    img.height = h;
+    img.xoffs = 0;
+    img.yoffs = 0;
+    img.xlen  = w;
+    img.ylen  = h;
+    img.render = NULL;
+    sft_render(&sft->sft, (SFT_Glyph) glyph, form, &img);
+    t = make_pixmap(env, pixmap);
+    enif_release_resource(pm);
+    return t;
+}
+
+// When writing a glyph on to an existing pixmap then the
+// Glyph is normally Blended this could be updated to allow
+// more options
+#define BLEND
+
+// render pixel callback
+// probably faster to render into L8 buffer
+// then use accelartion on the L8 buffer onto pixmap!
+static void render_pixel(unsigned char* addr, int i, int j, uint8_t value,
+			 uint16_t fmt, void* arg)
+{
+    epx_gc_t* gc = (epx_gc_t*) arg;
+    epx_pixel_t color = gc->foreground_color;
+    uint8_t fader_value = gc->fader_value;
+    epx_pixel_unpack_t unpack;
+    epx_pixel_pack_t pack;    
+    epx_pixel_t s;
+    epx_pixel_t d;
+    uint8_t a;
+    (void) d; (void) unpack;
+    (void) i; (void) j;
+
+    s.a = value; // EPX_ALPHA_OPAQUE;
+    s.r = s.g = s.b = 0;
+    s = epx_pixel_add(color,s);		    
+#ifdef BLEND
+    // BLEND glyph pixels and background
+    unpack = epx_pixel_unpack_func(fmt);
+    d = unpack(addr);
+    a = ((s.a * fader_value) >> 8);
+    d = epx_pixel_blend(a, s, d);
+    pack = epx_pixel_pack_func(fmt);
+    pack(d, addr);
+#else
+    // NO-BLEND
+    a = ((s.a * fader_value) >> 8);
+    s = epx_pixel_shadow(a, s);
+    pack = epx_pixel_pack_func(fmt);
+    pack(s, addr);    
+#endif    
+}
+
+//
+// sft_glyph_render_to(Sft::epx_sft(), Gc::epx_gc(),
+//                     Glyph::integer(), Transform::t2d(),
+//                      X::number(), Y::number(), Pixmap::epx_pixmap()) -> ok.
+//
+static ERL_NIF_TERM sft_glyph_render_to(ErlNifEnv* env, int argc,
+					const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_gc_t* gc;    
+    epx_sft_t* sft;
+    epx_pixmap_t* pixmap = NULL;
+    int x, y, w, h;
+    float width, height;
+    unsigned int glyph;
+    SFT_Transform form;
+    SFT_Image img;
+    SFT_GMetrics mtx;
+    epx_rect_t r;
+    
+    if (!get_sft(env, argv[0], &sft))
+	return EXCP_ERROR_N(env, 0, "sft object expected");
+    if (!get_gc(env, argv[1], &gc))
+	return EXCP_ERROR_N(env, 1, "gc expected");
+    if (!enif_get_uint(env, argv[2], &glyph))
+	return EXCP_ERROR_N(env, 2, "glyph id expected");
+    if (sft_gmetrics(&sft->sft, glyph, &mtx) < 0)
+	return EXCP_ERROR_N(env, 2, "glyph id is not valid");
+    if (!get_t2d(env, argv[3], form))
+	return EXCP_ERROR_N(env, 3, "transform expected");
+    if (!get_coord(env, NULL, argv[4], argv[5], &x, &y))
+	return EXCP_ERROR_N(env, 4, "coordiate expected");
+    if (!get_pixmap(env, argv[6], &pixmap))
+	return EXCP_ERROR_N(env, 6, "pixmap expected");
+
+    width = (float) ( (mtx.minWidth + 3) & ~3 );
+    height = (float) mtx.minHeight;
+    enif_fprintf(stderr, "render_to: width=%f, heigt=%f\r\n", width, height);
+    transform_box(form, &width, &height);
+    enif_fprintf(stderr, "render_to': width=%f, heigt=%f\r\n", width, height);
+    w = (int) roundf(width);
+    h = (int) roundf(height);
+
+    // check that we may have pixels to draw
+    // y should be at baseline?
+    epx_rect_set(&r, x, y, w, h);
+    if (!epx_rect_intersect(&r, &pixmap->clip, &r))
+	return ATOM(ok);  // empty! w=0 || h=0
+
+    img.pixels = EPX_PIXEL_ADDR(pixmap, r.xy.x, r.xy.y);
+    img.bytes_per_row = pixmap->bytes_per_row;
+    img.bytes_per_pixel = pixmap->bytes_per_pixel;
+    img.pixel_format = pixmap->pixel_format;
+    img.width  = w;  // glyph width
+    img.height = h;  // glyph height
+    img.xoffs = (x < r.xy.x) ? (r.xy.x-x) : 0;
+    img.yoffs = (y < r.xy.y) ? (r.xy.y-y) : 0;
+    img.xlen  = r.wh.width;
+    img.ylen  = r.wh.height;
+    enif_fprintf(stderr, "render_to: xoffs=%u, yoffs=%u, xlen=%u, ylen=%u\r\n",
+		 img.xoffs, img.yoffs, img.xlen, img.ylen);
+
+    img.render_arg = (void*) gc;
+    img.render = render_pixel;
+    // draw the glyph into the image
+    sft_render(&sft->sft, (SFT_Glyph) glyph, form, &img);
+    return ATOM(ok);
+}
+
 /******************************************************************************
  *
  *   reaper_main
@@ -6837,7 +7319,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(emergency);
     LOAD_ATOM(none);
 
-    // Type names
+    // epx resource type names
     LOAD_ATOM(epx_pixmap);
     LOAD_ATOM(epx_bitmap);    
     LOAD_ATOM(epx_window);
@@ -6848,7 +7330,9 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(epx_animation);
     LOAD_ATOM(epx_canvas);
     LOAD_ATOM(epx_poly);
-
+    LOAD_ATOM(epx_sft);
+    // types
+    LOAD_ATOM(t2d);
     // Flags
     LOAD_ATOM(solid);
     LOAD_ATOM(blend);
@@ -6971,6 +7455,7 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(file_size);
     LOAD_ATOM(foundry_name);
     LOAD_ATOM(family_name);
+    LOAD_ATOM(subfamily_name);    
     LOAD_ATOM(weight);
     LOAD_ATOM(slant);
     LOAD_ATOM(width);
@@ -6984,7 +7469,8 @@ static void load_atoms(ErlNifEnv* env,epx_ctx_t* ctx)
     LOAD_ATOM(resolution_y);
     LOAD_ATOM(descent);
     LOAD_ATOM(ascent);
-
+    LOAD_ATOM(line_gap);
+    LOAD_ATOM(gmetrics);
     // Glyph info
     // LOAD_ATOM(name);    
     // LOAD_ATOM(width);
@@ -7236,6 +7722,7 @@ static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     dict_res = epx_resource_create(env,"epx_dict", object_dtor);
     gc_res = epx_resource_create(env,"epx_gc", object_dtor);
     font_res = epx_resource_create(env,"epx_font", object_dtor);
+    sft_res = epx_resource_create(env,"epx_sft", object_dtor);
     animation_res = epx_resource_create(env,"epx_animation", object_dtor);
     canvas_res = epx_resource_create(env,"epx_canvas", object_dtor);
     poly_res = epx_resource_create(env,"epx_poly", object_dtor);
@@ -7291,6 +7778,7 @@ static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
     dict_res = epx_resource_takeover(env,"epx_dict", object_dtor);
     gc_res = epx_resource_takeover(env,"epx_gc", object_dtor);
     font_res = epx_resource_takeover(env,"epx_font", object_dtor);
+    sft_res = epx_resource_takeover(env,"epx_sft", object_dtor);    
     animation_res = epx_resource_takeover(env,"epx_animation", object_dtor);
     canvas_res = epx_resource_takeover(env,"epx_canvas", object_dtor);
     poly_res = epx_resource_takeover(env,"epx_poly", object_dtor);

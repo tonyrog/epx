@@ -29,8 +29,8 @@
 -export([write_data/5, write_data/6, write_data/8, write_data/9]).
 -export([format_data/4, format_data/7, format_data/8]).
 -export([format_pixel_data/2]).
-
--define(debug, true).
+-export([write_file/2]).
+%% -define(debug, true).
 
 -include("../include/epx_image.hrl").
 -include("dbg.hrl").
@@ -141,8 +141,13 @@ scan_info(Fd, IMG, false, ?tIME, Length) ->
     end;
 scan_info(Fd, IMG, false, ?pHYs, Length) ->
     case read_chunk_crc(Fd, Length) of
-	{ok, <<X:32, Y:32, _Unit:8>>} ->
-	    scan_info(Fd, set_attribute(IMG,'Physical',{X,Y,meter}),false);
+	{ok, <<X:32, Y:32, Unit:8>>} ->
+	    U = case Unit of
+		    0 -> unknown;
+		    1 -> meter;
+		    _ -> {unit,Unit}
+		end,
+	    scan_info(Fd, set_attribute(IMG,'Physical',{X,Y,U}),false);
 	{ok, _Data} ->
 	    ?dbg("pHYs other=~p\n", [_Data]),
 	    scan_info(Fd, IMG, false);
@@ -416,6 +421,18 @@ paethPredictor(A,B,C) ->
         
 write(Fd, IMG) ->
     [Pixmap] = IMG#epx_image.pixmaps,
+    write_pixmap(Fd, Pixmap).
+
+write_file(Filename, Pixmap) ->
+    {ok, Fd} = file:open(Filename, [write, binary]),
+    try write_pixmap(Fd, Pixmap) of
+	Res -> Res
+    after
+	file:close(Fd)
+    end.
+	     
+
+write_pixmap(Fd, Pixmap) ->
     Width  = epx:pixmap_info(Pixmap, width),
     Height = epx:pixmap_info(Pixmap, height),
     Format = epx:pixmap_info(Pixmap, pixel_format),

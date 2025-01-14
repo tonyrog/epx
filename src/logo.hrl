@@ -152,5 +152,6 @@
 ?COLOR(150, blue10, {1,2,3}),
 ?COLOR(151, violet10, {2,1,3}),
 ?COLOR(152, magenta10, {4,0,2}),
-?COLOR(153, pink10, {4,0,1})).
-
+?COLOR(153, pink10, {4,0,1}),
+?COLOR(154, black, {0,0,0}),
+?COLOR(155, white, {255,255,255})).

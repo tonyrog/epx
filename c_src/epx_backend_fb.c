@@ -758,9 +758,20 @@ static int fb_adjust(epx_backend_t *backend, epx_dict_t* param)
 
 static int fb_info(epx_backend_t *backend, epx_dict_t* param)
 {
-    (void) backend;
-    (void) param;
-    return 0;
+    FbBackend* be = (FbBackend *) backend;    
+    int bval;
+    
+    if (epx_dict_lookup_boolean(param, "direct_pixmap_draw", &bval) != -1) {
+	epx_dict_set_boolean(param, "direct_pixmap_draw",
+			     be->direct_pixmap_draw);
+    }
+    if (epx_dict_lookup_boolean(param, "double_buffer", &bval) != -1) {
+	epx_dict_set_boolean(param, "double_buffer", be->dbuf);
+    }
+    if (epx_dict_lookup_boolean(param, "lcd_pi32", &bval) != -1) {
+	epx_dict_set_boolean(param, "lcd_pi32", be->lcd_pi32);
+    }
+    return 1;
 }
 
 static int fb_win_info(epx_window_t *win, epx_dict_t* param)

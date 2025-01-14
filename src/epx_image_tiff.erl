@@ -190,17 +190,17 @@ collect_fun(_Fd, T, St) ->
     As = [{Key,Value} | St#epx_image.attributes],
     case Key of
 	'ImageWidth' ->
-	    [Width] = Value,
+	    Width = Value,
 	    St#epx_image { width = Width, attributes = As };
 	'ImageLength' ->
-	    [Length] = Value,
+	    Length = Value,
 	    St#epx_image { height = Length, attributes = As };
 	'BitsPerSample' ->
 	    St#epx_image { depth = lists:sum(Value), attributes = As };
 	'ImageDescription' ->
 	    St#epx_image { comment = Value, attributes = As };
 	'DateTime' ->
-	    [V] = Value,
+	    V = binary_to_list(Value),
 	    case string:tokens(V, ": ") of
 		[YYYY,MM,DD,H,M,S] ->
 		    DateTime = {{list_to_integer(YYYY),
@@ -490,78 +490,78 @@ decode_offs_value(Fd,Offset,Type,Endian,N) ->
 	    Error
     end.
 
-decode_value(_,_,0,_) -> [];
+
+decode_value(ascii,_Endian,N,Bin) ->
+    Len = N-1,
+    case Bin of
+	<<V:Len/binary,0,_/binary>> -> 
+	    string:trim(V, trailing, [0]);
+	<<V:N/binary,_/binary>> ->
+	    string:trim(V, trailing, [0])
+    end;
+decode_value(undefined,_Endian,N,Bin) ->
+    case Bin of
+	<<V:N/binary,_/binary>> ->
+	    V
+    end;
+decode_value(_Type,_Endian,0,_Bin) -> 
+    [];
+decode_value(Type,Endian,1,Bin) ->
+    {V,_} = decode_value_(Type,Endian,Bin),
+    V;
+decode_value(Type,Endian,N,Bin) ->
+    {Vs,_} = decode_values(Type,Endian,N,Bin,[]),
+    list_to_tuple(Vs).
+
+decode_values(_Type,_Endian,0,Bin,Acc) ->
+    {reverse(Acc),Bin};
+decode_values(Type,Endian,N,Bin,Acc) ->
+    {V,Bin1} = decode_value_(Type,Endian,Bin),
+    decode_values(Type,Endian,N-1,Bin1,[V|Acc]).
 
 %% little
-decode_value(short,little,I,<<V:16/little,VT/binary>>) ->
-    [V|decode_value(short,little,I-1,VT)];
-
-decode_value(long,little,I,<<V:32/little,VT/binary>>) ->
-    [V|decode_value(long, little,I-1,VT)];
-
-decode_value(rational,little,I, <<N:32/little,D:32/little,VT/binary>>) ->
-    [{N,D}|decode_value(rational,little,I-1,VT)];
-
-decode_value(sshort,little,I,<<V:16/signed-little,VT/binary>>) ->
-    [V|decode_value(sshort,little,I-1,VT)];
-
-decode_value(slong,little,I,<<V:32/signed-little,VT/binary>>) ->
-    [V|decode_value(slong, little,I-1,VT)];
-
-decode_value(srational,little,I, 
-	     <<N:32/signed-little,D:32/signed-little,VT/binary>>) ->
-    [{N,D}|decode_value(srational,little,I-1,VT)];
-
-decode_value(float,little,I,<<V:32/little-float,VT/binary>>) ->
-    [V|decode_value(float, little,I-1,VT)];
-
-decode_value(double,little,I,<<V:64/little-float,VT/binary>>) ->
-    [V|decode_value(double,little,I-1,VT)];
-
+decode_value_(short,little,<<V:16/little,Bin1/binary>>) ->
+    {V,Bin1};
+decode_value_(long,little,<<V:32/little,Bin1/binary>>) -> 
+    {V,Bin1};
+decode_value_(rational,little,<<N:32/little,D:32/little,Bin1/binary>>) ->
+    {{N,D},Bin1};
+decode_value_(sshort,little,<<V:16/signed-little,Bin1/binary>>) ->
+    {V,Bin1};
+decode_value_(slong,little,<<V:32/signed-little,Bin1/binary>>) ->
+    {V,Bin1};
+decode_value_(srational,little, 
+	     <<N:32/signed-little,D:32/signed-little,Bin1/binary>>) ->
+    {{N,D},Bin1};
+decode_value_(float,little,<<V:32/little-float,Bin1/binary>>) ->
+    {V,Bin1};
+decode_value_(double,little,<<V:64/little-float,Bin1/binary>>) ->
+    {V,Bin1};
 %% big
-decode_value(short,big,I,<<V:16/big,VT/binary>>) ->
-    [V|decode_value(short,big,I-1,VT)];
+decode_value_(short,big,<<V:16/big,Bin1/binary>>) ->
+    {V,Bin1};
+decode_value_(long,big,<<V:32/big,Bin1/binary>>) ->
+    {V,Bin1};
+decode_value_(rational,big,<<N:32/big,D:32/big,Bin1/binary>>) ->
+    {{N,D},Bin1};
+decode_value_(sshort,big,<<V:16/signed-big,Bin1/binary>>) ->
+    {V,Bin1};
+decode_value_(slong,big,<<V:32/signed-big,Bin1/binary>>) ->
+    {V,Bin1};
+decode_value_(srational,big,<<N:32/signed-big,D:32/signed-big,Bin1/binary>>) ->
+    {{N,D},Bin1};
 
-decode_value(long,big,I,<<V:32/big,VT/binary>>) ->
-    [V|decode_value(long,big,I-1,VT)];
+decode_value_(float,big,<<V:32/big-float,Bin1/binary>>) ->
+    {V, Bin1};
+decode_value_(double,big,<<V:64/big-float,Bin1/binary>>) ->
+    {V, Bin1};
+decode_value_(sbyte,_Endian,<<V:8/signed,Bin1/binary>>) ->
+    {V, Bin1};
+decode_value_(byte,_Endian,<<V:8,Bin1/binary>>) ->
+    {V, Bin1};
+decode_value_(unknown,_Endian,Bin1) ->
+    {unknown, Bin1}.
 
-decode_value(rational,big,I,<<N:32/big,D:32/big,VT/binary>>) ->
-    [{N,D}|decode_value(rational,big,I-1,VT)];
-
-decode_value(sshort,big,I,<<V:16/signed-big,VT/binary>>) ->
-    [V|decode_value(sshort,big,I-1,VT)];
-
-decode_value(slong,big,I,<<V:32/signed-big,VT/binary>>) ->
-    [V|decode_value(slong,big,I-1,VT)];
-
-decode_value(srational,big,I,<<N:32/signed-big,D:32/signed-big,VT/binary>>) ->
-    [{N,D}|decode_value(srational,big,I-1,VT)];
-
-decode_value(float,big,I,<<V:32/big-float,VT/binary>>) ->
-    [V|decode_value(float,big,I-1,VT)];
-
-decode_value(double,big,I,<<V:64/big-float,VT/binary>>) ->
-    [V|decode_value(double,big,I-1,VT)];
-
-%% Any endian single fields
-decode_value(sbyte,_Endian,N,Bin) ->
-    <<V:N/binary,_/binary>> = Bin,
-    map(fun(I) when I >= 16#80 -> I - 16#100;
-	   (I) -> I
-	end, binary_to_list(V));
-
-
-decode_value(byte,_Endian,N,Bin) ->
-    <<V:N/binary,_/binary>> = Bin,
-    binary_to_list(V);
-decode_value(ascii,_Endian,N,Bin) ->
-    <<V:N/binary,_/binary>> = Bin,
-    decode_strings(binary_to_list(V));
-decode_value(undefined,_Endian,N,Bin) ->
-    <<V:N/binary,_/binary>> = Bin,
-    V;
-decode_value(unknown,_Endian,_N,Bin) ->
-    Bin.
 
 
 %% decode a sequence of strings

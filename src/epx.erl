@@ -37,6 +37,7 @@
 -export([pixmap_sub_pixmap/5]).
 -export([pixmap_info/1, pixmap_info/2, pixmap_info_/2]).
 -export([pixmap_info_keys/0]).
+-export([pixmap_dump/1, pixmap_dump/2, pixmap_dump/5]).
 -export([pixmap_set_clip/2]).
 -export([pixmap_fill/2, pixmap_fill/3]).
 -export([pixmap_fill_area/6, pixmap_fill_area/7]).
@@ -145,6 +146,15 @@
 -export([glyph_info/2, glyph_info/3, glyph_info_/3]).
 -export([glyph_info_keys/0]).
 
+%% SFT
+-export([sft_open/2]).
+-export([sft_fileopen/2]).
+-export([sft_glyph/2]).
+-export([sft_glyph_info/2]).
+-export([sft_glyph_kerning/3]).
+-export([sft_glyph_render/3, sft_glyph_render_to/7]).
+-export([sft_info/1, sft_info/2, sft_info_/2]).
+
 %% Backend
 -export([backend_list/0]).
 -export([backend_open_/2, backend_open/2]).
@@ -218,6 +228,7 @@
 	      epx_bitmap/0,
 	      epx_pixmap/0,
 	      epx_font/0,
+	      epx_sft/0,
 	      epx_gc/0,
 	      epx_dict/0,
 	      epx_animation/0,
@@ -249,12 +260,14 @@
 		    {X1::coord(), Y1::coord(),
 		     X2::coord(), Y2::coord(),
 		     X3::coord(), Y3::coord()}.
+-type filter() :: {W::dim(), H::dim(), Factors::[number()]}.
 
 -opaque epx_backend()   ::  #epx_backend{} | undefined.
 -opaque epx_window()    ::  #epx_window{}  | undefined.
 -opaque epx_bitmap()    ::  #epx_bitmap{}  | undefined.
 -opaque epx_pixmap()    ::  #epx_pixmap{}  | undefined.
 -opaque epx_font()      ::  #epx_font{}  | undefined.
+-opaque epx_sft()       ::  #epx_sft{}  | undefined.
 -opaque epx_gc()        ::  #epx_gc{}  | undefined.
 -opaque epx_dict()      ::  #epx_dict{}  | undefined.
 -opaque epx_animation() ::  #epx_animation{}  | undefined.
@@ -274,6 +287,10 @@
 		     epx_color4() |
 		     epx_color_name() |
 		     unsigned().
+-type t2d() :: {t2d,
+		Sx::number(), Ry::number(), Tx::number(), 
+		Rx::number(), Sy::number(), Ty::number()}.
+
 
 -type epx_flag() :: solid | blend | sum | aalias |
 		    textured | nfirst | nlast | none.
@@ -521,6 +538,33 @@ pixmap_info(Pixmap, K) when is_atom(K) ->
 
 pixmap_info_(_Pixmap, _Key) ->
     ?nif_stub().
+
+%% @doc
+%%  dump pixmap in ARGB form
+%% @end
+-spec pixmap_dump(Pixmap::epx_pixmap()) -> void().
+pixmap_dump(Pixmap) ->
+    [{width,W},{height,H}] = pixmap_info(Pixmap, [width,height]),
+    pixmap_dump(Pixmap, 0, 0, W, H).
+
+-spec pixmap_dump(Pixmap::epx_pixmap(), Rect::epx_rect()) -> void().
+pixmap_dump(Pixmap, {X,Y,W,H}) ->
+	pixmap_dump(Pixmap, X, Y, W, H).
+
+-spec pixmap_dump(Pixmap::epx_pixmap(),
+		  X::coord(), Y::coord(),
+		  W::dim(), H::dim()) -> void().
+pixmap_dump(Pixmap, X, Y, W, H) ->
+    lists:foreach(
+	fun(Yi) -> 
+		lists:foreach(
+		  fun(Xi) ->
+			  {A,R,G,B} = pixmap_get_pixel(Pixmap, X+Xi, Y+Yi),
+			  io:format("~2.16.0b~2.16.0b~2.16.0b~2.16.0b ",
+				    [A,R,G,B])
+		  end, lists:seq(0, W-1)),
+		io:format("\n")
+	end, lists:seq(0, H-1)).
 
 %% @doc
 %%   Set the clipping Rectangle, pixels drawn outside the clipping
@@ -793,16 +837,46 @@ pixmap_shadow_area(Src,Dst,XSrc,YSrc,XDst,YDst,Width,Height) ->
 pixmap_shadow_area(_Src,_Dst,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
     ?nif_stub().
 
+%% @doc
+%%  Add Color to 'Src' rectangle ('XSrc','YSrc','Width','Heght') to
+%%  'Dst' rectangle ('XDst','YDst','Width','Height').
+%%  This function will blend the pixels from source with
+%%  the luminance value as alpha.
+%% @end
+-spec pixmap_add_color_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			    Fade::fix8(), Color::epx_color(),
+			    XSrc::coord(),YSrc::coord(),
+			    XDst::coord(),YDst::coord(),
+			    Width::dim(),Height::dim()) -> void().
+
 pixmap_add_color_area(Src,Dst,Fade,Color,XSrc,YSrc,XDst,YDst,Width,Height) ->
     pixmap_add_color_area(Src,Dst,Fade,Color,XSrc,YSrc,XDst,YDst,
 			  Width,Height,[]).
 
+-spec pixmap_add_color_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			    Fade::fix8(), Color::epx_color(),
+			    XSrc::coord(),YSrc::coord(),
+			    XDst::coord(),YDst::coord(),
+			    Width::dim(),Height::dim(),
+			    Flags::epx_flags()) -> void().
 pixmap_add_color_area(_Src,_Dst,_Fade,_Color,_XSrc,_YSrc,_XDst,_YDst,
 		      _Width,_Height,_Flags) ->
     ?nif_stub().
 
+-spec pixmap_filter_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			 Filter::filter(),
+			 XSrc::coord(),YSrc::coord(),
+			 XDst::coord(),YDst::coord(),
+			 Width::dim(),Height::dim()) -> void().
 pixmap_filter_area(Src,Dst,Filter,XSrc,YSrc,XDst,YDst,Width,Height) ->
     pixmap_filter_area(Src,Dst,Filter,XSrc,YSrc,XDst,YDst,Width,Height,[]).
+
+-spec pixmap_filter_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			 Filter::filter(),
+			 XSrc::coord(),YSrc::coord(),
+			 XDst::coord(),YDst::coord(),
+			 Width::dim(),Height::dim(),
+			 Flags::epx_flags()) -> void().
 
 pixmap_filter_area(_Src,_Dst,_Filter,
 		   _XSrc,_YSrc,_XDst,_YDst,_Width,_Height,_Flags) ->
@@ -828,6 +902,12 @@ pixmap_rotate_area(_Src,_Dst,_Angle,
 		   _Width,_Height,_Flags) ->
     ?nif_stub().
 
+-spec pixmap_rotate_area(Src::epx_pixmap(),Dst::epx_pixmap(),
+			 Angle::float(),
+			 XSrc::coord(),YSrc::coord(),
+			 XCSrc::coord(),YCSrc::coord(),
+			 XCDst::coord(),YCDst::coord(),
+			 Width::dim(),Height::dim()) -> void().
 pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
 		   Width,Height) ->
     pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
@@ -865,25 +945,46 @@ pixmap_rotate_area(Src,Dst,Angle,XSrc,YSrc,XCSrc,YCSrc,XCDst,YCDst,
 pixmap_operation_area(_Src,_Dst,_Op,_XSrc,_YSrc,_XDst,_YDst,_Width,_Height) ->
     ?nif_stub().
 
+%% @doc
+%%    Scroll the pixels in the rectangle ('XSrc','YSrc','Width','Height')
+%%    in the pixmap 'Src' horizontally 'Horizontal' pixels and vertically
+%%    'Vertical' pixels. The newly scrolled in pixels are filled with 
+%%    'FillColor' unless 'Rotate' is true in which case the pixels are
+%%    rotated.
+%% @end
+
 -spec pixmap_scroll(Src::epx_pixmap(),Dst::epx_pixmap(),
 		    Horizontal::integer(), Vertical::integer(),
 		    Rotate::boolean(), FillColor::epx_color()) ->
 			   void().
-%% Fixme add SrcX,SrcY,DstX,DstY,Width,Height (scroll area)
+
+%% FIXME: add SrcX,SrcY,DstX,DstY,Width,Height (scroll area)
 
 pixmap_scroll(_Src,_Dst,_Horizontal,_Vertical,_Rotate,_FillColor) ->
     ?nif_stub().
 
--spec pixmap_attach(Pixmap::epx_pixmap()) -> void().
-
-pixmap_attach(Pixmap) ->
-    pixmap_attach(Pixmap, epx_backend:default()).
+%% @doc
+%%  Attach the pixmap to a backend. This allows the pixmap to be
+%%  drawn on windows that are also attached to the same backend.
+%% @end 
 
 -spec pixmap_attach(Pixmap::epx_pixmap(),Backend::epx_backend()) -> void().
 
 pixmap_attach(_Pixmap, _Backend) ->
     ?nif_stub().
 
+%% @doc
+%%  Attach the pixmap to the default backend. This allows the pixmap
+%%  to be drawn to a window.
+%% @end
+-spec pixmap_attach(Pixmap::epx_pixmap()) -> void().
+
+pixmap_attach(Pixmap) ->
+    pixmap_attach(Pixmap, epx_backend:default()).
+
+%% @doc
+%%  Detach the pixmap from the attached backend.
+%% @end
 -spec pixmap_detach(Pixmap::epx_pixmap()) -> void().
 
 pixmap_detach(_Pixmap) ->
@@ -1506,6 +1607,7 @@ gc_info_keys() ->
      border_join_style,
      border_cap_style,
      border_color,
+     border_width,
      border_texture,
      foreground_color,
      background_color,
@@ -1587,6 +1689,57 @@ font_draw_string(_Pixmap, _Gc, _X, _Y, _String) ->
 
 font_draw_utf8(_Pixmap,_Gc, _X, _Y, _IOList) ->
     ?nif_stub().
+
+-spec sft_open(FontName::string(), Size::number()) -> Sft::epx_sft().
+sft_open(FontName, Size) ->
+    Path = filename:join([code:priv_dir(epx), "truetype", FontName++".ttf"]),
+    sft_fileopen(Path, Size).
+
+-spec sft_fileopen(Filename::string(), Size::number()) -> Sft::epx_sft().
+sft_fileopen(_Filename, _Size) ->
+    ?nif_stub().
+
+-spec sft_glyph(Sft::epx_sft(), CodePoint::integer()) -> Glyph::integer().
+sft_glyph(_Sft, _CodePoint) ->  
+    ?nif_stub().    
+
+-spec sft_glyph_info(Sft::epx_sft(), Glyph::integer()) -> tuple().
+sft_glyph_info(_Sft, _Glyph) ->
+    ?nif_stub().        
+
+-spec sft_glyph_kerning(Sft::epx_sft(), 
+			LeftGlyph::integer(), RightGlyph::integer()) ->
+	  {XShift::float(), YShift::float()}.
+sft_glyph_kerning(_Sft, _LeftGlyph, _RightGlyph) ->
+    ?nif_stub().        
+
+-spec sft_glyph_render(Sft::epx_sft(), Glyph::integer(), Transform::t2d()) ->
+	  Pixmap::epx_pixmap().
+sft_glyph_render(_Sft, _Glyph, _Transform) ->
+    ?nif_stub().            
+
+-spec sft_glyph_render_to(Sft::epx_sft(), Gc::epx_gc(), 
+			  Glyph::integer(), Transform::t2d(),
+			  X::number(), Y::number(),  Pixmap::epx_pixmap()) ->
+	  ok.
+sft_glyph_render_to(_Sft, _Gc, _Glyph, _Transform, _X, _Y, _Pixmap) ->
+    ?nif_stub().            
+    
+sft_info_keys() ->
+    [ family_name, subfamily_name, descent, ascent, line_gap ].
+
+sft_info(Sft) ->
+    sft_info(Sft, sft_info_keys()).
+
+sft_info(Sft, Keys) when is_list(Keys) ->
+    [{K,sft_info_(Sft,K)} || K <- Keys];
+sft_info(Sft, K) when is_atom(K) ->
+    sft_info_(Sft, K).
+
+sft_info_(_Sft, _Item) ->
+    ?nif_stub().
+
+%% SFT
 
 %% Backend
 backend_list() ->

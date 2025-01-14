@@ -263,6 +263,8 @@ LIB_OBJS = \
 	epx_backend.o \
 	epx_window.o \
 	epx_font.o \
+	schrift.o \
+	epx_sft.o \
 	epx_gl.o \
 	epx_gc.o \
 	epx_simd.o \

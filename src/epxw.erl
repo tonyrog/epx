@@ -24,8 +24,9 @@
 -export([zoom/0, scale/0]).
 -export([view_pos/0, view_xpos/0, view_ypos/0, 
 	 view_width/0, view_height/0, view_rect/0]).
--export([set_view_size/2, set_view_rect/1, 
+-export([set_view_size/2, set_view_rect/1, union_view_rect/1,
 	 set_view_pos/2, set_view_xpos/1, set_view_ypos/1]).
+-export([set_scale/2, set_xscale/1, set_yscale/1]).
 -export([visible_rect/0]).
 -export([invalidate/0, invalidate/1]).
 -export([set_status_text/1]).
@@ -46,6 +47,12 @@
 	 window_to_view_height/1,
 	 window_to_view_rect/1
 	]).
+-export([window_profile_get/1]).
+-export([window_profile_set/2]).
+-export([profile_get/1]).
+-export([profile_set/2]).
+-export([window_info_get/1]).
+-export([window_info_set/2]).
 	 
 %% -define(DEBUG, true).
 
@@ -192,12 +199,12 @@
    ]).
 
 -ifdef(DEBUG).
--define(dbg(F,A), io:format(F "\n", [A])).
+-define(dbg(F,A), io:format(F "\n", A)).
 -else.
 -define(dbg(F,A), ok).
 -endif.
 
-%% -define(verbose(F,A), io:format(F "\n", [A])).
+%% -define(verbose(F,A), io:format(F "\n", A)).
 -define(verbose(F,A), ok).
 
 -ifdef(OTP_RELEASE). %% this implies 21 or higher
@@ -453,6 +460,36 @@ window_to_view_width(W) -> window_to_view_width(W,state()).
 window_to_view_height(H) -> window_to_view_height(H,state()).
 window_to_view_rect(Rect) -> window_to_view_rect(Rect,state()).
 
+window_profile_get(Prop) ->
+    S = state(),
+    window_profile_get(Prop, S#state.window_profile).
+
+window_profile_set(Prop, Value) ->
+    S0 = state(),
+    WProfile = window_profile_set(Prop, Value, S0#state.window_profile),
+    S1 = S0#state { window_profile = WProfile },
+    export_state(S1).
+
+profile_get(Prop) ->
+    S = state(),
+    profile_get(Prop, S#state.profile).
+
+profile_set(Prop, Value) ->
+    S0 = state(),
+    Profile = profile_set(Prop, Value, S0#state.profile),
+    S1 = S0#state { profile = Profile },
+    export_state(S1).
+
+window_info_get(Prop) ->
+    S = state(),
+    window_info_get(Prop, S#state.winfo).
+
+window_info_set(Prop, Value) ->
+    S0 = state(),
+    WInfo = window_info_set(Prop, Value, S0#state.winfo),
+    S1 = S0#state { winfo = WInfo },
+    export_state(S1).
+
 set_view_size(W, H) when W >= 0, H >= 0 ->
     S0 = state(),
     X = get_view_left(S0),
@@ -460,9 +497,16 @@ set_view_size(W, H) when W >= 0, H >= 0 ->
     S1 = set_view_rect(S0, {X,Y,W,H}),
     export_state(S1).
 
+%% set the view rectangle
 set_view_rect(R={X, Y, W, H}) when X >= 0, Y >= 0, W >= 0, H >= 0 ->
     S0 = state(),
     S1 = set_view_rect(S0, R),
+    export_state(S1).
+
+%% union R with the view rectangle
+union_view_rect(R={X, Y, W, H}) when X >= 0, Y >= 0, W >= 0, H >= 0 ->
+    S0 = state(),
+    S1 = union_view_rect(S0, R),
     export_state(S1).
 
 set_view_xpos(X) when X >= 0 ->
@@ -485,6 +529,26 @@ set_status_text(Text) ->
     S1 = S0#state { status = lists:flatten(Text) },
     export_state(S1),
     ok.
+
+
+set_scale(Sx, Sy) when is_number(Sx), is_number(Sy), 
+		       Sx > 0, Sy > 0 ->
+    S0 = state(),
+    S1 = S0#state { scale = {Sx,Sy} },
+    export_state(S1).
+
+set_xscale(Sx) when is_number(Sx), Sx > 0 ->
+    S0 = state(),
+    {_,Sy} = S0#state.scale,
+    S1 = S0#state { scale = {Sx,Sy} },
+    export_state(S1).
+
+set_yscale(Sy) when is_number(Sy), Sy > 0 ->
+    S0 = state(),
+    {Sx,_} = S0#state.scale,
+    S1 = S0#state { scale = {Sx,Sy} },
+    export_state(S1).
+
     
 invalidate() ->
     S0 = state(),
@@ -567,6 +631,10 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 				{size,WProfile#window_profile.font_size}]),
     %% FontColor =  WProfile#window_profile.font_color,
 
+    {Sx0,Sy0} = proplists:get_value(scale, Env, {1,1}),
+    Sx = proplists:get_value(xscale, Env, Sx0),
+    Sy = proplists:get_value(yscale, Env, Sy0),
+
     epx_gc:set_font(Font),
     {W,H}  = epx_font:dimension(Font,"0"),
 
@@ -638,7 +706,7 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
     EditMenu = epx_menu:create(MProfile, menu(edit)),
     FileMenu = epx_menu:create(MProfile, menu(file)),
     ContextMenu = epx_menu:create(MProfile, menu(context)),
-
+    
     State0 = #state {
 		window = Window,
 		screen = Screen,
@@ -647,6 +715,7 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 		font   = Font,    %% window font
 		width  = Width,
 		height = Height,
+		scale = {Sx,Sy},
 		edit_menu   = EditMenu,
 		file_menu   = FileMenu,
 		context_menu = ContextMenu,
@@ -772,9 +841,16 @@ handle_call(Request, From, State) ->
 	    {stop, missing_handle_call, State};
 	HandleCall ->
 	    export_state(State),
-	    Reply = HandleCall(Request, From, State#state.user_state),
-	    reply(Reply)
-	end.
+	    try HandleCall(Request, From, State#state.user_state) of
+		Reply ->
+		    reply(Reply)
+	    catch
+		error:Reason:Stack ->
+		    io:format("handle_call: ~p\ncrash ~p\n~p\n", 
+			      [Request, Reason, Stack]),
+		    {stop, Reason, State}
+	    end
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -793,8 +869,15 @@ handle_cast(Request, State) ->
 	    {noreply, State};
 	HandleCast ->
 	    export_state(State),
-	    Reply = HandleCast(Request, State#state.user_state),
-	    reply(Reply)
+	    try HandleCast(Request, State#state.user_state) of
+		Reply ->
+		    reply(Reply)
+	    catch
+		error:Reason:Stack ->
+		    io:format("handle_cast: ~p\ncrash ~p\n~p\n", 
+			      [Request, Reason, Stack]),
+		    {stop, Reason, State}
+	    end
     end.
 
 %%--------------------------------------------------------------------
@@ -828,8 +911,15 @@ handle_info(Info, State) ->
 	    {noreply, State};
 	HandleInfo ->
 	    export_state(State),
-	    Reply = HandleInfo(Info, State#state.user_state),
-	    reply(Reply)
+	    try HandleInfo(Info, State#state.user_state) of
+		Reply ->
+		    reply(Reply)
+	    catch
+		error:Reason:Stack ->
+		    io:format("handle_info: ~p\ncrash ~p\n~p\n", 
+			      [Info, Reason, Stack]),
+		    {stop, Reason, State}
+	    end
     end.
 
 reply({reply,Reply,UState}) ->
@@ -870,8 +960,15 @@ handle_continue(Info, State) ->
 	    {noreply, State};
 	HandleContinue ->
 	    export_state(State),
-	    Reply = HandleContinue(Info, State#state.user_state),
-	    reply(Reply)
+	    try HandleContinue(Info, State#state.user_state) of
+		Reply ->
+		    reply(Reply)
+	    catch
+		error:Reason:Stack ->
+		    io:format("handle_continue: ~p\ncrash ~p\n~p\n", 
+			      [Info, Reason, Stack]),
+		    {stop, Reason, State}
+	    end
     end.
 
 epx_event(_Event={configure,Rect0}, State) ->
@@ -1081,6 +1178,7 @@ epx_event(Event={motion,[left],Pos},State) ->
 	{vhndl,{_DX,Dy}} ->
 	    {_,Y,_} = Pos,
 	    {_,Y0,_,Height} = get_vscroll(State),
+	    %% FIXME: Height == 0
 	    Yr = (Y-Y0)/Height,  %% relative hit position
 	    Vy = Yr*get_view_height(State), %% View position
 	    State1 = adjust_view_ypos(Vy+Dy, State),
@@ -1088,6 +1186,7 @@ epx_event(Event={motion,[left],Pos},State) ->
 	{hhndl,{Dx,_Dy}} ->
 	    {X,_,_} = Pos,
 	    {X0,_,Width,_} = get_hscroll(State),
+	    %% FIXME: Width == 0
 	    Xr = (X-X0)/Width,  %% relative hit position
 	    Vx = Xr*get_view_width(State), %% View position
 	    State1 = adjust_view_xpos(Vx+Dx, State),
@@ -1179,6 +1278,7 @@ scroll_hit(Pos, State) ->
 	true ->
 	    {X0,_,Width,_} = HScroll,
 	    {X,_Y,_} = Pos,
+	    %% FIXME: Width == 0
 	    Xr = (X-X0)/Width,  %% relative hit position
 	    Vx = Xr*get_view_width(State), %% View position
 	    %% hit horizontal scrollbar
@@ -1205,6 +1305,7 @@ scroll_hit(Pos, State) ->
 		true ->
 		    {_,Y0,_,Height} = VScroll,
 		    {_X,Y,_} = Pos,
+		    %% FIXME: Height == 0
 		    Yr = (Y-Y0)/Height,  %% relative hit position
 		    Vy = Yr*get_view_height(State), %% View position
 		    %% hit vertical scrollbar
@@ -1251,7 +1352,7 @@ command_(Sym, Mod, State) when
       not Mod#keymod.shift,not Mod#keymod.ctrl,not Mod#keymod.alt ->
     command_(Sym, State);
 command_(_Sym, _Mod, State) ->
-    ?dbg("unhandled command ~p mod=~p\n", [_Sym, _Mod]),
+    ?dbg("unhandled command ~p mod=~p", [_Sym, _Mod]),
     State.
 
 %% no modifer (user may override with with noreply or modifier
@@ -1385,6 +1486,7 @@ page_down(State) ->
 	    State;
 	{_,_,_,H} ->
 	    {_,_,_,VH} = get_vhndl(State),  %% page size in window coords
+	    %% FIXME: check H
 	    R = VH/H,  %% page ratio
 	    Page = R*get_view_height(State),
 	    State1 = step_down(State, Page),
@@ -1545,9 +1647,15 @@ user_event(_E, undefined, State) ->
 user_event(E, Callback, State) ->
     UE = transform_event(E, State),
     export_state(State),
-    UserState = Callback(UE, State#state.user_state),
-    State1 = state(),
-    State1#state { user_state = UserState }.
+    try Callback(UE, State#state.user_state) of
+	UserState ->
+	    State1 = state(),
+	    State1#state { user_state = UserState }
+    catch
+	error:Reason:Stack ->
+	    io:format("user_event: crash ~p\n~p\n", [Reason, Stack]),
+	    State
+    end.
 
 
 transform_event(Event={button_press,_,Pos}, State) ->
@@ -1669,8 +1777,17 @@ get_scaled_view_height(S) ->
 
 draw_(State) ->
     draw_(State, State#state.dirty).
-    
-draw_(State = #state { profile = Profile }, Dirty) ->
+draw_(State, Dirty) ->
+    try draw__(State, Dirty) of
+	State1 ->
+	    State1
+    catch
+	error:Reason:Stack ->
+	    io:format("draw_ error: ~p\n~p\n", [Reason,Stack]),
+	    State
+    end.
+
+draw__(State = #state { profile = Profile }, Dirty) ->
     Scheme = Profile#profile.scheme,
     ScreenColor = epx_profile:color(Scheme, Profile#profile.screen_color),
     Pixels = pixels(State),
@@ -1738,7 +1855,7 @@ draw_content_(Pixmap, Dirty, State) ->
     {DirtyRegion, State1#state { user_state = UserState }}.
 
 user_draw_content(Pixmap, Region, State=#state{user_cb=Cb}) ->
-    case Cb#callbacks.draw of  %% prefere draw for conent if present
+    case Cb#callbacks.draw of  %% prefere draw for content if present
 	undefined ->
 	    case Cb#callbacks.draw4 of
 		undefined ->
@@ -1925,7 +2042,7 @@ draw_window(Pixels, State, Area) ->
 update_window(State, Dirty) ->
     ?verbose("UPDATE Dirty = ~w\n", [Dirty]),
     copy_pixels(pixels(State),Dirty,State#state.screen),
-    %% At this point Dirty MUST be in view coordinated intersected
+    %% At this point Dirty MUST be in view coordinates and intersected
     %% with visible area. Not convert into window coordinates
     _Dirty1 = dirty_window_area(Dirty, State),
     ?verbose("UPDATE WINDOW Dirty = ~w\n", [_Dirty1]),
@@ -2044,12 +2161,17 @@ draw_vscroll__(Pixels, X0, DrawingHeight, HBar, State) ->
     epx_gc:set_border_width(0),
     epx:draw_rectangle(Pixels, Rect),
     epx_gc:set_fill_color(scroll_hndl_color(State)),
-    ScaledHeight = get_scaled_view_height(State),
+    SVh = get_scaled_view_height(State),
     %% scroll size as ratio of scaled height
-    Ht = DrawingHeight / ScaledHeight,
+    Ht = if SVh == 0 -> 0;
+	    true -> DrawingHeight / SVh
+	 end,
     HandleLength = Ht*DrawingHeight,
     %% Top position as ratio (0,1)
-    Yt = get_view_ypos(State) / get_view_height(State),
+    Vh = get_view_height(State),
+    Yt = if Vh == 0 -> 0;
+	    true -> get_view_ypos(State) / Vh
+	 end,
     HandlePos = Y0+Yt*DrawingHeight,
     Pad = (ScrollBarSize-HndlSize) / 2,
     HRect = {X0+Pad,HandlePos,HndlSize,HandleLength},
@@ -2112,10 +2234,16 @@ draw_hscroll__(Pixels, Y0, DrawingWidth, VBar, State) ->
     end,
     epx_gc:set_border_width(0),
     epx_gc:set_fill_color(scroll_hndl_color(State)),
-    ScaledWidth = get_scaled_view_width(State),
-    Wt = DrawingWidth / ScaledWidth,
+    
+    SVw = get_scaled_view_width(State),
+    Wt = if SVw == 0 -> 0;
+	    true -> DrawingWidth / SVw
+	 end,
     HandleLength = Wt*DrawingWidth,
-    Xt = get_view_xpos(State) / get_view_width(State),
+    Vw = get_view_width(State),
+    Xt = if Vw == 0 -> 0;
+	    true -> get_view_xpos(State) / Vw
+	 end,
     HandlePos = X0+Xt*DrawingWidth,
     Pad = (ScrollBarSize-HndlSize) / 2,
     HRect = {HandlePos,Y0+Pad,HandleLength,HndlSize},
@@ -2236,6 +2364,16 @@ set_view_rect(S=#state { content = WD }, {X,Y,W,H}) ->
 					    view_right = X+W,
 					    view_top   = Y,
 					    view_bottom = Y+H }}.
+
+union_view_rect(S=#state { content = WD }, {X0,Y0,W,H}) ->
+    #window_content { view_left = L, view_right = R, 
+		      view_top  = T, view_bottom = B } = WD,
+    X1 = X0 + W,
+    Y1 = Y0 + H,
+    S#state { content = WD#window_content { view_left = min(X0,L),
+					    view_right = max(X1,R),
+					    view_top   = min(Y0,T),
+					    view_bottom = max(Y1,B)}}.
 
 %% Get the visible content rectangle in view coodinates
 get_visible_rect(State) ->
@@ -2427,6 +2565,120 @@ create_window_profile(Profile) ->
        scroll_vertical   = Profile#profile.scroll_vertical,
        status_font_color = Profile#profile.status_font_color
       }.
+
+%% translate record field to record position
+%% this should be possible to do as a compile time map (I WISH)
+window_profile_keypos(Key) ->
+    case Key of
+	scheme  -> #window_profile.scheme;
+	font_name -> #window_profile.font_name;
+	font_size -> #window_profile.font_size;
+	font_color -> #window_profile.font_color;
+	background_color -> #window_profile.background_color;
+	scroll_bar_color -> #window_profile.scroll_bar_color;
+	scroll_hndl_color -> #window_profile.scroll_hndl_color;
+	top_bar_color -> #window_profile.top_bar_color;
+	left_bar_color -> #window_profile.left_bar_color;
+	right_bar_color -> #window_profile.right_bar_color;
+	bottom_bar_color -> #window_profile.bottom_bar_color;
+	scroll_horizontal-> #window_profile.scroll_horizontal;
+	scroll_vertical -> #window_profile.scroll_vertical;
+	status_font_color -> #window_profile.status_font_color
+    end.
+    
+
+window_profile_get(Key, WProfile) ->
+    Pos = window_profile_keypos(Key),
+    element(Pos, WProfile).
+
+window_profile_set(Key, Value, WProfile) ->
+    Pos = window_profile_keypos(Key),
+    setelement(Pos, WProfile, Value).
+
+profile_keypos(Key) ->
+    case Key of
+	scheme -> #profile.scheme;
+	screen_color -> #profile.screen_color;
+	selection_alpha -> #profile.selection_alpha;
+	selection_color -> #profile.selection_color;
+	selection_border_width -> #profile.selection_border_width;
+	selection_border_color -> #profile.selection_border_color;
+	max_dirty -> #profile.max_dirty;
+	dirty_list -> #profile.dirty_list;
+	top_bar -> #profile.top_bar;
+	left_bar -> #profile.left_bar;
+	right_bar -> #profile.right_bar;
+	bottom_bar -> #profile.bottom_bar;
+	status_bar -> #profile.status_bar;
+	top_offset -> #profile.top_offset;
+	left_offset -> #profile.left_offset;
+	right_offset -> #profile.right_offset;
+	bottom_offset -> #profile.bottom_offset;
+	scroll_bar_size -> #profile.scroll_bar_size;
+	scroll_hndl_size -> #profile.scroll_hndl_size;
+	scroll_xstep -> #profile.scroll_xstep;
+	scroll_ystep -> #profile.scroll_ystep;
+	menu_font_name -> #profile.menu_font_name;
+	menu_font_size -> #profile.menu_font_size;
+	menu_font_color -> #profile.menu_font_color;
+	menu_background_color -> #profile.menu_background_color;
+	menu_border_color -> #profile.menu_border_color;
+	window_font_name -> #profile.window_font_name;
+	window_font_size -> #profile.window_font_size;
+	window_font_color -> #profile.window_font_color;
+	scroll_bar_color -> #profile.scroll_bar_color;
+	scroll_hndl_color -> #profile.scroll_hndl_color;
+	scroll_vertical -> #profile.scroll_vertical;
+	scroll_horizontal -> #profile.scroll_horizontal;
+	status_font_color -> #profile.status_font_color;
+	top_bar_color -> #profile.top_bar_color;
+	left_bar_color -> #profile.left_bar_color;
+	right_bar_color -> #profile.right_bar_color;
+	bottom_bar_color -> #profile.bottom_bar_color
+    end.    
+
+profile_get(Key, Profile) ->
+    Pos = profile_keypos(Key),
+    element(Pos, Profile).
+
+profile_set(Key, Value, Profile) ->
+    Pos = profile_keypos(Key),
+    setelement(Pos, Profile, Value).
+
+
+window_info_keypos(Key) ->
+    case Key of
+	font_name -> #window_info.font_name;
+	font_size -> #window_info.font_size;
+	font -> #window_info.font;
+	gc -> #window_info.gc;
+	glyph_width -> #window_info.glyph_width;
+	glyph_height -> #window_info.glyph_height;
+	glyph_ascent -> #window_info.glyph_ascent;
+	glyph_descent -> #window_info.glyph_descent;
+	top_bar -> #window_info.top_bar;
+	left_bar -> #window_info.left_bar;
+	right_bar -> #window_info.right_bar;
+	bottom_bar -> #window_info.bottom_bar;
+	top_offset -> #window_info.top_offset;
+	left_offset -> #window_info.left_offset;
+	right_offset -> #window_info.right_offset;
+	bottom_offset -> #window_info.bottom_offset;
+	scroll_bar_size -> #window_info.scroll_bar_size;
+	scroll_hndl_size -> #window_info.scroll_hndl_size;
+	scroll_xstep -> #window_info.scroll_xstep;
+	scroll_ystep -> #window_info.scroll_ystep;
+	scroll_horizontal -> #window_info.scroll_horizontal;
+	scroll_vertical -> #window_info.scroll_vertical
+    end.
+
+window_info_get(Key, WInfo) ->
+    Pos = window_info_keypos(Key),
+    element(Pos, WInfo).
+
+window_info_set(Key, Value, WInfo) ->
+    Pos = window_info_keypos(Key),
+    setelement(Pos, WInfo, Value).
 
 resize_pixmap(undefined, W, H, PixelFormat, Attached) ->
     Pixmap = next_pixmap(W,H,PixelFormat),

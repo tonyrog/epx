@@ -107,11 +107,37 @@ struct SFT_Kerning
 	Float_t yShift;
 };
 
+// compatible with epx_pixel!
+typedef union
+{
+    uint8_t v[4];
+    uint32_t px;
+    struct {
+	uint8_t a;
+	uint8_t r;
+	uint8_t g;
+	uint8_t b;
+    };    
+} SFT_Pixel;
+
 struct SFT_Image
 {
-	void *pixels;
-	int   width;
-	int   height;
+    void *pixels;
+    int   width;
+    int   height;
+    // render area
+    unsigned int xoffs;  // skip horizontal
+    unsigned int yoffs;  // skip vertical
+    unsigned int xlen;   // number of horizontal pixels
+    unsigned int ylen;   // number of vertical pixels
+    // fields added to support epx_pixmap
+    unsigned int bytes_per_row;    // row stride
+    unsigned int bytes_per_pixel;  // step size
+    uint16_t pixel_format;
+    void* render_arg;
+    // render pixel callback or NULL
+    void (*render)(unsigned char* pxaddr, int i, int j, uint8_t value,
+		   uint16_t pxfmt, void* arg);
 };
 
 const char *sft_version(void);

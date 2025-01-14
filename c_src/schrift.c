@@ -19,6 +19,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <ctype.h>
 
@@ -30,7 +31,9 @@
 # define WIN32_LEAN_AND_MEAN 1
 # include <windows.h>
 #else
+#ifndef _POSIX_C_SOURCE
 # define _POSIX_C_SOURCE 1
+#endif
 # include <fcntl.h>
 # include <sys/mman.h>
 # include <sys/stat.h>
@@ -136,7 +139,7 @@ static int  init_font (SFT_Font *font);
 /* simple mathematical operations */
 static inline void midpoint(Point* pts, uint_least16_t a, uint_least16_t b, uint_least16_t c);
 static void transform_points(unsigned int numPts, Point *points, SFT_Transform form);
-static void clip_points(unsigned int numPts, Point *points, Float_t width, Float_t height);
+// static void clip_points(unsigned int numPts, Point *points, Float_t width, Float_t height);
 /* 'outline' data structure management */
 static int  init_outline(Outline *outl);
 static void free_outline(Outline *outl);
@@ -178,7 +181,7 @@ static int  tesselate_curves(Outline *outl);
 static void draw_line(Raster buf, Float_t x0, Float_t y0, Float_t x1, Float_t y1);
 static void draw_lines(Outline *outl, Raster buf);
 /* post-processing */
-static void post_process(Raster buf, uint8_t *image);
+static void post_process(Raster buf, SFT_Image* imptr);
 /* glyph rendering */
 static int  render_outline(Outline *outl, SFT_Transform t, SFT_Image* imptr);
 
@@ -359,22 +362,22 @@ sft_kerning(const SFT *sft, SFT_Glyph leftGlyph, SFT_Glyph rightGlyph,
 
 static void compose(SFT_Transform t, SFT_Transform s, SFT_Transform dst)
 {
-	Float_t tsx = t[SFT_SX];
-	Float_t try = t[SFT_RY];
-	Float_t trx = t[SFT_RX];
-	Float_t tsy = t[SFT_SY];
-	Float_t sx = tsx*s[SFT_SX] + try*s[SFT_RX];
-	Float_t ry = tsx*s[SFT_RY] + try*s[SFT_SY];
-	Float_t rx = trx*s[SFT_SX] + tsy*s[SFT_RX];
-	Float_t sy = trx*s[SFT_RY] + tsy*s[SFT_SY];
-	Float_t tx = tsx*s[SFT_TX] + try*s[SFT_TY] + t[SFT_TX];
-	Float_t ty = trx*s[SFT_TX] + tsy*s[SFT_TY] + t[SFT_TY];
-	dst[SFT_SX] = sx;
-	dst[SFT_RY] = ry;
-	dst[SFT_SY] = sy;
-	dst[SFT_RX] = rx;
-	dst[SFT_TX] = tx;
-	dst[SFT_TY] = ty;
+    Float_t tsx = t[SFT_SX];
+    Float_t try = t[SFT_RY];
+    Float_t trx = t[SFT_RX];
+    Float_t tsy = t[SFT_SY];
+    Float_t sx = tsx*s[SFT_SX] + try*s[SFT_RX];
+    Float_t ry = tsx*s[SFT_RY] + try*s[SFT_SY];
+    Float_t rx = trx*s[SFT_SX] + tsy*s[SFT_RX];
+    Float_t sy = trx*s[SFT_RY] + tsy*s[SFT_SY];
+    Float_t tx = tsx*s[SFT_TX] + try*s[SFT_TY] + t[SFT_TX];
+    Float_t ty = trx*s[SFT_TX] + tsy*s[SFT_TY] + t[SFT_TY];
+    dst[SFT_SX] = sx;
+    dst[SFT_RY] = ry;
+    dst[SFT_SY] = sy;
+    dst[SFT_RX] = rx;
+    dst[SFT_TX] = tx;
+    dst[SFT_TY] = ty;
 }
 
 
@@ -597,6 +600,7 @@ static inline void clip_point(Point* pt, Float_t width, Float_t height)
     }
 }
 
+/*
 static void
 clip_points(unsigned int numPts, Point *pts,
 	    Float_t width, Float_t height)
@@ -606,22 +610,31 @@ clip_points(unsigned int numPts, Point *pts,
 	pts++;
     }
 }
-    
+*/
+
+static inline void transform_xy(Float_t* px, Float_t* py, SFT_Transform trf)
+{
+    Float_t x = *px;
+    Float_t y = *py;
+    *px = x*trf[SFT_SX] + y*trf[SFT_RY] + trf[SFT_TX];
+    *py = x*trf[SFT_RX] + y*trf[SFT_SY] + trf[SFT_TY];
+}
+
+// inline transform a point 
+static inline void transform_point(Point* p, SFT_Transform trf)
+{
+    transform_xy(&p->x, &p->y, trf);
+}
 
 /* Applies an affine linear transformation matrix to a set of points. */
 
 static void
-transform_points(unsigned int numPts, Point *points, SFT_Transform trf)
+transform_points(unsigned int numPts, Point *pptr, SFT_Transform trf)
 {
-	Point pt;
-	unsigned int i;
-	for (i = 0; i < numPts; ++i) {
-		pt = points[i];
-		points[i] = (Point) {
-		    pt.x*trf[SFT_SX] + pt.y*trf[SFT_RY] + trf[SFT_TX],
-		    pt.x*trf[SFT_RX] + pt.y*trf[SFT_SY] + trf[SFT_TY]
-		};
-	}
+    while(numPts--) {
+	transform_point(pptr, trf);
+	pptr++;
+    }
 }
 
 static void
@@ -629,8 +642,8 @@ transform_and_clip_points(unsigned int numPts, Point *pts, SFT_Transform trf,
 			  Float_t width, Float_t height)
 {
     while(numPts--) {
-	Float_t x = pts->x*trf[SFT_SX] + pts->y*trf[SFT_RY] + trf[SFT_TX];
-	Float_t y = pts->x*trf[SFT_RX] + pts->y*trf[SFT_SY] + trf[SFT_TY];
+	Float_t x = pts->x, y = pts->y;
+	transform_xy(&x, &y, trf);
 	if (x < FloatConst(0.0)) x = FloatConst(0.0);
 	else if (x >= width) x = NextAfter(width, FloatConst(0.0));
 	if (y < FloatConst(0.0)) y = FloatConst(0.0);
@@ -802,12 +815,12 @@ void sft_print_table_names(FILE* f, SFT_Font *font)
 {
     unsigned int i,n;
     uint32_t offs = 12;
-    const char* ptr = font->memory + offs;
+    const char* ptr = (char*)font->memory + offs;
     
     n = getu16(font, 4);
     for (i = 0; i < n; i++) {
 	uint32_t moffs = getu32(font, offs+8);
-	fprintf(f, "%c%c%c%c: %d\n", ptr[0],ptr[1],ptr[2],ptr[3],moffs);
+	fprintf(f, "%c%c%c%c: %d\r\n", ptr[0],ptr[1],ptr[2],ptr[3],moffs);
 	ptr += 16;
 	offs += 16;
     }
@@ -834,11 +847,11 @@ void sft_print_name_table(FILE* f, SFT_Font *font)
     
     if (gettable(font, "name", &name) < 0)
 	return;
-    fprintf(f, "format: %d\n", geti16(font, name+0));
+    fprintf(f, "format: %d\r\n", geti16(font, name+0));
     count = getu16(font, name+2);
-    fprintf(f, "count: %d\n", count);
+    fprintf(f, "count: %d\r\n", count);
     string_offs = getu16(font, name+4);
-    fprintf(f, "soffs: %d\n", string_offs);
+    fprintf(f, "soffs: %d\r\n", string_offs);
 
     offs = 6;
     for (i = 0; i < count; i++) {
@@ -849,17 +862,18 @@ void sft_print_name_table(FILE* f, SFT_Font *font)
 	uint16_t length = getu16(font, name+offs+8);
 	uint16_t offset = getu16(font, name+offs+10);
 
-	fprintf(f, "nameRecord[%d] {\n", i);
+	fprintf(f, "nameRecord[%d] {\r\n", i);
 
-	fprintf(f, "  platformID: %d\n", platformID);
-	fprintf(f, "  platformSpecificID: %d\n", platformSpecificID);
-	fprintf(f, "  languageID: %d\n", languageID);
-	fprintf(f, "  nameID: %d\n", nameID);
-	fprintf(f, "  length: %d\n", length);
-	fprintf(f, "  offset: %d\n", offset);
+	fprintf(f, "  platformID: %d\r\n", platformID);
+	fprintf(f, "  platformSpecificID: %d\r\n", platformSpecificID);
+	fprintf(f, "  languageID: %d\r\n", languageID);
+	fprintf(f, "  nameID: %d\r\n", nameID);
+	fprintf(f, "  length: %d\r\n", length);
+	fprintf(f, "  offset: %d\r\n", offset);
 	fprintf(f, "  string: ");
-	print_name(font->memory+name+string_offs+offset, length); printf("\n");
-	fprintf(f, "};\n");
+	print_name((char*)font->memory+name+string_offs+offset,length);
+	printf("\r\n");
+	fprintf(f, "};\r\n");
 	offs += 6*2;
     }
 }
@@ -1579,115 +1593,137 @@ tesselate_curves(Outline *outl)
 static void
 draw_line(Raster buf, Float_t x0, Float_t y0, Float_t x1, Float_t y1)
 {
-	Point delta;
-	Point nextCrossing;
-	Point crossingIncr;
-	Float_t halfDeltaX;
-	Float_t prevDistance = FloatConst(0.0), nextDistance;
-	Float_t xAverage, yDifference;
-	struct { int x, y; } pixel;
-	struct { int x, y; } dir;
-	int step, numSteps = 0;
-	Cell *restrict cptr, cell;
+    Point delta;
+    Point nextCrossing;
+    Point crossingIncr;
+    Float_t halfDeltaX;
+    Float_t prevDistance = FloatConst(0.0), nextDistance;
+    Float_t xAverage, yDifference;
+    struct { int x, y; } pixel;
+    struct { int x, y; } dir;
+    int step, numSteps = 0;
+    Cell *restrict cptr, cell;
 
-	delta.x = x1 - x0;
-	delta.y = y1 - y0;
-	dir.x = SIGN(delta.x);
-	dir.y = SIGN(delta.y);
+    delta.x = x1 - x0;
+    delta.y = y1 - y0;
+    dir.x = SIGN(delta.x);
+    dir.y = SIGN(delta.y);
 
-	if (!dir.y) {
-		return;
-	}
-	
-	crossingIncr.x = dir.x ? FloatAbs(FloatConst(1.0) / delta.x) : FloatConst(1.0);
-	crossingIncr.y = FloatAbs(FloatConst(1.0) / delta.y);
+    if (!dir.y) {
+	return;
+    }
 
-	if (!dir.x) {
-		pixel.x = fast_floor(x0);
-		nextCrossing.x = FloatConst(100.0);
+    crossingIncr.x = dir.x ? FloatAbs(FloatConst(1.0) / delta.x) : FloatConst(1.0);
+    crossingIncr.y = FloatAbs(FloatConst(1.0) / delta.y);
+
+    if (!dir.x) {
+	pixel.x = fast_floor(x0);
+	nextCrossing.x = FloatConst(100.0);
+    } else {
+	if (dir.x > 0) {
+	    pixel.x = fast_floor(x0);
+	    nextCrossing.x = (x0 - (Float_t)pixel.x) * crossingIncr.x;
+	    nextCrossing.x = crossingIncr.x - nextCrossing.x;
+	    numSteps += fast_ceil(x1) - fast_floor(x0) - 1;
 	} else {
-		if (dir.x > 0) {
-			pixel.x = fast_floor(x0);
-			nextCrossing.x = (x0 - (Float_t)pixel.x) * crossingIncr.x;
-			nextCrossing.x = crossingIncr.x - nextCrossing.x;
-			numSteps += fast_ceil(x1) - fast_floor(x0) - 1;
-		} else {
-			pixel.x = fast_ceil(x0) - 1;
-			nextCrossing.x = (x0 - (Float_t)pixel.x) * crossingIncr.x;
-			numSteps += fast_ceil(x0) - fast_floor(x1) - 1;
-		}
+	    pixel.x = fast_ceil(x0) - 1;
+	    nextCrossing.x = (x0 - (Float_t)pixel.x) * crossingIncr.x;
+	    numSteps += fast_ceil(x0) - fast_floor(x1) - 1;
 	}
+    }
 
-	if (dir.y > 0) {
-		pixel.y = fast_floor(y0);
-		nextCrossing.y = (Float_t)(y0 - (Float_t)pixel.y) * crossingIncr.y;
-		nextCrossing.y = crossingIncr.y - nextCrossing.y;
-		numSteps += fast_ceil(y1) - fast_floor(y0) - 1;
-	} else {
-		pixel.y = fast_ceil(y0) - 1;
-		nextCrossing.y = (Float_t)(y0 - (Float_t) pixel.y) * crossingIncr.y;
-		numSteps += fast_ceil(y0) - fast_floor(y1) - 1;
-	}
+    if (dir.y > 0) {
+	pixel.y = fast_floor(y0);
+	nextCrossing.y = (Float_t)(y0 - (Float_t)pixel.y) * crossingIncr.y;
+	nextCrossing.y = crossingIncr.y - nextCrossing.y;
+	numSteps += fast_ceil(y1) - fast_floor(y0) - 1;
+    } else {
+	pixel.y = fast_ceil(y0) - 1;
+	nextCrossing.y = (Float_t)(y0 - (Float_t) pixel.y) * crossingIncr.y;
+	numSteps += fast_ceil(y0) - fast_floor(y1) - 1;
+    }
 
-	nextDistance = MIN(nextCrossing.x, nextCrossing.y);
-	halfDeltaX = FloatConst(0.5) * delta.x;
+    nextDistance = MIN(nextCrossing.x, nextCrossing.y);
+    halfDeltaX = FloatConst(0.5) * delta.x;
 
-	for (step = 0; step < numSteps; ++step) {
-		xAverage = x0 + (prevDistance + nextDistance) * halfDeltaX;
-		yDifference = (nextDistance - prevDistance) * delta.y;
-		cptr = &buf.cells[pixel.y * buf.width + pixel.x];
-		cell = *cptr;
-		cell.cover += yDifference;
-		xAverage -= (Float_t)pixel.x;
-		cell.area += (FloatConst(1.0) - xAverage) * yDifference;
-		*cptr = cell;
-		prevDistance = nextDistance;
-		int alongX = nextCrossing.x < nextCrossing.y;
-		pixel.x += alongX ? dir.x : 0;
-		pixel.y += alongX ? 0 : dir.y;
-		nextCrossing.x += alongX ? crossingIncr.x : FloatConst(0.0);
-		nextCrossing.y += alongX ? FloatConst(0.0) : crossingIncr.y;
-		nextDistance = MIN(nextCrossing.x, nextCrossing.y);
-	}
-
-	xAverage = x0 + (prevDistance + FloatConst(1.0)) * halfDeltaX;
-	yDifference = (FloatConst(1.0) - prevDistance) * delta.y;
+    for (step = 0; step < numSteps; ++step) {
+	xAverage = x0 + (prevDistance + nextDistance) * halfDeltaX;
+	yDifference = (nextDistance - prevDistance) * delta.y;
 	cptr = &buf.cells[pixel.y * buf.width + pixel.x];
 	cell = *cptr;
 	cell.cover += yDifference;
-	xAverage -= (Float_t) pixel.x;
+	xAverage -= (Float_t)pixel.x;
 	cell.area += (FloatConst(1.0) - xAverage) * yDifference;
 	*cptr = cell;
+	prevDistance = nextDistance;
+	int alongX = nextCrossing.x < nextCrossing.y;
+	pixel.x += alongX ? dir.x : 0;
+	pixel.y += alongX ? 0 : dir.y;
+	nextCrossing.x += alongX ? crossingIncr.x : FloatConst(0.0);
+	nextCrossing.y += alongX ? FloatConst(0.0) : crossingIncr.y;
+	nextDistance = MIN(nextCrossing.x, nextCrossing.y);
+    }
+
+    xAverage = x0 + (prevDistance + FloatConst(1.0)) * halfDeltaX;
+    yDifference = (FloatConst(1.0) - prevDistance) * delta.y;
+    cptr = &buf.cells[pixel.y * buf.width + pixel.x];
+    cell = *cptr;
+    cell.cover += yDifference;
+    xAverage -= (Float_t) pixel.x;
+    cell.area += (FloatConst(1.0) - xAverage) * yDifference;
+    *cptr = cell;
 }
 
 static void
 draw_lines(Outline *outl, Raster buf)
 {
-	unsigned int i;
-	for (i = 0; i < outl->numLines; ++i) {
-		Line  line   = outl->lines[i];
-		Point* p0    = &outl->points[line.beg];
-		Point* p1    = &outl->points[line.end];
-		draw_line(buf, p0->x, p0->y, p1->x, p1->y);
-	}
+    unsigned int i;
+    for (i = 0; i < outl->numLines; ++i) {
+	Line  line   = outl->lines[i];
+	Point* p0    = &outl->points[line.beg];
+	Point* p1    = &outl->points[line.end];
+	draw_line(buf, p0->x, p0->y, p1->x, p1->y);
+    }
 }
 
 /* Integrate the values in the buffer to arrive at the final grayscale image. */
 static void
-post_process(Raster buf, uint8_t *image)
+post_process(Raster buf, SFT_Image* imptr)
 {
-	Cell cell;
-	Float_t accum = FloatConst(0.0), value;
-	unsigned int i, num;
-	num = (unsigned int) buf.width * (unsigned int) buf.height;
-	for (i = 0; i < num; ++i) {
-		cell     = buf.cells[i];
-		value    = FloatAbs(accum + cell.area);
-		value    = MIN(value, FloatConst(1.0));
-		value    = value * FloatConst(255.0) + FloatConst(0.5);
-		image[i] = (uint8_t) value;
-		accum   += cell.cover;
+    Cell cell;
+    Float_t accum = FloatConst(0.0), value;
+    unsigned int i;
+    unsigned int h;
+    unsigned int bw = buf.width;
+    unsigned char* dst0 = (unsigned char*) imptr->pixels;
+    unsigned int stride = imptr->bytes_per_row;
+    unsigned int pxsize = imptr->bytes_per_pixel;
+    uint16_t pxfmt  = imptr->pixel_format;
+	
+    i = imptr->yoffs * bw;  // skip cliped rows
+    h = imptr->ylen;        // number of rows rendered
+    // note that imptr->pixels must point to the first pixel
+    // that is to be draw, taking into account clipping etc.
+    while(h--) {
+	unsigned int w = imptr->xlen;
+	unsigned char* dst = dst0;
+	int j = i + imptr->xoffs;   // skip clipped pixels
+	while(w--) {
+	    cell     = buf.cells[j++];
+	    value    = FloatAbs(accum + cell.area);
+	    value    = MIN(value, FloatConst(1.0));
+	    value    = value * FloatConst(255.0) + FloatConst(0.5);
+	    if (imptr->render == NULL) // assume L8 format
+		*dst = (uint8_t) value;
+	    else {
+		imptr->render(dst,i,j,(uint8_t)value,pxfmt,imptr->render_arg);
+	    }
+	    dst += pxsize;
+	    accum += cell.cover;
 	}
+	i += bw;
+	dst0 += stride;
+    }
 }
 
 static int
@@ -1722,7 +1758,7 @@ render_outline(Outline *outl, SFT_Transform trf, SFT_Image* imptr)
 
 	draw_lines(outl, buf);
 
-	post_process(buf, imptr->pixels);
+	post_process(buf, imptr);
 
 	STACK_FREE(cells);
 	return 0;

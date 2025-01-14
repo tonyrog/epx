@@ -56,6 +56,7 @@ extern "C" {
 #include "epx_window.h"
 #include "epx_backend.h"
 #include "epx_font.h"
+#include "epx_sft.h"
 #include "epx_hash.h"
 #include "epx_lock.h"
 

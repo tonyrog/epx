@@ -32,6 +32,9 @@
 
 -include("../include/epx_t2d.hrl").
 
+-type(t2d() :: #t2d{}).
+-export_type([t2d/0]).
+
 -define(xp(T,X,Y), (X)*(T)#t2d.sx + (Y)*(T)#t2d.ry + (T)#t2d.tx).
 -define(yp(T,X,Y), (X)*(T)#t2d.rx + (Y)*(T)#t2d.sy + (T)#t2d.ty).
 -define(wp(T,W), abs((W)*(T)#t2d.sx)).
@@ -86,12 +89,13 @@ rectangle_to_poly(T, {X,Y,W,H}) ->
 identity() ->
     #t2d {}.
 
-%%
+%% @doc
 %% Compose - Transform "matrix"
 %%  | sx  ry  tx |   | a b e |     | sx*a+ry*c  sx*b+ry*d sx*e+ry*f+tx |
 %%  | rx  sy  ty | * | c d f |  =  | rx*a+sy*c  rx*b+sy*d rx*e+sy*f+ty |
 %%  | 0   0   1  |   | 0 0 1 |     | 0          0         1            |
-%%
+%% @end
+-spec compose(t2d(), t2d()) -> t2d().
 compose(T, S) ->
     Sx = T#t2d.sx*S#t2d.sx + T#t2d.ry*S#t2d.rx,
     Ry = T#t2d.sx*S#t2d.ry + T#t2d.ry*S#t2d.sy,
@@ -100,23 +104,27 @@ compose(T, S) ->
     Sy = T#t2d.rx*S#t2d.ry + T#t2d.sy*S#t2d.sy,
     Ty = T#t2d.rx*S#t2d.tx + T#t2d.sy*S#t2d.ty + T#t2d.ty,
     T#t2d { sx=Sx, rx=Rx, ry=Ry, sy=Sy, tx=Tx, ty=Ty}.
-%%
+
+%% @doc
 %% Translate - Transform "matrix"
 %%  | sx  ry  tx |   | 1 0 x |     | sx ry sx*x+ry*y+tx |
 %%  | rx  sy  ty | * | 0 1 y |  =  | rx sy rx*x+sy*y+ty |
 %%  | 0   0   1  |   | 0 0 1 |     | 0  0  1            |
-%%
+%% @end
+-spec translate(t2d(), number(), number()) -> t2d().
 translate(T,Tx,Ty) when is_number(Tx), is_number(Ty) ->
     Tx1 = T#t2d.tx + T#t2d.sx*Tx + T#t2d.ry*Ty,
     Ty1 = T#t2d.ty + T#t2d.rx*Tx + T#t2d.sy*Ty,
     T#t2d { tx=Tx1, ty=Ty1}.
 
 
-%% Scale - Transform "matrix"
+%% @doc
+%%  Scale - Transform "matrix"
 %%  | sx  ry  tx |   | x   0   0 |    | sx*x ry*y tx |
 %%  | rx  sy  ty | * | 0   y   0 | =  | rx*x sy*y ty |
 %%  | 0   0   1  |   | 0   0   1 |    | 0    0    1  |
-%%
+%% @end
+-spec scale(t2d(), number(), number()) -> t2d().
 scale(T, Sx, Sy) when is_number(Sx), is_number(Sy) ->
     Sx1 = T#t2d.sx*Sx,
     Rx1 = T#t2d.rx*Sx,
@@ -124,25 +132,13 @@ scale(T, Sx, Sy) when is_number(Sx), is_number(Sy) ->
     Sy1 = T#t2d.sy*Sy,
     T#t2d { sx=Sx1, rx=Rx1, ry=Ry1, sy=Sy1 }.
 
+%% @doc
 %% Rotate - Transform "matrix"
 %%  | sx  ry  tx |   | c  -s   0 |     | sx*c+ry*s  -sx*s+ry*c tx |
 %%  | rx  sy  ty | * | s   c   0 |  =  | rx*c+sy*s  -rx*s+sy*c ty |
 %%  | 0   0   1  |   | 0   0   1 |     | 0          0          1  |
-%%
-
--define(PI, 3.141592653589793).
-
-deg_norm(A) when is_number(A) ->
-    N = trunc(A / 360),
-    if A < 0 ->
-	    A - ((N-1)*360);
-       true ->
-	    A - N*360
-    end.
-
-deg_to_rad(Deg) ->
-    Deg * (?PI/180.0).
-    
+%% @end
+-spec rotate(t2d(), number()) -> t2d().
 rotate(T, Angle) ->
     A = deg_to_rad(deg_norm(Angle)),
     C = math:cos(A),
@@ -152,4 +148,22 @@ rotate(T, Angle) ->
     Rx = T#t2d.rx*C + T#t2d.sy*S,
     Sy = -T#t2d.rx*S + T#t2d.sy*C,
     T#t2d { sx=Sx, rx=Rx, ry=Ry, sy=Sy}.
+
+%% @doc
+%% Normalize angle to -180..180
+%% @end
+deg_norm(A) when is_number(A) ->
+    N = trunc(A / 360),
+    if A < 0 ->
+	    A - ((N-1)*360);
+       true ->
+	    A - N*360
+    end.
+
+%% @doc
+%% Convert degrees to radians
+%% @end
+
+deg_to_rad(Deg) ->
+    Deg * (math:pi()/180.0).
 

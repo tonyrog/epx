@@ -22,10 +22,10 @@
 
 -record(t2d,
 	{
-	  sx=1.0, ry=0.0,
-	  rx=0.0, sy=1.0,
-	  tx=0.0, ty=0.0
-	 }).
+	 sx=1.0, ry=0.0, tx=0.0,
+	 rx=0.0, sy=1.0, ty=0.0
+	 %% 0.0     0.0     1.0
+	}).
 
 -define(is_t2d(T), is_record(td2, T)).
 

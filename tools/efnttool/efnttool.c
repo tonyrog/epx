@@ -650,7 +650,7 @@ int load_ft(char* fontfile, int fontsize, int scale, int xres, int yres,
 	return -1;
     }
     slot = face->glyph;
-    // Set char hight to 16pt in 100x100dpi
+    // Set char height to 16pt in 100x100dpi
     // FIXME: retrieve the correct display size!!!
     FT_Set_Char_Size(face, 0, fontsize*64, xres, yres);
 

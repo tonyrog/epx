@@ -1255,9 +1255,12 @@ int carbon_win_adjust(epx_window_t* win, epx_dict_t* param)
 
 int carbon_info(epx_backend_t *backend, epx_dict_t* param)
 {
-    (void) backend;
-    (void) param;
-    EPX_DBGFMT("carbon: info");
+    int bval;
+    EPX_DBGFMT("macos: info");
+    
+    if (epx_dict_lookup_boolean(param, "use_opengl", &bval) != -1) {
+	epx_dict_set_integer(param, "use_opengl", b->use_opengl);
+    }            
     return 0;
 }
 

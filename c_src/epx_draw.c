@@ -125,9 +125,9 @@ void epx_draw_rectangle(epx_pixmap_t* pixmap,
 	if (!(bf & EPX_BORDER_STYLE_NBOTTOM))
 	    epx_draw_line_horizontal(pixmap,x,x+width-1,y+height-1,bf,bc);
 	if (!(bf & EPX_BORDER_STYLE_NLEFT))
-	    epx_draw_line_vertical(pixmap,x,y+1,y+height-3,bf,bc);
+	    epx_draw_line_vertical(pixmap,x,y+1,y+height-2,bf,bc);
 	if (!(bf & EPX_BORDER_STYLE_NRIGHT))
-	    epx_draw_line_vertical(pixmap,x+width-1,y+1,y+height-3,bf,bc);
+	    epx_draw_line_vertical(pixmap,x+width-1,y+1,y+height-2,bf,bc);
     }
     else if (bw > 0) {
 	if (!(bf & EPX_BORDER_STYLE_NTOP))

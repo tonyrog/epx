@@ -32,6 +32,7 @@
 -record(epx_animation, { id, data }).
 -record(epx_canvas, { id, data }).
 -record(epx_poly, { id, data }).
+-record(epx_sft, { id, data }).
 
 -record(epx_font_info,
 	{
@@ -53,6 +54,16 @@
 	  descent,
 	  ascent
 	 }).
+
+-record(gmetrics,
+	{
+	 advance_width,
+	 left_side_bearing,
+	 yoffset,
+	 min_width,
+	 min_height
+	}).
+
 
 %% FIXME: lager ?
 -define(epx_info(F,A), error_logger:info_msg(io_lib:format((F),(A)))).

@@ -52,7 +52,7 @@
 
 -define(emit_record(T,R), emit_record(R, record_info(fields, T))).
 
--define(debug, true).
+%% -define(debug, true).
 -include("dbg.hrl").
 -ifdef(debug).
 -define(dbg_emit_record(T,R), emit_record(R, record_info(fields, T))).
@@ -68,7 +68,6 @@
 	  bits,   %% bits buffer
 	  bytes   %% bytes buffer
 	 }).
-
 
 %% YCbCr => RGB (JPG)
 -define(R(Y,Cb,Cr), ((Y) + (1.4020)*((Cr)-128))).
@@ -101,7 +100,7 @@ read_info(Fd) ->
 read_info_(JFd) ->
     case jfd_read_bytes(JFd, 2) of
 	{JFd1, <<?M_MARK,?M_SOI>>} ->
-	    read_segments(JFd1, 
+	    read_segments(JFd1, true, 
 			  #epx_image { type = ?MODULE,
 				     order = left_to_right
 				    });
@@ -121,22 +120,22 @@ write(_Fd,_IMG) ->
     ok.
 
 
-read_segments(JFd0,Ei0) ->
+read_segments(JFd0,Info,Ei0) ->
     case jfd_skip(JFd0) of
 	{JFd1,0} ->
-	    read_segments(JFd1,Ei0);
+	    read_segments(JFd1,Info,Ei0);
 	{_JFd1,?M_EOI} ->
 	    ?dbg("EOI\n",[]),
 	    {ok,Ei0};
-	{JFd1,?M_COM}->
+	{JFd1,?M_COM} ->
 	    ?dbg("COM\n",[]),
-	    segment(JFd1,Ei0,
+	    segment(JFd1,Info,Ei0,
 		    fun(Bin,Ei) ->
 			    Ei#epx_image {comment=binary_to_list(Bin)}
 		    end);
 	{JFd1,?M_APP0} ->
 	    ?dbg("APP0\n",[]),
-	    segment(JFd1,Ei0,
+	    segment(JFd1,Info,Ei0,
 		    fun(<<"JFIF",0,Bin/binary>>,Ei) ->
 			    process_jfif(Bin,Ei);
 		       (_,Ei) ->
@@ -144,7 +143,7 @@ read_segments(JFd0,Ei0) ->
 		    end);
 	{JFd1,?M_APP1} ->
 	    ?dbg("APP1\n",[]),
-	    segment(JFd1,Ei0,
+	    segment(JFd1,Info,Ei0,
 		    fun(<<"Exif",0,0,Bin/binary>>,Ei) ->
 			    process_exif(Bin,Ei);
 		       (_,Ei) ->
@@ -152,38 +151,43 @@ read_segments(JFd0,Ei0) ->
 		    end);
 	{JFd1,Marker=?M_SOF0} ->
 	    ?dbg("SOF0\n",[]),
-	    segment(JFd1,Ei0,
+	    segment(JFd1,Info,Ei0,
 		    fun(Bin,Ei) ->
 			    process_sofn(Marker,Bin,Ei)
 		    end);
 	{JFd1,Marker=?M_SOF1} ->
 	    ?dbg("SOF1\n",[]),
-	    segment(JFd1,Ei0,
+	    segment(JFd1,Info,Ei0,
 		    fun(Bin,Ei) ->
 			    process_sofn(Marker,Bin,Ei)
 		    end);
 	{JFd1,Marker=?M_SOF2} ->
 	    ?dbg("SOF2\n",[]),
-	    segment(JFd1,Ei0,
+	    segment(JFd1,Info,Ei0,
 		    fun(Bin,Ei) ->
 			    process_sofn(Marker,Bin,Ei)
 		    end);
+	{JFd1,?M_DHT} when Info -> 
+	    ?dbg("DHT (skip)\n", []),
+	    skip_segment(JFd1,Info,Ei0);
 	{JFd1,?M_DHT} -> 
 	    ?dbg("DHT\n", []),
-	    segment(JFd1,Ei0,
+	    segment(JFd1,Info,Ei0,
 		    fun(Bin,Ei) ->
 			    decode_dht(Bin,Ei)
 		    end);
-
+	{JFd1,?M_DQT} when Info -> 
+	    ?dbg("DQT (skip)\n", []),
+	    skip_segment(JFd1,Info,Ei0);
 	{JFd1,?M_DQT} ->
 	    ?dbg("DQT\n", []),
-	    segment(JFd1,Ei0,
+	    segment(JFd1,Info,Ei0,
 		    fun(Bin,Ei) ->
 			    decode_dqt(Bin, Ei)
 		    end);
 	{JFd1,?M_DRI} ->
 	    ?dbg("DRI\n", []),
-	    segment(JFd1,Ei0,
+	    segment(JFd1,Info,Ei0,
 		    fun(<<Interval:16,_/binary>>,Ei) ->
 			    ?dbg("DRI Interval=~w\n", [Interval]),
 			    epx_image:set_attribute(Ei, dri,Interval)
@@ -192,6 +196,9 @@ read_segments(JFd0,Ei0) ->
 	    io:format("Warning: EOF found before EOI\n"),
 	    {ok,Ei0};
 
+	{_JFd1,?M_SOS} when Info ->
+	    ?dbg("SOS (return info only)\n", []),
+	    {ok,Ei0};
 	{JFd1,?M_SOS} -> 
 	    ?dbg("SOS\n",[]),
 	    case jfd_read_bytes(JFd1,2) of
@@ -203,7 +210,7 @@ read_segments(JFd0,Ei0) ->
 			{JFd3,<<Bin/binary>>} when size(Bin) =:= Len-2 ->
 			    SOS = init_sos(Bin, Ei0),
 			    {JFd4,Ei1} = read_sos(JFd3, SOS, Ei0),
-			    read_segments(JFd4, Ei1);
+			    read_segments(JFd4,Info,Ei1);
 			{_JFd3,_} ->
 			    io:format("Warning: file truncated\n"),
 			    {ok,Ei0}
@@ -215,10 +222,10 @@ read_segments(JFd0,Ei0) ->
 
 	{JFd1,_Marker} ->
 	    ?dbg("Marker=~2.16.0B - skipped\n", [_Marker]),
-	    segment(JFd1,Ei0, fun(_Bin,Ei) -> Ei end)
+	    skip_segment(JFd1,Info,Ei0)
     end.
 
-segment(JFd,Ei,Fun) ->
+segment(JFd,Info,Ei,Fun) ->
     case jfd_read_bytes(JFd,2) of
 	{JFd1,<<Len:16>>} ->
 	    case jfd_read_bytes(JFd1, Len-2) of
@@ -227,7 +234,7 @@ segment(JFd,Ei,Fun) ->
 		    {ok,Ei};
 		{JFd2,Bin} when size(Bin) == Len-2 ->
 		    Ei1 = Fun(Bin, Ei),
-		    read_segments(JFd2, Ei1);
+		    read_segments(JFd2,Info,Ei1);
 		{JFd1,_} ->
 		    io:format("Warning: file truncated\n"),
 		    {ok,Ei}
@@ -236,6 +243,10 @@ segment(JFd,Ei,Fun) ->
 	    io:format("Warning: EOF before EOI\n"),
 	    {ok,Ei}
     end.
+
+skip_segment(JFd,Info,Ei) ->
+    segment(JFd,Info,Ei, fun(_Bin,Ej) -> Ej end).
+    
 
 
 %% calculate sampling with and height
@@ -584,7 +595,7 @@ jfd_decode_bits_(_Bits, _Code, _Ds, _JFd) ->
 
 %% Byte align the the bit stream (ditch the bits)
 jfd_byte_align(JFd) ->
-    ?dbg("byte align bits=~w\n", [bit_size(JFd#jfd.bits)]),
+    %% ?dbg("byte align bits=~w\n", [bit_size(JFd#jfd.bits)]),
     JFd#jfd { bits=(<<>>) }.
 
 %% align the bit stream and read N bytes 
@@ -832,9 +843,9 @@ process_sofn_component(0, _Bin, IMG) ->
     IMG;
 process_sofn_component(I, <<ID:8,H:4,V:4,Q:8,Bin/binary>>,IMG) ->
     Format = component_id(ID),
-    ?dbg("set_attribute ~w\n", [{component,Format}]),
+    %% ?dbg("set_attribute ~w\n", [{component,Format}]),
     IMG1 = epx_image:set_attribute(IMG, {component,Format}, {Q,H,V}),
-    ?dbg("component ~p q=~p, h=~p, v=~p\n", [Format,Q,H,V]),
+    %% ?dbg("component ~p q=~p, h=~p, v=~p\n", [Format,Q,H,V]),
     process_sofn_component(I-1, Bin, IMG1).
     
 
@@ -914,13 +925,9 @@ collect_maker_fixme(Fd, T, St) ->
 
 
 collect_exif(Fd, T, St) ->
-%%    io:format("EXIF(~s) ~p ~p ~p\n", 
-%%	      [T#tiff_entry.ifd,
-%%	       epx_exif:decode_tag(T#tiff_entry.tag),
-%%	       T#tiff_entry.type, T#tiff_entry.value]),
     case T#tiff_entry.tag of
 	?ExifInteroperabilityOffset ->
-	    [Offset] = T#tiff_entry.value,
+	    Offset = T#tiff_entry.value,
 	    %% could be handle by a collect_interop?
 	    case epx_image_tiff:scan_ifd(Fd, [$0,$.|T#tiff_entry.ifd],
 					 Offset, T#tiff_entry.endian,
@@ -948,24 +955,21 @@ collect_items(_Fd, T, Vs) ->
 
 %% Image info collector functions
 collect_tiff(Fd, T, St) ->
-    Key = epx_image_tiff:decode_tag(T#tiff_entry.tag),
-%%    io:format("TIFF(~s) ~p ~p ~p\n", 
-%%	      [T#tiff_entry.ifd,Key,T#tiff_entry.type, T#tiff_entry.value]),
     case T#tiff_entry.tag of
 	?ImageWidth ->
-	    [Width] = T#tiff_entry.value,
+	    Width = T#tiff_entry.value,
 	    St#epx_image { width = Width };
 	?ImageLength ->
-	    [Length] = T#tiff_entry.value,
+	    Length = T#tiff_entry.value,
 	    St#epx_image { height = Length };
 	?BitsPerSample ->
 	    Bs = T#tiff_entry.value,
 	    St#epx_image { depth = lists:sum(Bs) };
 	?ImageDescription ->
-	    [Value] = T#tiff_entry.value,
+	    Value = T#tiff_entry.value,
 	    St#epx_image { comment = Value };
 	?DateTime ->
-	    [Value] = T#tiff_entry.value,
+	    Value = binary_to_list(T#tiff_entry.value),
 	    case string:tokens(Value, ": ") of
 		[YYYY,MM,DD,H,M,S] ->
 		    DateTime = {{list_to_integer(YYYY),
@@ -979,7 +983,7 @@ collect_tiff(Fd, T, St) ->
 		    St
 	    end;
 	?ExifOffset ->
-	    [Offset] = T#tiff_entry.value,
+	    Offset = T#tiff_entry.value,
 	    case epx_image_tiff:scan_ifd(Fd, [$0,$.|T#tiff_entry.ifd],
 					 Offset, T#tiff_entry.endian,
 					 fun collect_exif/3, []) of
@@ -991,7 +995,7 @@ collect_tiff(Fd, T, St) ->
 		    St
 	    end;
 	?GPSIFD ->
-	    [Offset] = T#tiff_entry.value,
+	    Offset = T#tiff_entry.value,
 	    case epx_image_tiff:scan_ifd(Fd, [$0,$.|T#tiff_entry.ifd],
 					 Offset, T#tiff_entry.endian,
 					 fun collect_items/3, []) of
@@ -1004,6 +1008,7 @@ collect_tiff(Fd, T, St) ->
 		    St
 	    end;
 	_ ->
+	    Key = epx_image_tiff:decode_tag(T#tiff_entry.tag),
 	    Value = T#tiff_entry.value,
 	    As = St#epx_image.attributes,
 	    St#epx_image { attributes = [{Key,Value}|As]}

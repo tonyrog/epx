@@ -71,7 +71,7 @@ typedef struct {
     Atom     wm_delete_window; /* atom WM_DELETE_WINDOW */
     unsigned short modstate;   /* modifier state */
     unsigned short grab_key;   /* grab key */
-    int      use_off_screen;   /* use off screen pixmap */
+    int      double_buffer;    /* use off screen pixmap */
     int      use_exposure;     /* use backing store or not */
     unsigned long black_pixel;    
     unsigned long white_pixel;    
@@ -303,7 +303,7 @@ static void init_off_screen(X11Window* w)
 
 static int create_off_screen(X11Backend* b, X11Window* w)
 {
-    if (b->use_off_screen) {
+    if (b->double_buffer) {
 	w->pm = XCreatePixmap(b->display, w->window,
 			      w->width, w->height,
 			      DefaultDepth(b->display, b->screen));
@@ -387,7 +387,7 @@ epx_backend_t* x11_init(epx_dict_t* param)
     }
 
     be->b.use_opengl = 0;
-    be->use_off_screen = 1;
+    be->double_buffer = 1;
     be->use_exposure = 0;
 
     be->screen   = DefaultScreen(be->display);
@@ -603,7 +603,7 @@ static int x11_draw_end(epx_window_t* window, int off_screen)
     }
     else if (off_screen)
 	return 0;
-    else if (!b->use_off_screen) {
+    else if (!b->double_buffer) {
 	XSync(b->display, False);
 	b->b.pending = XEventsQueued(b->display, QueuedAlready);
     }
@@ -644,7 +644,7 @@ static int x11_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
 #endif
     }
     else {
-	Drawable d = (b->use_off_screen && w->pm) ? w->pm : w->window;
+	Drawable d = (b->double_buffer && w->pm) ? w->pm : w->window;
 	XPutImage(b->display, d, 
 		  w->gc, ximg, src_x, src_y, dst_x, dst_y,
 		  width, height);
@@ -674,7 +674,7 @@ static int x11_win_swap(epx_backend_t* backend, epx_window_t* window)
 	glXSwapBuffers(be->display, w->window);
 #endif
     }
-    else if (w && w->pm && b->use_off_screen) {
+    else if (w && w->pm && b->double_buffer) {
 	// printf("XCopyArea: w=%d,h=%d\r\n", w->width, w->height);
 	XCopyArea(b->display, w->pm, w->window, w->gc,
 		  0, 0, w->width, w->height, 0, 0);
@@ -1076,7 +1076,7 @@ next:
 
 	    if (ev.xexpose.count > 0)
 		break;
-	    if (b->use_off_screen && win->pm && !b->use_exposure) {
+	    if (b->double_buffer && win->pm && !b->use_exposure) {
 		XCopyArea(b->display, win->pm, win->window, win->gc,
 			  win->dirty.xy.x, win->dirty.xy.y,
 			  win->dirty.wh.width, win->dirty.wh.height,
@@ -1540,9 +1540,11 @@ static int x11_adjust(epx_backend_t* backend, epx_dict_t* param)
 	}
 #endif
     }
-
+    if (epx_dict_lookup_boolean(param, "double_buffer", &int_param) != -1) {
+	b->double_buffer = int_param;
+    }
     if (epx_dict_lookup_boolean(param, "use_off_screen", &int_param) != -1) {
-	b->use_off_screen = int_param;
+	b->double_buffer = int_param;
     }
     if (epx_dict_lookup_boolean(param, "use_exposure", &int_param) != -1) {
 	b->use_exposure = int_param;
@@ -1563,6 +1565,15 @@ static int x11_info(epx_backend_t* backend, epx_dict_t*param)
 	VisualID vid;
 	vid = XVisualIDFromVisual(b->visual);
 	epx_dict_set_binary(param, "visual", &vid, sizeof(VisualID));
+    }
+    if (epx_dict_lookup_boolean(param, "double_buffer", &bval) != -1) {
+	epx_dict_set_boolean(param, "double_buffer", b->double_buffer);
+    }
+    if (epx_dict_lookup_boolean(param, "use_exposure", &bval) != -1) {
+	epx_dict_set_boolean(param, "use_exposure", b->double_buffer);
+    }
+    if (epx_dict_lookup_boolean(param, "use_opengl", &bval) != -1) {
+	epx_dict_set_boolean(param, "use_opengl", b->b.use_opengl);
     }
     return 1;    
 }

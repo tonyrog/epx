@@ -30,7 +30,7 @@
  *     
  * and optionally render a=0 as background
  */
-typedef struct _epx_font_ {
+typedef struct _epx_font_t {
     EPX_OBJECT_MEMBERS(struct _epx_font_t);
     /*! Font file name (strdup) */
     char* file_name;

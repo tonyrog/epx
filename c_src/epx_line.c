@@ -192,7 +192,7 @@ static void set_p1(epx_pixmap_t* pixmap, epx_line_t* line, int x, int y)
  *
  *
  */
-void trace_aalias_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags,
+void trace_aalias_line_1(epx_pixmap_t* pixmap, epx_line_t* line, int flags,
 			 epx_pixel_t fg)
 {
     epx_pixel_t fa = fg;
@@ -212,32 +212,32 @@ void trace_aalias_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags,
 
 	    if (ae < 0) {
 		/* put alias point below */
-		if (epx_point_xy_in_rect(L(x0,0),L(y0,0)-line->s.y, &pic->clip)) {
+		if (epx_point_xy_in_rect(L(x0,0),L(y0,0)-line->s.y, &pixmap->clip)) {
 		    fa.a = -ae;
-		    put_apixel(L(ptr,0)-line->ws.y, pic->func.unpack,
-			       pic->func.pack, flags, fa);
+		    put_apixel(L(ptr,0)-line->ws.y, pixmap->func.unpack,
+			       pixmap->func.pack, flags, fa);
 		}
-		if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
+		if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip)) {
 		    fa.a = a+ae;
-		    put_apixel(L(ptr,0),pic->func.unpack,pic->func.pack,
+		    put_apixel(L(ptr,0),pixmap->func.unpack,pixmap->func.pack,
 			       flags, fa);
 		}
 	    }
 	    else if (ae > 0) {
 		/* put alias point above */
-		if (epx_point_xy_in_rect(L(x0,0),L(y0,0)+line->s.y, &pic->clip)) {
+		if (epx_point_xy_in_rect(L(x0,0),L(y0,0)+line->s.y, &pixmap->clip)) {
 		    fa.a = ae;
-		    put_apixel(L(ptr,0)+line->ws.y, pic->func.unpack,
-			       pic->func.pack, flags, fa);
+		    put_apixel(L(ptr,0)+line->ws.y, pixmap->func.unpack,
+			       pixmap->func.pack, flags, fa);
 		}
-		if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
+		if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip)) {
 		    fa.a = a-ae;
-		    put_apixel(L(ptr,0), pic->func.unpack,pic->func.pack,
+		    put_apixel(L(ptr,0), pixmap->func.unpack,pixmap->func.pack,
 			       flags, fa);
 		}
 	    }
-	    else if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
-		put_apixel(L(ptr,0), pic->func.unpack,pic->func.pack,
+	    else if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip)) {
+		put_apixel(L(ptr,0), pixmap->func.unpack,pixmap->func.pack,
 			   flags, fg);
 	    }
 	}
@@ -251,32 +251,32 @@ void trace_aalias_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags,
 	    ae = (line->delta.y == 0) ? 0 : ((a*L(err,0)) / line->delta.y);
 	    if (ae < 0) {
 		/* put alias point left */
-		if (epx_point_xy_in_rect(L(x0,0)-line->s.x,L(y0,0), &pic->clip)) {
+		if (epx_point_xy_in_rect(L(x0,0)-line->s.x,L(y0,0), &pixmap->clip)) {
 		    fa.a = -ae;
-		    put_apixel(L(ptr,0)-line->ws.x,pic->func.unpack,
-			       pic->func.pack,flags,fa);
+		    put_apixel(L(ptr,0)-line->ws.x,pixmap->func.unpack,
+			       pixmap->func.pack,flags,fa);
 		}
-		if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
+		if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip)) {
 		    fa.a = a+ae;
-		    put_apixel(L(ptr,0),pic->func.unpack,pic->func.pack,
+		    put_apixel(L(ptr,0),pixmap->func.unpack,pixmap->func.pack,
 			       flags, fa);
 		}
 	    }
 	    else if (ae > 0) {
 		/* put alias point right */
-		if (epx_point_xy_in_rect(L(x0,0)+line->s.x,L(y0,0), &pic->clip)) {
+		if (epx_point_xy_in_rect(L(x0,0)+line->s.x,L(y0,0), &pixmap->clip)) {
 		    fa.a = ae;
-		    put_apixel(L(ptr,0)+line->ws.x, pic->func.unpack,
-			       pic->func.pack,flags,fa);
+		    put_apixel(L(ptr,0)+line->ws.x, pixmap->func.unpack,
+			       pixmap->func.pack,flags,fa);
 		}
-		if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
+		if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip)) {
 		    fa.a = a-ae;
-		    put_apixel(L(ptr,0), pic->func.unpack,pic->func.pack,
+		    put_apixel(L(ptr,0), pixmap->func.unpack,pixmap->func.pack,
 			       flags, fa);
 		}
 	    }
-	    else if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
-		put_apixel(L(ptr,0), pic->func.unpack,pic->func.pack,
+	    else if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip)) {
+		put_apixel(L(ptr,0), pixmap->func.unpack,pixmap->func.pack,
 			   flags, fg);
 	    }
 	}
@@ -285,7 +285,7 @@ void trace_aalias_line_1(epx_pixmap_t* pic, epx_line_t* line, int flags,
 }
 
 /* Trace a line with no antialiasing */
-void trace_line_1(epx_pixmap_t* pic, epx_line_t* line,
+void trace_line_1(epx_pixmap_t* pixmap, epx_line_t* line,
 		  int flags, epx_pixel_t fg)
 {
     LINE_DECL(0);
@@ -296,8 +296,8 @@ void trace_line_1(epx_pixmap_t* pic, epx_line_t* line,
 	    LINE_STEP(L(err,0),L(ptr,0),
 		      L(x0,0),line->delta.x,line->s.x,line->ws.x,
 		      L(y0,0),line->delta.y,line->s.y,line->ws.y);
-	    if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
-		put_apixel(L(ptr,0), pic->func.unpack,pic->func.pack,
+	    if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip)) {
+		put_apixel(L(ptr,0), pixmap->func.unpack,pixmap->func.pack,
 			   flags, fg);
 	    }
 	}
@@ -307,8 +307,8 @@ void trace_line_1(epx_pixmap_t* pic, epx_line_t* line,
 	    LINE_STEP(L(err,0),L(ptr,0),
 		      L(y0,0),line->delta.y,line->s.y,line->ws.y,
 		      L(x0,0),line->delta.x,line->s.x,line->ws.x);
-	    if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pic->clip)) {
-		put_apixel(L(ptr,0), pic->func.unpack,pic->func.pack,
+	    if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip)) {
+		put_apixel(L(ptr,0), pixmap->func.unpack,pixmap->func.pack,
 			   flags, fg);
 	    }
 	}
@@ -587,103 +587,96 @@ static void draw_dline(uint8_t* ptr,
  *  Draw line where line_width > 1
  */
 
-void epx_draw_line_thick(epx_pixmap_t* pic,
+void epx_draw_line_thick(epx_pixmap_t* pixmap,
 			 int x0, int y0,
 			 int x1, int y1, int line_width,
 			 epx_flags_t flags, epx_pixel_t fg)
 {
-    int dy = y1 - y0;
-    int dx = x1 - x0;
+    int dx, dy;
     int ku,kv;
     int sx, sy, sxw, syw;
     int x2, x3, y2, y3; /* used for clipping */
     uint8_t* ptr;
-    epx_pixel_t ag = fg;
-    uint8_t  wl = epx_pixel_luminance(fg);
+    // epx_pixel_t ag = fg;
+    // uint8_t  wl = epx_pixel_luminance(fg);
 
+    // make sure x0 < x1 !
+    if (x0 > x1) {
+	epx_swap_int(x0, x1);
+	epx_swap_int(y0, y1);
+    }
+    dx = x1 - x0;   // dx >= 0
+    dy = y1 - y0;
 
-    x2 = epx_rect_left(&pic->clip);
-    y2 = epx_rect_top(&pic->clip);
-    x3 = epx_rect_right(&pic->clip);
-    y3 = epx_rect_bottom(&pic->clip);
+    x2 = epx_rect_left(&pixmap->clip);
+    y2 = epx_rect_top(&pixmap->clip);
+    x3 = epx_rect_right(&pixmap->clip);
+    y3 = epx_rect_bottom(&pixmap->clip);
 
-    if (dy < 0) { dy=-dy; sy=-1; syw=-pic->bytes_per_row; }
-    else { sy=1; syw=pic->bytes_per_row; }
+    // if (dx < 0) { dx=-dx; sx=-1; sxw=-pixmap->bytes_per_pixel; }
+    // else { sx=1; sxw=pixmap->bytes_per_pixel; }    
+    sx=1; sxw=pixmap->bytes_per_pixel;
+    
+    if (dy < 0) { dy=-dy; sy=-1; syw=-pixmap->bytes_per_row; }
+    else { sy=1; syw=pixmap->bytes_per_row; }
 
-    if (dx < 0) { dx=-dx; sx=-1; sxw=-pic->bytes_per_pixel; }
-    else { sx=1; sxw=pic->bytes_per_pixel; }
+    if (dy == 0) {  // horizontal line (y1 == y0)
+	int width, height, lw2;
 
-    if (dx == 0) {
-	int height;
-
-	if (flags&EPX_LINE_STYLE_NFIRST) { y0 += sy; dy--; }
-	if (flags&EPX_LINE_STYLE_NLAST)  { y1 -= sy; dy--; }
-	x1 = x0 + line_width;
-	// FIXME mega fat lines (or tiny clip area)
-	if (!epx_in_range(x0,x2,x3) && !epx_in_range(x1,x2,x3))
+	if ((x0 > x3) || (x1 < x2)) // line outside clip area
 	    return;
 	x0 = epx_clip_range(x0, x2, x3);
 	x1 = epx_clip_range(x1, x2, x3);
-	line_width = x1-x0;  // new line_width after clip
-	y0 = epx_clip_range(y0, y2, y3);
-	y1 = epx_clip_range(y1, y2, y3);
-	if (y0 <= y1) {
-	    height = (y1-y0)+1;
-	    ptr = EPX_PIXEL_ADDR(pic,x0,y0);
-	}
-	else {
-	    height = (y0-y1)+1;
-	    ptr = EPX_PIXEL_ADDR(pic,x0,y1);
-	}
+
+	lw2 = line_width / 2;
+	y0 = epx_clip_range(y0-lw2, y2, y3);
+	y1 = epx_clip_range(y0+(line_width-lw2), y2, y3);
+	
+	width  = x1 - x0 + 1;                // new line_width after clip
+	ptr = EPX_PIXEL_ADDR(pixmap,x0,y0);  // start address
+	height = line_width;
 
 	if (((flags&EPX_FLAG_BLEND)==0) || (fg.a == EPX_ALPHA_OPAQUE))
-	    epx_fill_area(ptr,pic->bytes_per_row,pic->pixel_format,
-			    fg,line_width,height);
+	    epx_fill_area(ptr,pixmap->bytes_per_row,pixmap->pixel_format,
+			  fg,width,height);
 	else if (fg.a != EPX_ALPHA_TRANSPARENT)
-	    epx_fill_area_blend(ptr,pic->bytes_per_row,pic->pixel_format,
-				fg,line_width, height);
+	    epx_fill_area_blend(ptr,pixmap->bytes_per_row,pixmap->pixel_format,
+				fg,width, height);
 	return;
     }
 
-    if (dy == 0) {
-	int width;
-
-	if (flags&EPX_LINE_STYLE_NFIRST) { x0 += sx; }
-	if (flags&EPX_LINE_STYLE_NLAST)  { x1 -= sx; }
-	y1 = y0 + line_width;
-	if (!epx_in_range(y0,y2,y3) && !epx_in_range(y1,y2,y3))
+    if (dx == 0) {  // vertical line (x1 == x0)
+	int width, height, lh2;
+	if (y0 > y1) {
+	    epx_swap_int(y0, y1);
+	}
+	if ((y0 > y3) || (y1 < y2)) // line outside clip area
 	    return;
 	y0 = epx_clip_range(y0, y2, y3);
 	y1 = epx_clip_range(y1, y2, y3);
-	line_width = (y1-y0);
-	x0 = epx_clip_range(x0, x2, x3);
-	x1 = epx_clip_range(x1, x2, x3);
-	if (x0 <= x1) {
-	    width = (x1-x0)+1;
-	    ptr = EPX_PIXEL_ADDR(pic,x0,y0);
-	}
-	else {
-	    width = (x0-x1)+1;
-	    ptr = EPX_PIXEL_ADDR(pic,x1,y0);
-	}
-	if (sx < 0) ptr -= ((line_width-1)*pic->bytes_per_row);
+	lh2 = line_width/ 2;
+	x0 = epx_clip_range(x0-lh2, x2, x3);
+	x1 = epx_clip_range(x1+(line_width-lh2), x2, x3);
+	height = y1 - y0 + 1;
+	ptr = EPX_PIXEL_ADDR(pixmap,x0,y0);
+	width = line_width;
 
 	if (((flags&EPX_FLAG_BLEND)==0) || (fg.a == EPX_ALPHA_OPAQUE))
-	    epx_fill_area(ptr,pic->bytes_per_row,pic->pixel_format,
-			  fg,width,line_width);
+	    epx_fill_area(ptr,pixmap->bytes_per_row,pixmap->pixel_format,
+			  fg,width,height);
 	else if (fg.a != EPX_ALPHA_TRANSPARENT)
-	    epx_fill_area_blend(ptr,pic->bytes_per_row,pic->pixel_format,
-				fg,width,line_width);
+	    epx_fill_area_blend(ptr,pixmap->bytes_per_row,pixmap->pixel_format,
+				fg,width,height);
 	return;
     }
 
-    ptr = EPX_PIXEL_ADDR(pic,x0,y0);
+    ptr = EPX_PIXEL_ADDR(pixmap,x0,y0);
 
     ku = dx+dx;
     kv = dy+dy;
     if (dx > dy) {
-	uint16_t eacc = 0;
-	uint16_t eadj = ((uint32_t) dy << 16) / (uint32_t) dx;
+	// uint16_t eacc = 0;
+	// uint16_t eadj = ((uint32_t) dy << 16) / (uint32_t) dx;
 	int kd = kv-ku;  // 2(dy - dx)
 	int ks = kv+ku;  // 2(dy + dx)
 	int kt = dx-kv;  // dx - 2dy
@@ -697,18 +690,25 @@ void epx_draw_line_thick(epx_pixmap_t* pic,
 	if (flags&EPX_LINE_STYLE_NLAST) dx--;
 
 	while(i < dx) {
+	    /*	    
 	    uint8_t w;
 	    eacc += eadj;
 	    w = eacc >> 8;
 	    if (((i != 0) || !(flags&EPX_LINE_STYLE_NFIRST))) {
-		draw_dline(ptr, pic->func.unpack,pic->func.pack, tk,
+		draw_dline(ptr, pixmap->func.unpack,pixmap->func.pack, tk,
 			   -d0, d1, kt, ks, kd, ku, kv,
 			   x0, y0, sx, sy, sxw, syw,
 			   x2, x3, y2, y3, line_width,flags,fg);
 		if (epx_in_range(y0-sy, y2, y3))
-		    put_wu_apixel(ptr-syw,pic->func.unpack,pic->func.pack,
+		    put_wu_apixel(ptr-syw,pixmap->func.unpack,pixmap->func.pack,
 				  w^255,flags,ag,wl);
 	    }
+	    */
+	    draw_dline(ptr, pixmap->func.unpack,pixmap->func.pack, tk,
+		       -d0, d1, kt, ks, kd, ku, kv,
+		       x0, y0, sx, sy, sxw, syw,
+		       x2, x3, y2, y3, line_width,flags,fg);
+	    
 	    if (d0 >= kt) {
 		d0 -= ku;
 		if (d1 < kt) {
@@ -718,7 +718,7 @@ void epx_draw_line_thick(epx_pixmap_t* pic,
 		else {
 		    y0 += sy; ptr += syw;
 		    d1 += kd;
-		    draw_dline(ptr, pic->func.unpack,pic->func.pack, tk,
+		    draw_dline(ptr, pixmap->func.unpack,pixmap->func.pack, tk,
 			       -d0, d1, kt, ks, kd, ku, kv,
 			       x0, y0, sx, sy, sxw, syw,
 			       x2, x3, y2, y3, line_width,flags,fg);
@@ -730,8 +730,8 @@ void epx_draw_line_thick(epx_pixmap_t* pic,
 	}
     }
     else {
-	uint16_t eacc = 0;
-	uint16_t eadj = ((uint32_t) dx << 16) / (uint32_t) dy;
+	// uint16_t eacc = 0;
+	// uint16_t eadj = ((uint32_t) dx << 16) / (uint32_t) dy;
 
 	int kd = ku-kv;  // 2(dx - dy)
 	int ks = ku+kv;  // 2(dx + dy)
@@ -744,20 +744,28 @@ void epx_draw_line_thick(epx_pixmap_t* pic,
 	tk = 2*(line_width+thickvar*i/dx)*sqrt(dx*dx + dy*dy);
 
 	if (flags&EPX_LINE_STYLE_NLAST) dy--;
+	
 
 	while(i < dy) {
+	    /*	    
 	    uint8_t w;
 	    eacc += eadj;
 	    w = eacc >> 8;
 	    if (((i != 0) || !(flags&EPX_LINE_STYLE_NFIRST))) {
-		draw_dline(ptr, pic->func.unpack,pic->func.pack, tk,
+		draw_dline(ptr, pixmap->func.unpack,pixmap->func.pack, tk,
 			   -d0, d1, kt, ks, kd, ku, kv,
 			   x0, y0, sx, sy, sxw, syw,
 			   x2, x3, y2, y3, line_width,flags,fg);
 		if (epx_in_range(x0-sx,x2,x3))
-		    put_wu_apixel(ptr-sxw,pic->func.unpack,pic->func.pack,
+		    put_wu_apixel(ptr-sxw,pixmap->func.unpack,pixmap->func.pack,
 				  w^255,flags,ag,wl);
 	    }
+	    */
+
+	    draw_dline(ptr, pixmap->func.unpack,pixmap->func.pack, tk,
+		       -d0, d1, kt, ks, kd, ku, kv,
+		       x0, y0, sx, sy, sxw, syw,
+		       x2, x3, y2, y3, line_width,flags,fg); 
 	    if (d0 >= kt) {
 		d0 -= kv;
 		if (d1 < kt) {
@@ -767,7 +775,7 @@ void epx_draw_line_thick(epx_pixmap_t* pic,
 		else {
 		    x0 += sx; ptr += sxw;
 		    d1 += kd;
-		    draw_dline(ptr, pic->func.unpack,pic->func.pack, tk,
+		    draw_dline(ptr, pixmap->func.unpack,pixmap->func.pack, tk,
 			       -d0, d1, kt, ks, kd, ku, kv,
 			       x0, y0, sx, sy, sxw, syw,
 			       x2, x3, y2, y3,line_width,flags,fg);

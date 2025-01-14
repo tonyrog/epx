@@ -37,7 +37,8 @@ typedef enum
     EPX_FONT_TYPE,
     EPX_ANIM_TYPE,
     EPX_CANVAS_TYPE,
-    EPX_POLY_TYPE
+    EPX_POLY_TYPE,
+    EPX_SFT_TYPE,    
 } epx_object_type_t;
 
 extern void EPX_BACKEND_TYPE_RELEASE(void*);
@@ -50,6 +51,7 @@ extern void EPX_FONT_TYPE_RELEASE(void*);
 extern void EPX_ANIM_TYPE_RELEASE(void*);
 extern void EPX_CANVAS_TYPE_RELEASE(void*);
 extern void EPX_POLY_TYPE_RELEASE(void*);
+extern void EPX_SFT_TYPE_RELEASE(void*);
 
 #define EPX_OBJECT_INIT(obj,Type) do {		\
     (obj)->on_heap = 0;				\
@@ -98,8 +100,6 @@ static inline void epx_object_ref(void* arg)
     epx_object_t* obj = (epx_object_t*) arg;
     if (obj)
 	(void) __atomic_fetch_add(&obj->refc, 1, __ATOMIC_SEQ_CST);
-    // FIXME: make atomic
-    // if (obj) obj->refc++;
 }
 
 static inline void epx_object_unref(void* arg)
@@ -107,13 +107,9 @@ static inline void epx_object_unref(void* arg)
     epx_object_t* obj = (epx_object_t*) arg;
     if (obj) {
 	if (__atomic_fetch_sub(&obj->refc, 1, __ATOMIC_SEQ_CST) == 1) {
-	// FIXME: make atomic
-//	if (obj->refc <= 1) {
 	    if (obj->release)
 		obj->release(obj);
 	}
-//	else
-//	    obj->refc--;
     }
 }
 

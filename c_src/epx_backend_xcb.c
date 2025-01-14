@@ -87,7 +87,7 @@ typedef struct {
     xcb_atom_t     wm_delete_window; /* atom WM_DELETE_WINDOW */
     unsigned short modstate;   /* modifier state */
     unsigned short grab_key;   /* grab key */
-    int      use_off_screen;   /* use off screen pixmap */
+    int      double_buffer;   /* use off screen pixmap */
     int      use_exposure;     /* use backing store or not */
     unsigned long black_pixel;    
     unsigned long white_pixel;
@@ -568,7 +568,7 @@ static void init_off_screen(XCBWindow* w)
 
 static int create_off_screen(XCBBackend* b, XCBWindow* w)
 {
-    if (b->use_off_screen) {
+    if (b->double_buffer) {
 	xcb_pixmap_t pm = xcb_generate_id(b->connection);
 	xcb_void_cookie_t req;
 	xcb_generic_error_t* err;
@@ -693,7 +693,7 @@ epx_backend_t* xcb_init(epx_dict_t* param)
     
     
     b->b.use_opengl = 0;
-    b->use_off_screen = 1;
+    b->double_buffer = 1;
     b->use_exposure = 0;
 
     b->b.width  = b->screen->width_in_pixels;
@@ -972,7 +972,7 @@ static int xcb_draw_end(epx_window_t* window, int off_screen)
     }
     else if (off_screen)
 	return 0;
-    else if (!b->use_off_screen) {
+    else if (!b->double_buffer) {
 	xcb_flush(b->connection);
 	if (b->pending_event == NULL)
 	    b->pending_event = xcb_poll_for_queued_event(b->connection);
@@ -1016,7 +1016,7 @@ static int xcb_draw(epx_backend_t* backend, epx_pixmap_t* pic,
     }
     else {
 	xcb_drawable_t drawable =
-	    (b->use_off_screen && w->pm) ? w->pm : w->window;
+	    (b->double_buffer && w->pm) ? w->pm : w->window;
 	uint8_t left_pad = 0;
 
 	if (src_x != 0) { // write each line
@@ -1090,7 +1090,7 @@ static int xcb_window_swap(epx_backend_t* backend, epx_window_t* window)
 	glXSwapBuffers(be->connection, w->window);
 #endif
     }
-    else if (w && w->pm && b->use_off_screen) {
+    else if (w && w->pm && b->double_buffer) {
 	xcb_copy_area(b->connection, w->pm, w->window, w->gc,
 		      0, 0, 0, 0, w->width, w->height);
 	xcb_flush(b->connection);
@@ -1504,7 +1504,7 @@ again:
 
 	    if (xev->count > 0)
 		break;
-	    if (b->use_off_screen && win->pm && !b->use_exposure) {
+	    if (b->double_buffer && win->pm && !b->use_exposure) {
 		xcb_copy_area(b->connection, win->pm, win->window, win->gc,
 			      win->dirty.xy.x, win->dirty.xy.y,
 			      win->dirty.xy.x, win->dirty.xy.y,
@@ -2028,9 +2028,11 @@ static int xcb_adjust(epx_backend_t* backend, epx_dict_t* param)
 	}
 #endif
     }
-
+    if (epx_dict_lookup_boolean(param, "double_buffer", &int_param) != -1) {
+	b->double_buffer = int_param;
+    }
     if (epx_dict_lookup_boolean(param, "use_off_screen", &int_param) != -1) {
-	b->use_off_screen = int_param;
+	b->double_buffer = int_param;
     }
     if (epx_dict_lookup_boolean(param, "use_exposure", &int_param) != -1) {
 	b->use_exposure = int_param;
@@ -2051,6 +2053,15 @@ static int xcb_info(epx_backend_t* backend, epx_dict_t*param)
     if (epx_dict_lookup_boolean(param, "visual", &bval) >= 0) {
 	epx_dict_set_binary(param, "visual",
 			    &b->visual, sizeof(xcb_visualid_t));
+    }
+    if (epx_dict_lookup_boolean(param, "double_buffer", &bval) != -1) {
+	epx_dict_set_boolean(param, "double_buffer", b->double_buffer);
+    }        
+    if (epx_dict_lookup_boolean(param, "use_exposure", &bval) != -1) {
+	epx_dict_set_boolean(param, "use_exposure", b->double_buffer);
+    }
+    if (epx_dict_lookup_boolean(param, "use_opengl", &bval) != -1) {
+	epx_dict_set_boolean(param, "use_opengl", b->b.use_opengl);
     }
     return 1;    
 }
