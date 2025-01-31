@@ -79,6 +79,8 @@
 -export([pixmap_ltm_scale/3]).
 -export([pixmap_ltm_rotate/2]).
 -export([pixmap_ltm_reset/1]).
+-export([pixmap_ltm_set/2]).
+-export([pixmap_ltm_get/1]).
 %% Bitmaps
 -export([bitmap_create/2, bitmap_create/3]).
 -export([bitmap_copy/1]).
@@ -1085,6 +1087,12 @@ pixmap_ltm_rotate(_Pixmap, _Radians) ->
     ?nif_stub().
 
 pixmap_ltm_reset(_Pixmap) ->
+    ?nif_stub().
+
+pixmap_ltm_set(_Pixmap, _Ltm) ->
+    ?nif_stub().
+
+pixmap_ltm_get(_Pixmap) ->
     ?nif_stub().
 
 %% @doc

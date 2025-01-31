@@ -59,7 +59,7 @@ void epx_t2d_set(float elem[6], epx_t2d_t* dst)
     dst->sx = elem[T_SX];
     dst->ry = elem[T_RY];
     dst->tx = elem[T_TX];
-    dst->ry = elem[T_RY];
+    dst->rx = elem[T_RX];
     dst->sy = elem[T_SY];
     dst->ty = elem[T_TY];
 }

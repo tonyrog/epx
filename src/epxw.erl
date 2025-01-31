@@ -32,7 +32,7 @@
 -export([set_status_text/1]).
 -export([file_menu/0, edit_menu/0]).
 -export([enable_motion/0, disable_motion/0]).
--export([draw/1, draw/2]).
+-export([draw/1, draw/2, draw_menu_pixels/1]).
 -export([view_to_window_x/1,
 	 view_to_window_y/1,
 	 view_to_window_pos/1,
@@ -1816,7 +1816,6 @@ draw__(State = #state { profile = Profile }, Dirty) ->
     State8 = draw_menu(Pixels,State7),
     update_window(State8, Dirty1).
 
-%% FIXME: we may want to reload the menu here?
 draw_menu(Pixels, State) ->
     if State#state.operation =:= menu, State#state.pt1 =/= undefined ->
 	    State1 = reload_menu(State),
@@ -1935,6 +1934,31 @@ intersect_region([R|Rs], Rect) ->
     end;
 intersect_region([], _Rect) ->
     [].
+
+%% 
+%% Called with inside a direct draw fun to update menu
+%%
+-spec draw_menu_pixels(Pixels::epx:epx_pixmap()) -> ok.
+
+draw_menu_pixels(Pixels) ->
+    State = state(),
+    if State#state.operation =:= menu, State#state.pt1 =/= undefined ->
+	    SaveClip = epx:pixmap_info(Pixels, clip),
+	    ScrollBars= {HBar,VBar} = scrollbars(State),
+	    {Cx,Cy} = drawing_origin_(State,ScrollBars),
+	    W = drawing_width_(VBar,State),
+	    H = drawing_height_(HBar,State),
+	    Clip = {Cx,Cy,W,H},
+	    epx:pixmap_set_clip(Pixels, Clip),
+	    LTM = epx:pixmap_ltm_get(Pixels),
+	    epx:pixmap_ltm_reset(Pixels),
+	    epx_menu:draw(State#state.menu, Pixels, State#state.pt1),
+	    epx:pixmap_ltm_set(Pixels, LTM),
+	    epx:pixmap_set_clip(Pixels, SaveClip),
+	    ok;
+       true ->
+	    ok
+    end.
 
 %% 
 %% Api version function to direct draw content

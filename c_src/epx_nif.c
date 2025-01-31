@@ -100,6 +100,8 @@ static void epx_unload(ErlNifEnv* env, void* priv_data);
     NIF("pixmap_ltm_scale", 3, pixmap_ltm_scale)		\
     NIF("pixmap_ltm_rotate", 2, pixmap_ltm_rotate)		\
     NIF("pixmap_ltm_reset", 1, pixmap_ltm_reset)		\
+    NIF("pixmap_ltm_set", 2, pixmap_ltm_set)			\
+    NIF("pixmap_ltm_get", 1, pixmap_ltm_get)			\
     NIF("bitmap_create", 2, bitmap_create)			\
     NIF("bitmap_create", 3, bitmap_create)			\
     NIF("bitmap_put_bit", 4, bitmap_put_bit)			\
@@ -4769,6 +4771,49 @@ static ERL_NIF_TERM pixmap_ltm_reset(ErlNifEnv* env, int argc,
     if (!get_pixmap(env, argv[0], &px))
 	return enif_make_badarg(env);
     epx_t2d_identity(&px->ltm);
+    return ATOM(ok);
+}
+
+static ERL_NIF_TERM pixmap_ltm_get(ErlNifEnv* env, int argc,
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    float ltm[6];
+    epx_pixmap_t* px;
+    
+    if (!get_pixmap(env, argv[0], &px))
+	return enif_make_badarg(env);
+    epx_t2d_get(&px->ltm, ltm);
+    return enif_make_tuple6(env,
+			    enif_make_double(env, ltm[0]),
+			    enif_make_double(env, ltm[1]),
+			    enif_make_double(env, ltm[2]),
+			    enif_make_double(env, ltm[3]),
+			    enif_make_double(env, ltm[4]),
+			    enif_make_double(env, ltm[5]));
+}
+
+static ERL_NIF_TERM pixmap_ltm_set(ErlNifEnv* env, int argc,
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    float ltm[6];
+    const ERL_NIF_TERM* elem;
+    int i;
+    int arity;
+    epx_pixmap_t* px;
+    
+    if (!get_pixmap(env, argv[0], &px))
+	return enif_make_badarg(env);    
+    if (!enif_get_tuple(env, argv[1], &arity, &elem) || (arity != 6))
+	return enif_make_badarg(env);
+    for (i = 0; i < 6; i++) {
+	double v;
+	if (!enif_get_double(env, elem[i], &v))
+	    return enif_make_badarg(env);
+	ltm[i] = (float) v;
+    }
+    epx_t2d_set(ltm, &px->ltm);
     return ATOM(ok);
 }
 
