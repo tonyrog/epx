@@ -2969,16 +2969,15 @@ static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
 	else
 	    szr = r.wh.width*src->bytes_per_pixel;
 	sz = szr*r.wh.height;
-	if (sz == src->sz) // must be all pixels (no alignment)
-	    bt = enif_make_resource_binary(env, src, src->data, src->sz);
-	else {
-	    uint8_t* sptr;
-	    uint8_t* dptr;
 
-	    if (!enif_alloc_binary(szr*r.wh.height, &bin))
-		return enif_make_badarg(env);
-	    sptr = EPX_PIXEL_ADDR(src,r.xy.x,r.xy.y);
-	    dptr = bin.data;
+	if (!enif_alloc_binary(szr*r.wh.height, &bin))
+	    return enif_make_badarg(env);
+	if (sz == src->sz) { // must be all pixels (no alignment)
+	    memcpy(bin.data, src->data, sz);
+	}
+	else {
+	    uint8_t* sptr = EPX_PIXEL_ADDR(src,r.xy.x,r.xy.y);
+	    uint8_t* dptr = bin.data;
 	    if (sz) {
 		h = r.wh.height;
 		while(h--) {
@@ -2987,9 +2986,9 @@ static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
 		    sptr += src->bytes_per_row;
 		}
 	    }
-	    bt = enif_make_binary(env, &bin);
-	    enif_release_binary(&bin);
 	}
+	bt = enif_make_binary(env, &bin);
+	enif_release_binary(&bin);
     }
     return bt;
 }
@@ -6132,7 +6131,7 @@ static ERL_NIF_TERM sft_fileopen_(ErlNifEnv* env, int argc,
     epx_sft_t* sft;
     ERL_NIF_TERM t;
     double point_size;
-    int scale = 1;
+    int scale = 1;  // retina display maybe 2?
     
     if (!(r=enif_get_string(env, argv[0], path, sizeof(path), ERL_NIF_LATIN1))
 	|| (r < 0))
@@ -6272,6 +6271,7 @@ static int get_t2d(ErlNifEnv* env, const ERL_NIF_TERM arg, SFT_Transform t)
     if (arg == ATOM(undefined)) {
 	t[SFT_SX] = 1.0; t[SFT_RY] = 0.0; t[SFT_TX] = 0.0;
 	t[SFT_RX] = 0.0; t[SFT_SY] = 1.0; t[SFT_TY] = 0.0;
+	//          0.0              0.0              1.0 
     }
     else {
 	if (!enif_get_tuple(env, arg, &arity, &elem) || (arity != 7))		
@@ -6288,12 +6288,17 @@ static int get_t2d(ErlNifEnv* env, const ERL_NIF_TERM arg, SFT_Transform t)
     return 1;
 }
 
+//
+//     | Tsx Try Ttx | | x |   | Tsx*x+Try*y+Ttx |
+// D = | Trx Tsy Tty |*| y | = | Trx*x+Tsy*y+Tty |
+//     | 0   0   1   | | 1 |   | 1               |
+//
 static void transform_point(SFT_Transform t, float* xp, float* yp)
 {
     float x = *xp;
     float y = *yp;
-    *xp = x*t[SFT_SX] + y*t[SFT_RY] + t[SFT_TX];
-    *yp = x*t[SFT_RX] + y*t[SFT_SY] + t[SFT_TY];    
+    *xp = t[SFT_SX]*x + t[SFT_RY]*y + t[SFT_TX];
+    *yp = t[SFT_RX]*x + t[SFT_SY]*y + t[SFT_TY];
 }
 
 static void transform_points(SFT_Transform t, float* xp, float* yp, size_t n)
@@ -6330,33 +6335,86 @@ static void transform_box(SFT_Transform t, float* wp, float* hp)
 }
 
 // dst could be any of s and t that maybe the same like compose(a, a, a)
-static void compose(SFT_Transform t, SFT_Transform s, SFT_Transform dst)
+//
+//     | Tsx Try Ttx | | Ssx Sry Stx |   | Tsx*Ssx+Try*Srx Tsx*Sry+Try*Ssy Tsx*Stx+Try*Sty+Ttx |
+// D = | Trx Tsy Tty |*| Srx Ssy Sty | = | Trx*Ssx+Tsy*Srx Trx*Sry+Tsy*Ssy Trx*Stx+Tsy*Sty+Tty |
+//     | 0   0   1   | | 0   0   1   |   | 0   0   1                                           |
+//
+static void compose(SFT_Transform T, SFT_Transform S, SFT_Transform D)
 {
-    Float_t tsx = t[SFT_SX];
-    Float_t try = t[SFT_RY];
-    Float_t trx = t[SFT_RX];
-    Float_t tsy = t[SFT_SY];
-    Float_t ssx = s[SFT_SX];
-    Float_t sry = s[SFT_RY];
-    Float_t stx = s[SFT_TY];
-    Float_t sty = s[SFT_TY];
-    dst[SFT_SX] = tsx*ssx + try*s[SFT_RX];
-    dst[SFT_RY] = tsx*sry + try*s[SFT_SY];
-    dst[SFT_RX] = trx*ssx + tsy*s[SFT_RX];
-    dst[SFT_SY] = trx*sry + tsy*s[SFT_SY];
-    dst[SFT_TX] = tsx*stx + try*sty + t[SFT_TX];
-    dst[SFT_TY] = trx*stx + tsy*sty + t[SFT_TY];
+    Float_t Tsx = T[SFT_SX];
+    Float_t Try = T[SFT_RY];
+    Float_t Trx = T[SFT_RX];
+    Float_t Tsy = T[SFT_SY];
+    
+    Float_t Ssx = S[SFT_SX];
+    Float_t Sry = S[SFT_RY];
+    Float_t Stx = S[SFT_TY];
+    Float_t Sty = S[SFT_TY];
+    D[SFT_SX] = Tsx*Ssx + Try*S[SFT_RX];
+    D[SFT_RY] = Tsx*Sry + Try*S[SFT_SY];
+    D[SFT_RX] = Trx*Ssx + Tsy*S[SFT_RX];
+    D[SFT_SY] = Trx*Sry + Tsy*S[SFT_SY];
+    D[SFT_TX] = Tsx*Stx + Try*Sty + T[SFT_TX];
+    D[SFT_TY] = Trx*Stx + Tsy*Sty + T[SFT_TY];
 }
-
-static void translate(SFT_Transform t, float tx, float ty, SFT_Transform dst)
+//
+//     | Tsx Try Ttx | | 1 0 Stx |   | Tsx Try Tsx*Stx+Try*Sty+Ttx |
+// D = | Trx Tsy Tty |*| 0 1 Sty | = | Trx Tsy Trx*Stx+Tsy*Sty+Tty |
+//     | 0   0   1   | | 0 0 1   |   | 0   0   1                   |
+//
+static void translate(SFT_Transform T, float Stx, float Sty, SFT_Transform D)
 {
-    dst[SFT_TX] = t[SFT_TX] + t[SFT_SX]*tx + t[SFT_RY]*ty;
-    dst[SFT_TY] = t[SFT_TY] + t[SFT_RX]*tx + t[SFT_SY]*ty;
-    dst[SFT_SX] = t[SFT_SX];
-    dst[SFT_RY] = t[SFT_RY];
-    dst[SFT_SY] = t[SFT_SY];
-    dst[SFT_RX] = t[SFT_RX];
+    D[SFT_TX] = T[SFT_TX] + T[SFT_SX]*Stx + T[SFT_RY]*Sty;
+    D[SFT_TY] = T[SFT_TY] + T[SFT_RX]*Stx + T[SFT_SY]*Sty;
+    D[SFT_SX] = T[SFT_SX];
+    D[SFT_RY] = T[SFT_RY];
+    D[SFT_SY] = T[SFT_SY];
+    D[SFT_RX] = T[SFT_RX];
 }    
+
+//
+//     | Tsx Try Ttx | | Ssx 0   0 |   | Tsx*Ssx Tsy*Ssy Ttx |
+// D = | Trx Tsy Tty |*| 0   Ssy 0 | = | Trx*Ssx Tsy*Ssy Tty |
+//     | 0   0   1   | | 0   0   1 |   | 0   0   1       |
+//
+static void scale(SFT_Transform T, float Ssx, float Ssy, SFT_Transform D)
+{
+    D[SFT_SX] = T[SFT_SX]*Ssx;
+    D[SFT_RY] = T[SFT_SY]*Ssy;
+    D[SFT_TX] = T[SFT_TX];    
+    D[SFT_RX] = T[SFT_RX]*Ssx;
+    D[SFT_SY] = T[SFT_SY]*Ssy;
+    D[SFT_TY] = T[SFT_TY];
+}    
+
+//
+// Rotate - Transform "matrix"
+//  | sx  ry  tx |   | c  -s   0 |     | sx*c+ry*s  -sx*s+ry*c tx |
+//  | rx  sy  ty | * | s   c   0 |  =  | rx*c+sy*s  -rx*s+sy*c ty |
+//  | 0   0   1  |   | 0   0   1 |     | 0          0          1  |
+//
+
+static void rotate(SFT_Transform T, float a, SFT_Transform D)
+{
+    float c = cosf(a);
+    float s = sinf(a);
+    float ax, ay;
+    
+    ax =  T[SFT_SX]*c + T[SFT_RY]*s;
+    ay = -T[SFT_SX]*s + T[SFT_RY]*c;
+
+    D[SFT_SX] = ax;
+    D[SFT_RY] = ay;
+    D[SFT_TX] = T[SFT_TX];
+    
+    ax = T[SFT_RX]*c + T[SFT_SY]*s;
+    ay = -T[SFT_RX]*s + T[SFT_SY]*c;
+
+    D[SFT_RX] = ax;
+    D[SFT_RY] = ay;
+    D[SFT_TY] = T[SFT_TY];
+}
 
 //
 // sft_glyph_render(Sft::epx_sft(), Glyph::integer(), Transform::t2d()) ->

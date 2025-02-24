@@ -2580,7 +2580,7 @@ void epx_pixmap_scale_area(epx_pixmap_t* src, epx_pixmap_t* dst,
 
 	while ((xs >= 2.0) && (ys >= 2.0)) {
 	    pixmap_shrink_x2(tmp, &r, tmp, &r);
-	    //fprintf(stderr, "shrink %d => %d\r\n", r.wh.width, r.wh.width/2);
+	    // fprintf(stderr, "shrink %d => %d\r\n", r.wh.width, r.wh.width/2);
 	    xs /= 2.0;
 	    ys /= 2.0;
 	    r.wh.width /= 2;

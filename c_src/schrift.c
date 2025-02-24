@@ -360,24 +360,23 @@ sft_kerning(const SFT *sft, SFT_Glyph leftGlyph, SFT_Glyph rightGlyph,
 	return 0;
 }
 
-static void compose(SFT_Transform t, SFT_Transform s, SFT_Transform dst)
+static void compose(SFT_Transform T, SFT_Transform S, SFT_Transform D)
 {
-    Float_t tsx = t[SFT_SX];
-    Float_t try = t[SFT_RY];
-    Float_t trx = t[SFT_RX];
-    Float_t tsy = t[SFT_SY];
-    Float_t sx = tsx*s[SFT_SX] + try*s[SFT_RX];
-    Float_t ry = tsx*s[SFT_RY] + try*s[SFT_SY];
-    Float_t rx = trx*s[SFT_SX] + tsy*s[SFT_RX];
-    Float_t sy = trx*s[SFT_RY] + tsy*s[SFT_SY];
-    Float_t tx = tsx*s[SFT_TX] + try*s[SFT_TY] + t[SFT_TX];
-    Float_t ty = trx*s[SFT_TX] + tsy*s[SFT_TY] + t[SFT_TY];
-    dst[SFT_SX] = sx;
-    dst[SFT_RY] = ry;
-    dst[SFT_SY] = sy;
-    dst[SFT_RX] = rx;
-    dst[SFT_TX] = tx;
-    dst[SFT_TY] = ty;
+    Float_t Tsx = T[SFT_SX];
+    Float_t Try = T[SFT_RY];
+    Float_t Trx = T[SFT_RX];
+    Float_t Tsy = T[SFT_SY];
+    
+    Float_t Ssx = S[SFT_SX];
+    Float_t Sry = S[SFT_RY];
+    Float_t Stx = S[SFT_TY];
+    Float_t Sty = S[SFT_TY];
+    D[SFT_SX] = Tsx*Ssx + Try*S[SFT_RX];
+    D[SFT_RY] = Tsx*Sry + Try*S[SFT_SY];
+    D[SFT_RX] = Trx*Ssx + Tsy*S[SFT_RX];
+    D[SFT_SY] = Trx*Sry + Tsy*S[SFT_SY];
+    D[SFT_TX] = Tsx*Stx + Try*Sty + T[SFT_TX];
+    D[SFT_TY] = Trx*Stx + Tsy*Sty + T[SFT_TY];
 }
 
 

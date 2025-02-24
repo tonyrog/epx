@@ -182,7 +182,11 @@ find_row(Menu, Pt1, Pos) ->
 find_menu_item({Mx,My,_}, Geom, MI, {X,Y,_}) ->
     find_menu_item_(Mx,My, Geom, MI, X,Y);
 find_menu_item({Mx,My}, Geom, MI, {X,Y}) ->
-    find_menu_item_(Mx,My, Geom, MI, X,Y).
+    find_menu_item_(Mx,My, Geom, MI, X,Y);
+find_menu_item({Mx,My}, Geom, MI, {X,Y,_}) ->
+    find_menu_item_(Mx,My, Geom, MI, X,Y);
+find_menu_item({Mx,My,_}, Geom, MI, {X,Y}) ->
+    find_menu_item_(Mx,My, Geom, MI,X,Y).
 
 find_menu_item_(Mx,My, {_WHList,W,H}, MI, X,Y) ->
     ItemHeight = MI#menu_info.glyph_height,
@@ -191,7 +195,7 @@ find_menu_item_(Mx,My, {_WHList,W,H}, MI, X,Y) ->
     if X < Mx; X >= Mx+W -> -1;
        Y < My+Top; Y >= My+H-Bottom -> -1;
        true ->
-	    (Y - (My+Top)) div ItemHeight
+	    trunc(Y - (My+Top)) div ItemHeight
     end.
 
 command(Menu) ->
@@ -214,6 +218,8 @@ accel(Accel) ->
 accel("Ctrl+"++Accel, Mod) -> accel(Accel, Mod#keymod{ctrl=true});
 accel("Alt+"++Accel, Mod) -> accel(Accel, Mod#keymod{alt=true});
 accel("Shift+"++Accel, Mod) -> accel(Accel, Mod#keymod{shift=true});
+accel("Space",Mod) -> {$\s, Mod};
+accel("Tab",Mod) -> {$\t, Mod};
 accel("Del",Mod) -> {$\b, Mod};
 accel("Esc",Mod) -> {$\e, Mod};
 %% allow function code?

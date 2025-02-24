@@ -369,7 +369,7 @@ decode_type(?SLONG)     -> slong;
 decode_type(?SRATIONAL) -> srational;
 decode_type(?FLOAT)     -> float;
 decode_type(?DOUBLE)    -> double;
-decode_type(_) -> unknown.
+decode_type(T) -> {unknown,T}.
 
 decode_tag(Tag) ->
     case Tag of
@@ -492,12 +492,9 @@ decode_offs_value(Fd,Offset,Type,Endian,N) ->
 
 
 decode_value(ascii,_Endian,N,Bin) ->
-    Len = N-1,
     case Bin of
-	<<V:Len/binary,0,_/binary>> -> 
-	    string:trim(V, trailing, [0]);
 	<<V:N/binary,_/binary>> ->
-	    string:trim(V, trailing, [0])
+	    decode_ascii(V)
     end;
 decode_value(undefined,_Endian,N,Bin) ->
     case Bin of
@@ -559,25 +556,14 @@ decode_value_(sbyte,_Endian,<<V:8/signed,Bin1/binary>>) ->
     {V, Bin1};
 decode_value_(byte,_Endian,<<V:8,Bin1/binary>>) ->
     {V, Bin1};
-decode_value_(unknown,_Endian,Bin1) ->
-    {unknown, Bin1}.
+decode_value_({unknown,T},_Endian,Bin1) ->
+    {{unknown,T}, Bin1}.
 
-
-
-%% decode a sequence of strings
-decode_strings(Cs) ->
-    decode_strings(Cs,[],[]).
-
-decode_strings([0|Cs], String, Acc) ->
-    decode_strings(Cs, [], [reverse(String)|Acc]);
-decode_strings([C|Cs], String, Acc) ->
-    decode_strings(Cs, [C|String], Acc);
-decode_strings([], [], Acc) ->
-    reverse(Acc);
-decode_strings([], String, Acc) ->
-    reverse([reverse(String)|Acc]).
-
-
+decode_ascii(Bin) ->
+    case [S || S <- string:split(Bin, <<0>>, all), S /= <<>>] of
+	[S] -> S;
+	SList -> SList
+    end.
 
 undo_differencing(Data,2,r8g8b8a8,Width) ->
     undo_differencing4(Data, Width);

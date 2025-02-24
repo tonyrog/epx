@@ -63,9 +63,8 @@ point(T, X, Y) ->
 
 points(T, XYs) ->
     #t2d { sx=Sx,ry=Ry,rx=Rx,sy=Sy,tx=Tx,ty=Ty } = T,
-    lists:map(fun({X,Y}) -> { X*Sx + Y*Ry + Tx, X*Rx + Y*Sy + Ty } end, XYs).
+    [{ X*Sx + Y*Ry + Tx, X*Rx + Y*Sy + Ty } || {X,Y} <- XYs].
 	      
-
 delta(T, {Dx,Dy}) ->
     delta(T, Dx, Dy).
 
@@ -91,18 +90,26 @@ identity() ->
 
 %% @doc
 %% Compose - Transform "matrix"
-%%  | sx  ry  tx |   | a b e |     | sx*a+ry*c  sx*b+ry*d sx*e+ry*f+tx |
-%%  | rx  sy  ty | * | c d f |  =  | rx*a+sy*c  rx*b+sy*d rx*e+sy*f+ty |
-%%  | 0   0   1  |   | 0 0 1 |     | 0          0         1            |
+%%  | a b e | | sx  ry  tx |   | a*sx+b*rx  a*ry+b*sy a*tx+b*ty+e |
+%%  | c d f |*| rx  sy  ty | = | c*sx+d*rx  c*ry+d*sy c*tx+d*ty+f |
+%%  | 0 0 1 | | 0   0   1  |   | 0          0         1           |
 %% @end
 -spec compose(t2d(), t2d()) -> t2d().
 compose(T, S) ->
-    Sx = T#t2d.sx*S#t2d.sx + T#t2d.ry*S#t2d.rx,
-    Ry = T#t2d.sx*S#t2d.ry + T#t2d.ry*S#t2d.sy,
-    Tx = T#t2d.sx*S#t2d.tx + T#t2d.ry*S#t2d.ty + T#t2d.tx,
-    Rx = T#t2d.rx*S#t2d.sx + T#t2d.sy*S#t2d.rx,
-    Sy = T#t2d.rx*S#t2d.ry + T#t2d.sy*S#t2d.sy,
-    Ty = T#t2d.rx*S#t2d.tx + T#t2d.sy*S#t2d.ty + T#t2d.ty,
+    A = S#t2d.sx,
+    B = S#t2d.ry,
+    C = S#t2d.rx,
+    D = S#t2d.sy,
+    E = S#t2d.tx,
+    F = S#t2d.ty,
+
+    Sx = A*T#t2d.sx + B*T#t2d.rx,
+    Ry = A*T#t2d.ry + B*T#t2d.sy,
+    Tx = A*T#t2d.tx + B*T#t2d.ty + E,
+
+    Rx = C*T#t2d.sx + D*T#t2d.rx,
+    Sy = C*T#t2d.ry + D*T#t2d.sy,
+    Ty = C*T#t2d.tx + D*T#t2d.ty + F,
     T#t2d { sx=Sx, rx=Rx, ry=Ry, sy=Sy, tx=Tx, ty=Ty}.
 
 %% @doc
@@ -113,10 +120,9 @@ compose(T, S) ->
 %% @end
 -spec translate(t2d(), number(), number()) -> t2d().
 translate(T,Tx,Ty) when is_number(Tx), is_number(Ty) ->
-    Tx1 = T#t2d.tx + T#t2d.sx*Tx + T#t2d.ry*Ty,
-    Ty1 = T#t2d.ty + T#t2d.rx*Tx + T#t2d.sy*Ty,
+    Tx1 = T#t2d.sx*Tx + T#t2d.ry*Ty + T#t2d.tx,
+    Ty1 = T#t2d.rx*Tx + T#t2d.sy*Ty + T#t2d.ty,
     T#t2d { tx=Tx1, ty=Ty1}.
-
 
 %% @doc
 %%  Scale - Transform "matrix"
@@ -127,10 +133,10 @@ translate(T,Tx,Ty) when is_number(Tx), is_number(Ty) ->
 -spec scale(t2d(), number(), number()) -> t2d().
 scale(T, Sx, Sy) when is_number(Sx), is_number(Sy) ->
     Sx1 = T#t2d.sx*Sx,
-    Rx1 = T#t2d.rx*Sx,
     Ry1 = T#t2d.ry*Sy,
+    Rx1 = T#t2d.rx*Sx,
     Sy1 = T#t2d.sy*Sy,
-    T#t2d { sx=Sx1, rx=Rx1, ry=Ry1, sy=Sy1 }.
+    T#t2d { sx=Sx1, ry=Ry1, rx=Rx1, sy=Sy1 }.
 
 %% @doc
 %% Rotate - Transform "matrix"
@@ -143,11 +149,11 @@ rotate(T, Angle) ->
     A = deg_to_rad(deg_norm(Angle)),
     C = math:cos(A),
     S = math:sin(A),
-    Sx =  T#t2d.sx*C + T#t2d.ry*S,
-    Ry = -T#t2d.sx*S + T#t2d.ry*C,
-    Rx = T#t2d.rx*C + T#t2d.sy*S,
-    Sy = -T#t2d.rx*S + T#t2d.sy*C,
-    T#t2d { sx=Sx, rx=Rx, ry=Ry, sy=Sy}.
+
+    Sx =  T#t2d.sx*C + T#t2d.ry*S,  Ry = -T#t2d.sx*S + T#t2d.ry*C,
+    Rx =  T#t2d.rx*C + T#t2d.sy*S,  Sy = -T#t2d.rx*S + T#t2d.sy*C,
+
+    T#t2d { sx=Sx, rx=Rx, ry=Ry, sy=Sy }.
 
 %% @doc
 %% Normalize angle to -180..180

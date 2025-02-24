@@ -52,7 +52,7 @@
 
 -define(emit_record(T,R), emit_record(R, record_info(fields, T))).
 
-%% -define(debug, true).
+-define(debug, true).
 -include("dbg.hrl").
 -ifdef(debug).
 -define(dbg_emit_record(T,R), emit_record(R, record_info(fields, T))).
@@ -113,8 +113,20 @@ write_info(_Fd, _IMG) ->
     ok.
 
 
-read(_Fd,IMG) ->
-    {ok,IMG}.
+read(Fd,_IMG) ->
+    %% fixme use IMG from read_info, only read image bits
+    file:position(Fd, 0),
+    JFd = #jfd { fd=Fd, bits=(<<>>), bytes=(<<>>) },
+    case jfd_read_bytes(JFd, 2) of
+	{JFd1, <<?M_MARK,?M_SOI>>} ->
+	    IMG1 = #epx_image { type = ?MODULE,
+				order = left_to_right
+			      },
+	    read_segments(JFd1, false,IMG1);
+	{ok,_} ->
+	    {error, bad_magic};
+	Error -> Error
+    end.
 
 write(_Fd,_IMG) ->
     ok.
@@ -219,8 +231,9 @@ read_segments(JFd0,Info,Ei0) ->
 		    io:format("Warning: EOF before EOI\n"),
 		    {ok,Ei0}
 	    end;
-
 	{JFd1,_Marker} ->
+	    %% APP12 picture info
+	    %% APP14 adobe colors
 	    ?dbg("Marker=~2.16.0B - skipped\n", [_Marker]),
 	    skip_segment(JFd1,Info,Ei0)
     end.
@@ -255,7 +268,7 @@ component_vh(Comps, IMG) ->
 
 component_vh([{Format,_DC,_AC}|Cs], IMG, H, V) ->
     ?dbg("component_vh: ~p\n", [{component,Format}]),
-    ?dbg("attributes = ~p\n", [IMG#epx_image.attributes]),
+    %% ?dbg("attributes = ~p\n", [IMG#epx_image.attributes]),
     {_Q,H0,V0} = epx_image:attribute(IMG, {component,Format}, undefined),
     component_vh(Cs, IMG, erlang:max(H,H0), erlang:max(V,V0));
 component_vh([], _IMG, H, V) ->
@@ -309,24 +322,25 @@ init_sos(<<N,Bin/binary>>, Ei) ->
 	       ah     = Ah,
 	       al     = Al,
 	       dri = epx_image:attribute(Ei, dri, 0),
-	       def = lists:map(fun({Format,DCt,ACt}) ->
-				 DCD = epx_image:attribute(Ei,{dht,0,DCt},undefined),
-				 ACD = epx_image:attribute(Ei, {dht,1,ACt},undefined),
-				 {Q,H1,V1} = 
-				     epx_image:attribute(Ei, {component,Format},
-						  undefined),
-				 QT = epx_image:attribute(Ei, {dqt,Q}, undefined),
-				 ?dbg("def: Format=~w, N=~w, DCt=~w, ACt=~w\n",
-				      [Format,H1*V1,DCt,ACt]),
-				 #comp { format=Format,
-					 n = H1*V1,
-					 h = H1,
-					 v = V1,
-					 dcd = DCD,
-					 acd = ACD,
-					 qt = QT }
-			 end, Comps)
-	      },
+	       def = lists:map(
+		       fun({Format,DCt,ACt}) ->
+			       DCD = epx_image:attribute(Ei,{dcd,DCt},undefined),
+			       ACD = epx_image:attribute(Ei,{acd,ACt},undefined),
+			       {Q,H1,V1} = 
+				   epx_image:attribute(Ei, {component,Format},
+						       undefined),
+			       QT = epx_image:attribute(Ei, {dqt,Q}, undefined),
+			       ?dbg("def: Format=~w, N=~w, DCt=~w, ACt=~w\n",
+				    [Format,H1*V1,DCt,ACt]),
+			       #comp { format=Format,
+				       n = H1*V1,
+				       h = H1,
+				       v = V1,
+				       dcd = DCD,
+				       acd = ACD,
+				       qt = QT }
+		       end, Comps)
+	     },
     ?dbg("SOS=",[]), ?dbg_emit_record(sos, SOS),
     SOS.
     
@@ -368,19 +382,29 @@ read_mcu(JFd,[C|Cs],[Dc0|DCs],MCU,Dcc) ->
     {JFd1,B,Dc1} = read_block(JFd,C#comp.n,C,Dc0,[]),
     read_mcu(JFd1,Cs,DCs,[B|MCU], [Dc1|Dcc]);
 read_mcu(JFd,[],[],MCU,Dcc) ->
-    {JFd,lists:reverse(MCU),lists:reverse(Dcc)}.
+    MCUt = make_mcu(lists:reverse(MCU)),
+    {JFd,MCUt,lists:reverse(Dcc)}.
+
+make_mcu(MCUList) ->
+    case lists:reverse(MCUList) of
+	[[Y1,Y2,Y3,Y4],[Cb],[Cr]] ->
+	    {{Y1,Y2,Y3,Y4},Cb,Cr};
+	[[Y1,Y2],[Cb],[Cr]] ->
+	    {{Y1,Y2},Cb,Cr};
+	[[Y1],[Cb],[Cr]] ->
+	    {{Y1},Cb,Cr}
+    end.
 
 %% convert N consequtive blocks with same with ID
 %% return block list, updated DC value and rest of bits
-read_block(JFd,0,_C, Dc, Acc) ->
+read_block(JFd,0,_C,Dc,Acc) ->
     {JFd,lists:reverse(Acc),Dc};
-read_block(JFd,I,C, Dc, Acc) ->
+read_block(JFd,I,C,Dc,Acc) ->
     {JFd1,B0} = decode_block(JFd, Dc, C),
     B1 = dequantize(B0, C#comp.qt),
     B2 = rzigzag(B1),
     B3 = epx_dct:inverse_8x8(B2),
     read_block(JFd1,I-1,C,hd(B0),[B3|Acc]).
-
 
 read_rst(JFd, 0, Dcs, _SOS) ->
     {JFd,Dcs};    
@@ -448,18 +472,18 @@ cvt_rgb_w([], _SOS, Pixels) ->
     
 
 %% 1:1:1
-cvt_mcu([[Y],[Cb],[Cr]], 
+cvt_mcu({{Y},Cb,Cr}, 
 	[#comp{format=y,n=1},#comp{format=cb,n=1},#comp{format=cr,n=1}],
 	Pixels) ->
     cvt_ycbcr(Y,Cb,Cr,Pixels);
-cvt_mcu([[Y1,Y2],[Cb],[Cr]], 
+cvt_mcu({{Y1,Y2},Cb,Cr}, 
 	[#comp{format=y,n=2,v=2},#comp{format=cb,n=1},#comp{format=cr,n=1}], 
 	Pixels) ->
     {Cb1,Cb2} = up_sample_v(Cb),
     {Cr1,Cr2} = up_sample_v(Cr),
     Pixels1 = cvt_ycbcr(Y1, Cb1, Cr1, Pixels),
     cvt_ycbcr(Y2, Cb2, Cr2, Pixels1);
-cvt_mcu([[Y1,Y2],[Cb],[Cr]], 
+cvt_mcu({{Y1,Y2},Cb,Cr}, 
 	[#comp{format=y,n=2,h=2},#comp{format=cb,n=1},#comp{format=cr,n=1}], 
 	Pixels) ->
     {Cb1,Cb2} = up_sample_h(Cb),
@@ -469,7 +493,7 @@ cvt_mcu([[Y1,Y2],[Cb],[Cr]],
     Pixels3 = cvt_ycbcr(Y2, Cb2, Cr2, Pixels2),
     [R0,R1,R2,R3,R4,R5,R6,R7|Pixels3];
 %% 2:1:1
-cvt_mcu([[Y1,Y2,Y3,Y4],[Cb],[Cr]], 
+cvt_mcu({{Y1,Y2,Y3,Y4},Cb,Cr}, 
 	[#comp{format=y,n=4},#comp{format=cb,n=1},#comp{format=cr,n=1}],
 	Pixels) ->
     {Cb1,Cb2,Cb3,Cb4} = up_sample_vh(Cb),
@@ -569,28 +593,25 @@ jfd_skip2(JFd) ->
 
 %% Run huffman decode on one the bit buffer
 jfd_decode_bits(JFd, H) ->
-    jfd_decode_bits_(JFd, [], H).
+    jfd_decode_bits_(JFd, H).
 
-jfd_decode_bits_(JFd, Ds, H) ->
-    jfd_decode_bits_(JFd#jfd.bits, H, Ds, JFd).
+jfd_decode_bits_(JFd, H) ->
+    jfd_decode_bits_(JFd#jfd.bits, H, JFd).
 
-jfd_decode_bits_(<<0:1,Bits/bits>>, {L,_}, Ds, JFd) ->
-    jfd_decode_bits_(Bits, L, [$0|Ds], JFd);
-jfd_decode_bits_(<<1:1,Bits/bits>>, {_,R}, Ds, JFd) ->
-    jfd_decode_bits_(Bits, R, [$1|Ds], JFd);
-jfd_decode_bits_(<<>>, H, Ds, JFd) when is_tuple(H) ->
+jfd_decode_bits_(<<0:1,Bits/bits>>, {L,_}, JFd) ->
+    jfd_decode_bits_(Bits, L, JFd);
+jfd_decode_bits_(<<1:1,Bits/bits>>, {_,R}, JFd) ->
+    jfd_decode_bits_(Bits, R, JFd);
+jfd_decode_bits_(<<>>, H, JFd) when is_tuple(H) ->
     JFd1 = jfd_load_bits(JFd#jfd{bits=(<<>>)},8),
     if bit_size(JFd1#jfd.bits) == 0 ->
-	    %% io:format("~s => (<<>>)\n", [reverse(Ds)]),
 	    erlang:error({error, not_a_code});
        true ->
-	    jfd_decode_bits_(JFd1#jfd.bits, H, Ds, JFd1)
+	    jfd_decode_bits_(JFd1#jfd.bits, H, JFd1)
     end;
-jfd_decode_bits_(Bits, Code, _Ds, JFd) when is_integer(Code) ->
-    %% io:format("~s => ~w\n", [reverse(_Ds), Code]),
+jfd_decode_bits_(Bits, Code, JFd) when is_integer(Code) ->
     {JFd#jfd {bits=Bits }, Code};
-jfd_decode_bits_(_Bits, _Code, _Ds, _JFd) ->
-    %% io:format("~s => ~w (~w)\n", [reverse(_Ds), _Code, _Bits]),
+jfd_decode_bits_(_Bits, _Code, _JFd) ->
     erlang:error({error, not_a_code}).
 
 %% Byte align the the bit stream (ditch the bits)
@@ -686,8 +707,12 @@ decode_dht(<<_:3,AC:1,Ti:4,Bin/binary>>, IMG) ->
        true ->
 	    ?dbg("DHT: AC table=~p\n", [Ti])
     end,
-    %% emit_dht(DHT),
-    IMG1 = epx_image:set_attribute(IMG, {dht,AC,Ti}, DHT),
+    %% emit_dht(DHT) ACD/DCD,
+    IMG1 = if AC =:= 1 ->
+		   epx_image:set_attribute(IMG, {acd,Ti}, DHT);
+	      true ->
+		   epx_image:set_attribute(IMG, {dcd,Ti}, DHT)
+	   end,
     decode_dht(Bin1, IMG1);
 decode_dht(<<>>, IMG) ->
     IMG.
@@ -1034,7 +1059,7 @@ process_exif(Bin, IMG) ->
 
 
 %%
-%% Rezigag & convert to matrix from
+%% Rezigag & convert to matrix form
 %%
 
 rzigzag([A0, A1, A8,A16, A9, A2, A3,A10,

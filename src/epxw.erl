@@ -30,6 +30,7 @@
 -export([visible_rect/0]).
 -export([invalidate/0, invalidate/1]).
 -export([set_status_text/1]).
+-export([set_menu/1, set_menu/2]).
 -export([file_menu/0, edit_menu/0]).
 -export([enable_motion/0, disable_motion/0]).
 -export([draw/1, draw/2, draw_menu_pixels/1]).
@@ -530,6 +531,30 @@ set_status_text(Text) ->
     export_state(S1),
     ok.
 
+set_menu(Menu) ->
+    S0 = state(),
+    {_WHList, W, H} = Menu#menu_state.geometry,
+    ScreenWidth = S0#state.width,
+    ScreenHeight = S0#state.height,
+    X = (ScreenWidth-W)/2,
+    Y = (ScreenHeight-H)/2,
+    Menu1 = epx_menu:set_row(Menu, -1),    
+    Pos = {X, Y},
+    S1 = S0#state { pt1 = Pos, pt2 = Pos,
+		    operation = menu,
+		    menu = Menu1 },
+    export_state(S1),
+    ok.    
+    
+set_menu(Menu, Pos) ->
+    S0 = state(),
+    Menu1 = epx_menu:set_row(Menu, -1),
+    S1 = S0#state { pt1 = Pos, pt2 = Pos,
+		    operation = menu,
+		    menu = Menu1 },
+    export_state(S1),
+    ok.
+
 
 set_scale(Sx, Sy) when is_number(Sx), is_number(Sy), 
 		       Sx > 0, Sy > 0 ->
@@ -892,9 +917,9 @@ handle_cast(Request, State) ->
 			 {noreply, NewState :: term(), hibernate} |
 			 {stop, Reason :: normal | term(), NewState :: term()}.
 
-handle_info(#epx_event{win=Win,data=Event}, State) when 
+handle_info(Info=#epx_event{win=Win,data=Event}, State) when 
       Win =:= State#state.window ->
-    case epx_event(Event, State) of
+    try epx_event(Event, State) of
 	{noreply, State1} ->
 	    if State1#state.dirty =:= [] ->
 		    {noreply,State1};
@@ -903,6 +928,11 @@ handle_info(#epx_event{win=Win,data=Event}, State) when
 	    end;
 	Reply ->
 	    Reply
+    catch
+	error:Reason:Stack ->
+	    io:format("handle_info: ~p\ncrash ~p\n~p\n", 
+		      [Info, Reason, Stack]),
+	    {stop, Reason, State}	
     end;
 handle_info(Info, State) ->
     case ?CALLBACK(State, handle_info) of
@@ -1119,7 +1149,8 @@ epx_event(Event={button_release, [left], Pos}, State) ->
 		menu ->
 		    State2 = disable_sys_motion(State1),
 		    State3 = all_dirty_area(State2),
-		    {noreply, State3};
+		    State4 = user_event(Event,?CALLBACK(State3,button_release),State3),
+		    {noreply, State4};
 		_ ->
 		    State2 = all_dirty_area(State1),
 		    State3 = user_event(Event, ?CALLBACK(State2,button_release), State2),
@@ -1827,7 +1858,7 @@ draw_menu(Pixels, State) ->
 
 reload_menu(State) ->
     case ?CALLBACK(State, menu) of
-	undefined -> 
+	undefined ->
 	    State;
 	Menu ->
 	    case Menu({menu,State#state.pt1},State#state.user_state) of

@@ -161,5 +161,5 @@ void epx_t2d_rotate(epx_t2d_t* t, float a, epx_t2d_t* dst)
 
     dst->rx = ax;
     dst->sy = ay;
-    dst->tx = t->tx;
+    dst->ty = t->ty;
 }
