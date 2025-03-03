@@ -34,7 +34,8 @@
 	 font_size               = 14,
 	 font_color              = grey5,
 	 background_color        = greay10,
-	 border_color            = green
+	 border_color            = green,
+	 border_width            = 2
 	}).
 
 -type epx_menu_profile() :: #menu_profile{}.

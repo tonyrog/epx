@@ -256,6 +256,7 @@
 	 menu_font_color        = grey5,   %% light
 	 menu_background_color  = grey10,  %% dark
 	 menu_border_color      = green,
+	 menu_border_width      = 2,
 
 	 %% window_profile
 	 window_font_name       = "Courier New",
@@ -642,7 +643,7 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
     Env = if UserMod =:= undefined -> Opts;
 	     true -> Opts ++ application:get_all_env(UserMod)
 	  end,
-    Profile = load_profile(Opts),
+    Profile = load_profile(Env),
     MProfile = create_menu_profile(Profile),
     WProfile = create_window_profile(Profile),
     WContent = #window_content { profile = WProfile },
@@ -2562,6 +2563,7 @@ load_profile(E) ->
        menu_font_color = ?ldc(S,menu_font_color,E,D),
        menu_background_color = ?ldc(S,menu_background_color,E,D),
        menu_border_color = ?ldc(S,menu_border_color,E,D),
+       menu_border_width = ?ld(menu_border_width, E, D),
        
        window_font_name = ?ld(window_font_name, E, D),
        window_font_size = ?ld(window_font_size, E, D),
@@ -2600,7 +2602,8 @@ create_menu_profile(Profile) ->
        font_size        = Profile#profile.menu_font_size,
        font_color       = Profile#profile.menu_font_color,
        background_color = Profile#profile.menu_background_color,
-       border_color     = Profile#profile.menu_border_color
+       border_color     = Profile#profile.menu_border_color,
+       border_width     = Profile#profile.menu_border_width
       }.
 
 create_window_profile(Profile) ->
@@ -2678,6 +2681,7 @@ profile_keypos(Key) ->
 	menu_font_color -> #profile.menu_font_color;
 	menu_background_color -> #profile.menu_background_color;
 	menu_border_color -> #profile.menu_border_color;
+	menu_border_width -> #profile.menu_border_width;
 	window_font_name -> #profile.window_font_name;
 	window_font_size -> #profile.window_font_size;
 	window_font_color -> #profile.window_font_color;

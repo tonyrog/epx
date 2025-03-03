@@ -97,7 +97,7 @@ draw_(MenuState, Row, Pixels, X, Y) ->
     Menu = MenuState#menu_state.items,
     epx_gc:set_font(MI#menu_info.font),
     {WHList, W, H} = MenuState#menu_state.geometry,
-    epx_gc:set_border_width(2),  %% in profile?
+    epx_gc:set_border_width(Profile#menu_profile.border_width),
     epx_gc:set_border_color(
       epx_profile:color(Scheme,Profile#menu_profile.border_color)),
     epx_gc:set_fill_color(
@@ -109,6 +109,7 @@ draw_(MenuState, Row, Pixels, X, Y) ->
     epx_gc:set_foreground_color(TextColor),
     Top = MI#menu_info.top_offset,
     draw_items(Menu,0,Row,Pixels,MI,WHList,X,Y+Top,W,H),
+    epx_gc:set_border_width(0),
     ok.
 
 draw_items([Item|Items],I,Row,Pixels,MI,WHList,X,Y,W,H) ->
