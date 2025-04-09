@@ -185,8 +185,17 @@ from_name(Name) when is_list(Name) ->
 	"whitesmoke" ->        ?rgb(16#F5,16#F5,16#F5);
 	"yellow" ->	          ?rgb(16#FF,16#FF,16#00);
 	"yellowgreen" ->       ?rgb(16#9A,16#CD,16#32);
+	[$#,R1,R0,G1,G0,B1,B0] ->
+	    {xbyte(R1,R0),xbyte(G1,G0),xbyte(B1,B0)};
+	[$#,R1,R0,G1,G0,B1,B0,A1,A0] ->
+	    {xbyte(A1,A0),xbyte(R1,R0),xbyte(G1,G0),xbyte(B1,B0)}; %% ARGB!
+	[$#,R0,G0,B0] ->
+	    {xbyte(R0,R0),xbyte(G0,G0),xbyte(B0,B0)};
 	_ -> false
     end.
+
+xbyte(A1,A0) ->
+    list_to_integer([A1,A0], 16).
 
 hsl_to_rgb({H,S,L}) ->
     {R,G,B} = hsl_to_rgb01(H,S,L),
