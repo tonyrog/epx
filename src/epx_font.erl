@@ -26,6 +26,7 @@
 
 %% API
 -export([start_link/0, start/0, stop/0]).
+-export([sync/0]).
 -export([add_path/1, refresh/0, match/1]).
 -export([i/0, i/1]).
 
@@ -45,7 +46,7 @@
 	{
 	  paths=[],
 	  ftab        %% table of #epx_font_info{}
-	 }).
+	}).
 
 %%====================================================================
 %% API
@@ -53,6 +54,9 @@
 
 add_path(Path) ->
     gen_server:call(?SERVER, {add_path,Path}).
+
+sync() ->
+    gen_server:call(?SERVER, sync).
 
 %% Calculate the size of the text in pixels given either
 %% Gc or Font handle
@@ -148,7 +152,8 @@ match_i(Key, MA) ->
 match_fi(FI, MA) ->
     Scale = FI#epx_font_info.resolution_y/MA#match_arg.resolution,
     FSize = round(Scale*FI#epx_font_info.point_size / 10.0),
-    if is_list(MA#match_arg.name), MA#match_arg.name =/= FI#epx_font_info.family ->
+    if is_list(MA#match_arg.name), 
+       MA#match_arg.name =/= FI#epx_font_info.family ->
 	    false;
        MA#match_arg.size > 0, MA#match_arg.size =/= FSize ->
 	    false;
@@ -253,6 +258,8 @@ handle_call({add_path,Path}, _From, State) ->
 		    {reply, Error, State}
 	    end
     end;
+handle_call(sync, _From, State) ->
+    {reply, ok, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.

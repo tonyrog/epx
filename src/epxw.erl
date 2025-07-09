@@ -208,14 +208,6 @@
 %% -define(verbose(F,A), io:format(F "\n", A)).
 -define(verbose(F,A), ok).
 
--ifdef(OTP_RELEASE). %% this implies 21 or higher
--define(EXCEPTION(Class, Reason, Stacktrace), Class:Reason:Stacktrace).
--define(GET_STACK(Stacktrace), Stacktrace).
--else.
--define(EXCEPTION(Class, Reason, _), Class:Reason).
--define(GET_STACK(_), erlang:get_stacktrace()).
--endif.
-
 -define(ld(Key, Env, Default),
 	proplists:get_value(Key, Env, Default#profile.Key)).
 
@@ -1369,7 +1361,7 @@ command(Symbol,Mod,State) ->
 	    command_(Symbol,Mod,State);
 	Command ->
 	    export_state(State),
-	    case Command(Symbol,Mod,State#state.user_state) of
+	    try Command(Symbol,Mod,State#state.user_state) of
 		{noreply, UserState} ->
 		    State1 = state(),
 		    State1#state { user_state = UserState };
@@ -1377,6 +1369,11 @@ command(Symbol,Mod,State) ->
 		    State1 = state(),
 		    State2 = State1#state { user_state = UserState },
 		    command_(Symbol1,Mod1,State2)
+	    catch
+		error:Reason:Stack ->
+		    io:format("command: ~p\ncrash ~p\n~p\n", 
+			      [Command, Reason, Stack]),
+		    {stop, Reason, State}
 	    end
     end.
 
@@ -1893,10 +1890,24 @@ user_draw_content(Pixmap, Region, State=#state{user_cb=Cb}) ->
 		    State#state.user_state;
 		Draw4 ->
 		    ?verbose("DRAW REGION = ~w\n", [Region]),
-		    Draw4(content,Pixmap,Region,State#state.user_state)
+		    try Draw4(content,Pixmap,Region,State#state.user_state) of
+			UState -> UState
+		    catch
+			error:Reason:Stack ->
+			    io:format("draw4: content ~p\n~p\n", 
+				      [Reason, Stack]),
+			    State#state.user_state
+		    end
 	    end;
 	Draw ->
-	    Draw(Pixmap, Region,State#state.user_state)
+	    try Draw(Pixmap, Region,State#state.user_state) of
+		UState -> UState
+	    catch
+		error:Reason:Stack ->
+			    io:format("draw: crash ~p\n~p\n", 
+				      [Reason, Stack]),
+		    State#state.user_state
+	    end
     end.
 
 %% draw into toolbar area
@@ -1912,10 +1923,18 @@ user_draw_area(Where, Pixels, Region, State=#state{user_cb=Cb}) ->
 	    SaveClip = epx:pixmap_info(Pixels, clip),
 	    epx:pixmap_set_clip(Pixels, Region),
 	    ?verbose("DRAW ~w REGION = ~w\n", [Where, Region]),
-	    UserState = Draw4(Where,Pixels, Region,State#state.user_state),
-	    epx:pixmap_set_clip(Pixels, SaveClip),
-	    State1 = state(),
-	    State1#state { user_state = UserState }
+	    try Draw4(Where,Pixels,Region,State#state.user_state) of
+		UserState ->
+		    epx:pixmap_set_clip(Pixels, SaveClip),
+		    State1 = state(),
+		    State1#state { user_state = UserState }
+	    catch
+		error:Reason:Stack ->
+			    io:format("draw4: ~p crash ~p\n~p\n", 
+				      [Where, Reason, Stack]),
+		    epx:pixmap_set_clip(Pixels, SaveClip),
+		    State#state.user_state
+	    end
     end.
 
 %%

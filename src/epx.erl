@@ -26,6 +26,7 @@
 
 %%
 -export([start/0]).
+-export([sync/0]).
 %% set epx debug level
 -export([debug/1]).
 %% simd
@@ -355,7 +356,12 @@ init() ->
 %%
 start() ->
     application:load(?MODULE), %% make sure command line env is loaded
-    application:ensure_all_started(?MODULE).
+    {ok,_} = application:ensure_all_started(?MODULE),
+    sync().
+
+%% syncronize 
+sync() ->
+    epx_font:sync().
 
 %% @doc
 %%  Set epx internal debug logging
@@ -1689,9 +1695,15 @@ glyph_info(Font, Encoding, K) when is_atom(K) ->
 glyph_info_(_Font, _Encoding, _Item) ->
     ?nif_stub().
 
+-spec font_draw_glyph(Pixmap::epx_pixmap(), Gc::epx_gc(),
+		      X::number(),Y::number(),Char::integer()) ->
+	  {X1::number(), Y1::number()}.
 font_draw_glyph(_Pixmap,_Gc,_X, _Y, _C) ->
     ?nif_stub().
 
+-spec font_draw_string(Pixmap::epx_pixmap(), Gc::epx_gc(),
+		       X::number(),Y::number(),String::string()) ->
+	  {X1::number(), Y1::number()}.
 font_draw_string(_Pixmap, _Gc, _X, _Y, _String) ->
     ?nif_stub().
 
