@@ -205,7 +205,7 @@
 -define(dbg(F,A), ok).
 -endif.
 
-%% -define(verbose(F,A), io:format(F "\n", A)).
+%% -define(verbose(F,A), io:format("epxw: " F "\n", (A))).
 -define(verbose(F,A), ok).
 
 -define(ld(Key, Env, Default),
@@ -1044,13 +1044,20 @@ epx_event(Event={key_release, _Sym, Mod, _code}, State) ->
     {noreply, State2};
 
 epx_event(Event={button_press, [left], Pos}, State) ->
-    if State#state.operation =:= menu ->
+    Operation = State#state.operation,
+    ?verbose("BUTTON_PRESS LEFT pt1=~p, pos=~p motion=~p, op=~p",
+	     [State#state.pt1, Pos, get_motion(State), Operation]),
+    case Operation of
+	menu ->
 	    case epx_menu:find_row(State#state.menu,
 				   State#state.pt1,
 				   Pos) of
 		{-1, _Menu} ->
+		    ?verbose("BUTTON_PRESS LEFT menu not found", []),
 		    {noreply, State };
 		{_Row, Menu} ->
+		    ?verbose("BUTTON_PRESS LEFT row=~p, menu=~p",
+			     [_Row, Menu]),
 		    case epx_menu:command(Menu) of
 			none ->
 			    {noreply, State#state { menu=Menu }};
@@ -1061,7 +1068,7 @@ epx_event(Event={button_press, [left], Pos}, State) ->
 			    {noreply, State3}
 		    end
 	    end;
-       true ->
+	_ ->
 	    case scroll_hit(Pos, State) of
 		false ->
 		    %%Window = State#state.window,
@@ -1129,10 +1136,12 @@ epx_event(Event={button_press,[wheel_up],_Pos},State) ->
 epx_event(Event={button_release, [left], Pos}, State) ->
     flush_motion(State#state.window),
     Pt1 = State#state.pt1,
+    Operation = State#state.operation,
+    ?verbose("BUTTON_RELEASE LEFT pt1=~p, pos=~p motion=~p, op=~p", [Pt1, Pos, get_motion(State), Operation]),
     State1 = State#state{pt1 = undefined, pt2 = undefined, operation = none},
     case get_motion(State1) of
 	undefined ->
-	    case State#state.operation of
+	    case Operation of
 		select ->
 		    State2 = select(stop,Pt1,Pos,State1),
 		    State3 = disable_sys_motion(State2),
