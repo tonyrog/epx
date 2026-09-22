@@ -221,10 +221,10 @@ static void edata_set_none(epx_dict_data_t* d)
     d->type = EPX_DICT_NONE;
 }
 
-static void edata_set_boolean(epx_dict_data_t* d, int bool)
+static void edata_set_boolean(epx_dict_data_t* d, int val)
 {
     d->type = EPX_DICT_BOOLEAN;
-    d->u.v_boolean = bool;
+    d->u.v_boolean = val;
 }
 
 static void edata_set_integer(epx_dict_data_t* d, int val)

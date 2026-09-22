@@ -314,8 +314,7 @@
          handle_continue :: undefined | callback(),
 	 code_change :: undefined | callback(),
          terminate :: undefined | callback(),
-	 configure :: undefined | configure_cb(),
-		      
+	 configure :: undefined | configure_cb(),		      
 	 key_press :: undefined | key_press_cb(),
 	 key_release :: undefined | key_release_cb(),
 	 button_press :: undefined | button_press_cb(),

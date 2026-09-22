@@ -472,8 +472,6 @@ void epx_poly_draw(epx_poly_t* poly,
 
     if ((pixmap->ctm != poly->last_ctm) ||
 	(pixmap->ctm->version != poly->last_vsn)) {
-
-	
 	transform_edges(poly, pixmap->ctm);
 	sort_edges(poly->es, poly->nes);
 	poly->last_ctm = pixmap->ctm;
