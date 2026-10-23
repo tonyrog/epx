@@ -35,6 +35,43 @@ still returns ok, but window_attach/1 and pixmap_attach/1 raise
 Note that the window manager `close` event is always sent to the window
 owner, independent of the event mask given to window_create/5.
 
+# Fonts
+
+epx draws text with efnt fonts (pre-rendered glyph bitmaps). The font
+server (epx_font) loads the .efnt files in the font path, and also
+registers the TrueType (.ttf) files there as scalable fonts. When a
+size is asked for that has no efnt font, it is generated from the
+ttf file with libschrift and kept in a disk cache, so every size is
+available:
+
+    {ok,Font} = epx_font:match([{name,"Arial"},{size,17},{weight,bold}]),
+    epx_gc:set_font(Font),
+    epx_gc:set_foreground_color({0,0,0,0}),   %% text color, alpha 0
+    epx:draw_string(Pixmap, X, Y, "Hello").
+
+    epx_font:i().                 %% list fonts, ttf fonts show size *
+    epx_font:i([{name,"Arial"}]).
+    epx_font:scalable().          %% [{Family,Style,File}]
+    epx_font:cache_clear().       %% remove generated fonts not in use
+
+An efnt font in the exact size is used when there is one. A generated
+font is made once and then used by all processes. It is written to
+the cache directory, so the next start only has to load it from disk.
+Generation takes about 20-100 ms. The generated fonts are not hinted,
+so their advance widths follow the ttf file and can be a pixel
+narrower than the hand made efnt fonts.
+
+Application environment (epx):
+
+    font_path        ["dir",...] extra directories with .efnt/.ttf files
+                     (priv/fonts and priv/truetype are always used)
+    font_cache_dir   directory for generated fonts
+                     (default: the user cache dir, epx/fonts)
+    font_cache_size  max bytes in the cache (default 64M); the oldest
+                     fonts that are not loaded are removed
+
+`epx_efnt:write_ttf(TTF, Size, File)` makes an efnt file directly.
+
 # Documentation
 
     doc/EPXW.md     epxw window behaviour: callbacks, client api, drawing
@@ -51,6 +88,8 @@ owner, independent of the event mask given to window_create/5.
     erl -pa ebin -pa test -noshell -eval 'eunit:test(epxw_tests,[verbose]),halt().'
     # epxy widgets (windows, buttons, sliders, text, menus, panels)
     erl -pa ebin -pa test -noshell -eval 'eunit:test(epxy_tests,[verbose]),halt().'
+    # ttf -> efnt generation and the font cache
+    erl -pa ebin -pa test -noshell -eval 'eunit:test(epx_font_cache_tests,[verbose]),halt().'
     # TrueType (libschrift) rendering: headless check, png and window
     erl -pa ebin -pa test -noshell -eval 'test_sft_text:check(),halt().'
     erl -pa ebin -pa test -noshell -eval 'test_sft_text:png("/tmp/sft.png"),halt().'

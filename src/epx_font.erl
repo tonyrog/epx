@@ -17,6 +17,17 @@
 %%% @author Tony Rogvall <tony@rogvall.se>
 %%% @doc
 %%%    EPX font server / font draw api
+%%%
+%%%    The server keeps a table of efnt fonts found in the font path.
+%%%    TrueType (.ttf) files in the path are scalable fonts: when a
+%%%    size is asked for that has no efnt font, an efnt font is
+%%%    generated from the ttf file (see epx_efnt) and kept in the font
+%%%    cache directory. Application environment (epx):
+%%%
+%%%      font_path        extra directories with .efnt/.ttf files
+%%%      font_cache_dir   directory for generated fonts
+%%%                       (default: user cache dir "epx/fonts")
+%%%      font_cache_size  max size of the cache in bytes (64M)
 %%% @end
 %%% Created : 15 Oct 2010 by Tony Rogvall <tony@rogvall.se>
 
@@ -29,6 +40,7 @@
 -export([sync/0]).
 -export([add_path/1, refresh/0, match/1]).
 -export([i/0, i/1]).
+-export([scalable/0, cache_dir/0, cache_clear/0]).
 
 -export([dimension/2]).
 -export([info/1, info/2]).
@@ -38,14 +50,34 @@
 	 terminate/2, code_change/3]).
 
 -include("../include/epx.hrl").
+-include_lib("kernel/include/file.hrl").
 
 -define(SERVER, epx_font_srv).
 -define(TABLE,  epx_font_table).
+-define(TTF_TABLE,  epx_font_ttf_table).
+
+-define(DEFAULT_CACHE_SIZE, (64*1024*1024)).
+-define(GENERATE_TIMEOUT, 30000).
+-define(CACHE_VERSION, 1).  %% bump when generated fonts change
+
+%% scalable font
+-record(ttf,
+	{
+	  file_name,  %% string (key)
+	  family,     %% string
+	  style,      %% string, "Regular", "Bold Italic" ...
+	  weight,     %% medium | bold
+	  slant,      %% roman | italic
+	  hash        %% hash of file name, size, mtime and cache version
+	}).
 
 -record(state,
 	{
 	  paths=[],
-	  ftab        %% table of #epx_font_info{}
+	  ftab,        %% table of #epx_font_info{}
+	  cache_dir,
+	  cache_size,
+	  pending = #{}  %% CacheFile => [From]
 	}).
 
 %%====================================================================
@@ -74,7 +106,7 @@ dimension(Font,String) when is_record(Font, epx_font) ->
 dimension(Spec,String) when is_list(Spec) ->
     {ok,Font} = match(Spec),
     dimension(Font,String).
-    
+
 
 info(Font, Item) ->
     %% io:format("item: ~p\n", [Item]),
@@ -82,7 +114,7 @@ info(Font, Item) ->
 
 %% load epx_font_info structure
 info(Font) when is_record(Font, epx_font) ->
-    #epx_font_info { 
+    #epx_font_info {
       file_name = info(Font, file_name),
       handle = Font,
       file_size = info(Font, file_size),
@@ -101,7 +133,7 @@ info(Font) when is_record(Font, epx_font) ->
       descent = info(Font, descent),
       ascent = info(Font, ascent)
      }.
-      
+
 -record(match_arg,
 	{
 	  resolution=75,  %% default resolution
@@ -113,10 +145,19 @@ info(Font) when is_record(Font, epx_font) ->
 	  style=none,
 	  spacing=none
 	}).
-	  
+
+%% Find a font: [{name,Family},{size,Points},{weight,W},{slant,S},
+%%               {resolution,Dpi}]
+%% An efnt font in the exact size is used when there is one, otherwise
+%% a font is generated from a matching ttf file (when size is given).
 match(Spec) ->
     MA = match_arg(Spec, #match_arg{}),
-    match_i(MA).
+    case match_i(MA) of
+	false when MA#match_arg.size > 0 ->
+	    match_ttf(MA);
+	Result ->
+	    Result
+    end.
 
 match_arg([{name,Name}|L], A) ->
     match_arg(L, A#match_arg { name=Name});
@@ -128,6 +169,8 @@ match_arg([{slant,S}|L], A) ->
     match_arg(L,A#match_arg{slant=S});
 match_arg([{size,Size}|L], A) ->
     match_arg(L,A#match_arg{size=Size});
+match_arg([_|L],A) ->
+    match_arg(L,A);
 match_arg([],A) ->
     A.
 
@@ -152,7 +195,7 @@ match_i(Key, MA) ->
 match_fi(FI, MA) ->
     Scale = FI#epx_font_info.resolution_y/MA#match_arg.resolution,
     FSize = round(Scale*FI#epx_font_info.point_size / 10.0),
-    if is_list(MA#match_arg.name), 
+    if is_list(MA#match_arg.name),
        MA#match_arg.name =/= FI#epx_font_info.family ->
 	    false;
        MA#match_arg.size > 0, MA#match_arg.size =/= FSize ->
@@ -166,38 +209,82 @@ match_fi(FI, MA) ->
        true ->
 	    true
     end.
-    
+
+%% Find a ttf file, prefer regular weight and slant when not given
+match_ttf(MA) ->
+    Ts = [T || T <- ets:tab2list(?TTF_TABLE), match_ttf(T, MA)],
+    Pref = fun(#ttf{weight=W,slant=S}) -> {W =/= medium, S =/= roman} end,
+    case lists:sort(fun(A,B) -> Pref(A) =< Pref(B) end, Ts) of
+	[] ->
+	    false;
+	[T|_] ->
+	    Size = round(MA#match_arg.size),
+	    Res = MA#match_arg.resolution,
+	    try gen_server:call(?SERVER, {scalable, T, Size, Res},
+				?GENERATE_TIMEOUT) of
+		{ok, Font} -> {ok, Font};
+		_Error -> false
+	    catch
+		exit:_ -> false
+	    end
+    end.
+
+match_ttf(T, MA) ->
+    Name = MA#match_arg.name,
+    (not is_list(Name) orelse
+     string:equal(Name, T#ttf.family, true)) andalso
+	(MA#match_arg.weight =:= none orelse
+	 MA#match_arg.weight =:= T#ttf.weight) andalso
+	(MA#match_arg.slant =:= none orelse
+	 MA#match_arg.slant =:= T#ttf.slant).
+
+%% list fonts
 i() ->
     i([]).
 
 i(Spec) ->
-    io:format("~15s ~5s ~8s ~15s ~4s ~s\n",
+    io:format("~-20s ~5s ~8s ~15s ~4s ~s\n",
 	      ["Name", "Size", "Weight", "Slant", "Res", "File"]),
     MA = match_arg(Spec, #match_arg{}),
-    i_(ets:first(?TABLE),MA).
+    Fs = [FI || FI <- ets:tab2list(?TABLE), match_fi(FI, MA)],
+    Key = fun(FI) -> {FI#epx_font_info.family, FI#epx_font_info.weight,
+		      FI#epx_font_info.slant, FI#epx_font_info.point_size,
+		      FI#epx_font_info.file_name} end,
+    lists:foreach(
+      fun(FI) ->
+	      io:format("~-20s ~3w.~w ~8s ~15s ~4w ~s\n",
+			[FI#epx_font_info.family,
+			 FI#epx_font_info.point_size div 10,
+			 FI#epx_font_info.point_size rem 10,
+			 FI#epx_font_info.weight,
+			 FI#epx_font_info.slant,
+			 FI#epx_font_info.resolution_y,
+			 filename:basename(FI#epx_font_info.file_name)])
+      end, lists:sort(fun(A,B) -> Key(A) =< Key(B) end, Fs)),
+    MA1 = MA#match_arg { size = 0 },
+    lists:foreach(
+      fun(T) ->
+	      case match_ttf(T, MA1) of
+		  true ->
+		      io:format("~-20s ~5s ~8s ~15s ~4s ~s\n",
+				[T#ttf.family, "*", T#ttf.weight, T#ttf.slant,
+				 "*", filename:basename(T#ttf.file_name)]);
+		  false ->
+		      ok
+	      end
+      end, lists:keysort(#ttf.family, ets:tab2list(?TTF_TABLE))).
 
-i_('$end_of_table',_MA) ->
-    ok;
-i_(Key,MA) ->
-    case ets:lookup(?TABLE, Key) of
-	[] ->
-	    ok;
-	[FI] ->
-	    case match_fi(FI, MA) of
-		true ->
-		    io:format("~15s ~4w.~w ~8s ~15s ~4w\n",
-			      [FI#epx_font_info.family,
-			       FI#epx_font_info.point_size div 10,
-			       FI#epx_font_info.point_size rem 10,
-			       FI#epx_font_info.weight,
-			       FI#epx_font_info.slant,
-			       FI#epx_font_info.resolution_y
-			      ]);
-		false ->
-		    ok
-	    end,
-	    i_(ets:next(?TABLE, Key),MA)
-    end.
+%% scalable (ttf) fonts [{Family, Style, File}]
+scalable() ->
+    lists:sort([{T#ttf.family, T#ttf.style, T#ttf.file_name} ||
+		   T <- ets:tab2list(?TTF_TABLE)]).
+
+cache_dir() ->
+    gen_server:call(?SERVER, cache_dir).
+
+%% remove generated fonts that are not loaded
+cache_clear() ->
+    gen_server:call(?SERVER, cache_clear).
 
 %%--------------------------------------------------------------------
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
@@ -220,86 +307,105 @@ refresh() ->
 %% gen_server callbacks
 %%====================================================================
 
-%%--------------------------------------------------------------------
-%% Function: init(Args) -> {ok, State} |
-%%                         {ok, State, Timeout} |
-%%                         ignore               |
-%%                         {stop, Reason}
-%% Description: Initiates the server
-%%--------------------------------------------------------------------
 init([]) ->
     FTab = ets:new(?TABLE, [named_table,set,public,
 			    {keypos, #epx_font_info.file_name}]),
-    Path0 = filename:join([code:priv_dir(epx), "fonts"]),
+    ets:new(?TTF_TABLE, [named_table,set,public,
+			 {keypos, #ttf.file_name}]),
+    Priv = code:priv_dir(epx),
+    Paths = [filename:join(Priv, "fonts"), filename:join(Priv, "truetype")]
+	++ application:get_env(epx, font_path, []),
+    CacheDir = case application:get_env(epx, font_cache_dir) of
+		   {ok, Dir} -> Dir;
+		   undefined ->
+		       filename:join(filename:basedir(user_cache, "epx"),
+				     "fonts")
+	       end,
+    CacheSize = application:get_env(epx, font_cache_size,
+				    ?DEFAULT_CACHE_SIZE),
     %% We may not block nor do recursive calls here
     self() ! refresh,
-    {ok, #state{ paths=[Path0], ftab=FTab }}.
-
-%%--------------------------------------------------------------------
-%% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
-%%                                      {reply, Reply, State, Timeout} |
-%%                                      {noreply, State} |
-%%                                      {noreply, State, Timeout} |
-%%                                      {stop, Reason, Reply, State} |
-%%                                      {stop, Reason, State}
-%% Description: Handling call messages
-%%--------------------------------------------------------------------
+    {ok, #state{ paths=Paths, ftab=FTab,
+		 cache_dir=CacheDir, cache_size=CacheSize }}.
 
 handle_call({add_path,Path}, _From, State) ->
     case lists:member(Path, State#state.paths) of
-	true -> 
+	true ->
 	    {reply, ok, State};
 	false ->
-	    case load_efnt_path(Path, State#state.ftab) of
+	    case load_path(Path, State#state.ftab) of
 		ok ->
 		    Ps = State#state.paths,
-		    {reply, ok, State#state { paths=[Path|Ps]}};
+		    {reply, ok, State#state { paths=Ps++[Path]}};
 		Error ->
 		    {reply, Error, State}
 	    end
     end;
+handle_call({scalable, T, Size, Res}, From, State) ->
+    File = cache_file(T, Size, Res, State),
+    case ets:lookup(?TABLE, File) of
+	[FI] -> %% generated by an earlier call
+	    {reply, {ok, FI#epx_font_info.handle}, State};
+	[] ->
+	    case maps:find(File, State#state.pending) of
+		{ok, Waiting} ->
+		    Pending = (State#state.pending)#{ File => [From|Waiting] },
+		    {noreply, State#state { pending = Pending }};
+		error ->
+		    case filelib:is_regular(File) of
+			true -> %% in the disk cache
+			    touch(File),
+			    {reply, open_font(File), State};
+			false ->
+			    generate(T, Size, Res, File),
+			    Pending = (State#state.pending)#{ File => [From] },
+			    {noreply, State#state { pending = Pending }}
+		    end
+	    end
+    end;
+handle_call(cache_dir, _From, State) ->
+    {reply, State#state.cache_dir, State};
+handle_call(cache_clear, _From, State) ->
+    evict(State#state.cache_dir, 0),
+    {reply, ok, State};
 handle_call(sync, _From, State) ->
     {reply, ok, State};
+handle_call(stop, _From, State) ->
+    {stop, normal, ok, State};
 handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+    {reply, {error, bad_call}, State}.
 
-%%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State) -> {noreply, State} |
-%%                                      {noreply, State, Timeout} |
-%%                                      {stop, Reason, State}
-%% Description: Handling cast messages
-%%--------------------------------------------------------------------
 handle_cast(refresh, State) ->
     {noreply, refresh_(State)};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-%%--------------------------------------------------------------------
-%% Function: handle_info(Info, State) -> {noreply, State} |
-%%                                       {noreply, State, Timeout} |
-%%                                       {stop, Reason, State}
-%% Description: Handling all non call/cast messages
-%%--------------------------------------------------------------------
+handle_info({generated, File, Result}, State) ->
+    {Waiting, Pending} = case maps:take(File, State#state.pending) of
+			     error -> {[], State#state.pending};
+			     Found -> Found
+			 end,
+    Reply = case Result of
+		ok ->
+		    %% open first, fonts in use are not evicted
+		    Res = open_font(File),
+		    evict(State#state.cache_dir, State#state.cache_size),
+		    Res;
+		{error, _} = Error ->
+		    Error
+	    end,
+    [gen_server:reply(From, Reply) || From <- Waiting],
+    {noreply, State#state { pending = Pending }};
 handle_info(refresh, State) ->
     {noreply, refresh_(State)};
+handle_info({'EXIT', _Pid, normal}, State) ->
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
-%%--------------------------------------------------------------------
-%% Function: terminate(Reason, State) -> void()
-%% Description: This function is called by a gen_server when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any necessary
-%% cleaning up. When it returns, the gen_server terminates with Reason.
-%% The return value is ignored.
-%%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
     ok.
 
-%%--------------------------------------------------------------------
-%% Func: code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% Description: Convert process state when code is changed
-%%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -311,22 +417,22 @@ code_change(_OldVsn, State, _Extra) ->
 refresh_(State) ->
     lists:foreach(
       fun(Path) ->
-	      load_efnt_path(Path, State#state.ftab)
+	      load_path(Path, State#state.ftab)
       end, State#state.paths),
     State.
 
-load_efnt_path(Path, FTab) ->
+load_path(Path, FTab) ->
     case file:list_dir(Path) of
 	{ok, Files} ->
 	    lists:foreach(
 	      fun(FName) ->
-		      case lists:suffix(".efnt", FName) orelse
-			  lists:suffix(".efnt2", FName)  of
-			  false ->
-			      ignore;
-			  true ->
-			      FileName = filename:join(Path, FName),
-			      load_efnt_file(FileName, FTab)
+		      FileName = filename:join(Path, FName),
+		      case filename:extension(FName) of
+			  ".efnt" -> load_efnt_file(FileName, FTab);
+			  ".efnt2" -> load_efnt_file(FileName, FTab);
+			  ".ttf" -> load_ttf_file(FileName);
+			  ".TTF" -> load_ttf_file(FileName);
+			  _ -> ignore
 		      end
 	      end, Files);
 	Error ->
@@ -344,4 +450,93 @@ load_efnt_file(FileName, FTab) ->
     catch
 	error:Error ->
 	    {error, Error}
+    end.
+
+load_ttf_file(FileName) ->
+    try epx_efnt:ttf_info(FileName) of
+	#{ family := Family, style := Style, weight := W, slant := S } ->
+	    {ok, FI} = file:read_file_info(FileName, [{time,posix}]),
+	    Hash = erlang:phash2({filename:basename(FileName),
+				  FI#file_info.size,
+				  FI#file_info.mtime,
+				  ?CACHE_VERSION}),
+	    ets:insert(?TTF_TABLE, #ttf{ file_name = FileName,
+					 family = Family, style = Style,
+					 weight = W, slant = S, hash = Hash })
+    catch
+	error:Error ->
+	    {error, Error}
+    end.
+
+%% name of the generated font in the cache
+cache_file(T, Size, Res, State) ->
+    Name = lists:flatten(
+	     io_lib:format("~s-~s-~w-~w-~.16b.efnt",
+			   [safe(T#ttf.family), safe(T#ttf.style),
+			    Size, Res, T#ttf.hash])),
+    filename:join(State#state.cache_dir, Name).
+
+safe(Name) ->
+    [if C >= $a, C =< $z; C >= $A, C =< $Z; C >= $0, C =< $9 -> C;
+	true -> $_
+     end || C <- Name].
+
+%% generate a font in a separate process, the result is sent back
+generate(T, Size, Res, File) ->
+    Server = self(),
+    spawn(fun() ->
+		  Result =
+		      try
+			  ok = filelib:ensure_dir(File),
+			  Data = epx_efnt:from_ttf(T#ttf.file_name, Size,
+						   [{resolution, Res}]),
+			  Tmp = File ++ ".tmp" ++ os:getpid(),
+			  ok = file:write_file(Tmp, Data),
+			  ok = file:rename(Tmp, File)
+		      catch
+			  error:Reason ->
+			      {error, Reason}
+		      end,
+		  Server ! {generated, File, Result}
+	  end).
+
+open_font(File) ->
+    case load_efnt_file(File, ?TABLE) of
+	true ->
+	    [FI] = ets:lookup(?TABLE, File),
+	    Handle = FI#epx_font_info.handle,
+	    epx:font_map(Handle),
+	    {ok, Handle};
+	Error ->
+	    Error
+    end.
+
+touch(File) ->
+    file:change_time(File, calendar:local_time()).
+
+%% Remove the oldest generated fonts that are not loaded until the
+%% cache is at most MaxSize bytes
+evict(Dir, MaxSize) ->
+    Files = [{mtime(F), filelib:file_size(F), F} ||
+		F <- filelib:wildcard(filename:join(Dir, "*.efnt"))],
+    Total = lists:sum([S || {_,S,_} <- Files]),
+    evict_(lists:sort(Files), Total, MaxSize).
+
+evict_(_Files, Total, MaxSize) when Total =< MaxSize ->
+    ok;
+evict_([{_,Size,File}|Files], Total, MaxSize) ->
+    case ets:member(?TABLE, File) of
+	true -> %% in use
+	    evict_(Files, Total, MaxSize);
+	false ->
+	    file:delete(File),
+	    evict_(Files, Total - Size, MaxSize)
+    end;
+evict_([], _Total, _MaxSize) ->
+    ok.
+
+mtime(File) ->
+    case file:read_file_info(File, [{time,posix}]) of
+	{ok, FI} -> FI#file_info.mtime;
+	_ -> 0
     end.
