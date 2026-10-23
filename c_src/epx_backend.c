@@ -61,6 +61,11 @@ extern epx_backend_t* xcb_init(epx_dict_t* param);
 extern int xcb_upgrade(epx_backend_t* backend);
 #endif
 
+#if defined(WAYLAND)
+extern epx_backend_t* wl_init(epx_dict_t* param);
+extern int wl_upgrade(epx_backend_t* backend);
+#endif
+
 static struct _backend_item {
     char* name;
     backend_init_t init;
@@ -80,6 +85,13 @@ static struct _backend_item {
       .upgrade = xcb_upgrade
     },
 #endif    
+
+#ifdef WAYLAND
+    { .name = "wayland",
+      .init = wl_init,
+      .upgrade = wl_upgrade
+    },
+#endif
 
 // #if defined(__APPLE__) && !defined(__x86_64__)
 //    { .name = "macos",

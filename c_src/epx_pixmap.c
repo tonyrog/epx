@@ -1481,8 +1481,10 @@ int epx_clip_both(epx_pixmap_t* src,epx_pixmap_t* dst,
     if (!epx_rect_intersect(srp, &src->clip, srp))
 	return -1;  // empty
 
-    // Set destination rectangle and clip it
-    epx_rect_set(&r, x_dst, y_dst, srp->wh.width, srp->wh.height);
+    // Set destination rectangle, moved as much as the source was cut,
+    // and clip it
+    epx_rect_set(&r, x_dst + (srp->xy.x - x_src), y_dst + (srp->xy.y - y_src),
+		 srp->wh.width, srp->wh.height);
     if (!epx_rect_intersect(&r, &dst->clip, drp))
 	return -1;  // empty
 
@@ -1663,7 +1665,11 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
 
     if ((unpack == NULL) || (pack == NULL))
 	return -1;
-    if (!(data0 = (uint8_t*) malloc(bytes_per_row*height+EPX_PIXMAP_ALIGNMENT-1)))
+    if ((width > 0) && (bytes_per_row / width < bytes_per_pixel))
+	return -1;  // row size overflow
+    if ((height > 0) && ((size_t)bytes_per_row > (SIZE_MAX-EPX_PIXMAP_ALIGNMENT)/height))
+	return -1;  // total size overflow
+    if (!(data0 = (uint8_t*) calloc(1, (size_t)bytes_per_row*height+EPX_PIXMAP_ALIGNMENT-1)))
 	return -1;
 
     epx_rect_set(&dst->clip, 0, 0, width, height);
@@ -1679,7 +1685,7 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
     init_pixel_area_functions(&dst->func, fmt);
     dst->bytes_per_pixel = bytes_per_pixel;
     /* total number of bytes, not including padding */
-    dst->sz             = bytes_per_row*height;
+    dst->sz             = (size_t)bytes_per_row*height;
     dst->data0          = data0;
     dst->data           = data0 + EPX_ALIGN_OFFS(data0, EPX_PIXMAP_ALIGNMENT);
     return 0;
@@ -1754,16 +1760,22 @@ int epx_pixmap_init_sub_pixmap(epx_pixmap_t* src, epx_pixmap_t* dst,
 
     dst->backend = 0;
     dst->parent  = src;
+    dst->owner   = 0;
+    dst->user    = 0;
     epx_object_ref(src);  // set a reference to parent
+
+    epx_t2d_identity(&dst->ltm);
+    dst->ctm            = &dst->ltm;
 
     epx_rect_set(&dst->clip, 0, 0, dr.wh.width, dr.wh.height);
     dst->width          = dr.wh.width;
     dst->bytes_per_row  = src->bytes_per_row;
     dst->height         = dr.wh.height;
     dst->bits_per_pixel = src->bits_per_pixel;
+    dst->bytes_per_pixel = src->bytes_per_pixel;
     dst->pixel_format   = src->pixel_format;
     dst->func           = src->func;
-    dst->sz             = src->bytes_per_row*dr.wh.height;
+    dst->sz             = (size_t)src->bytes_per_row*dr.wh.height;
 
     dst->data0 = 0;  // signal sub-pixmap
     dst->data  = EPX_PIXEL_ADDR(src, dr.xy.x, dr.xy.y);
@@ -1876,10 +1888,14 @@ void epx_pixmap_put_pixels(epx_pixmap_t* dst, int x, int y,
 
     src_ptr = ((uint8_t*)data) +
 	(epx_rect_top(&sr)*src_wb) + (epx_rect_left(&sr)*src_psz);
+    // end of the last source pixel used (exclusive)
     src_end  = ((uint8_t*)data) +
-	(epx_rect_bottom(&sr)*src_wb) + (epx_rect_right(&sr)*src_psz);
+	((size_t)epx_rect_bottom(&sr)*src_wb) +
+	((size_t)(epx_rect_right(&sr)+1)*src_psz);
     // width,height pixelType and/or len is not matching
-    if (src_end >= (((uint8_t*)data)+len))
+    if (src_end > (((uint8_t*)data)+len))
+	return;
+    if (epx_pixel_unpack_func(pixel_format) == NULL)
 	return;
 
     if ((flags & (EPX_FLAG_BLEND|EPX_FLAG_SUM))==0)
@@ -2039,16 +2055,18 @@ static inline void shift_area_rotate(uint8_t* src, int src_wb, int src_pt,
 	dst += a*dst_psz;
     }
 
-    n *= src_psz;
-    a *= src_psz;
-
     if (is_inline) {
-	uint8_t* save = malloc(a);
+	// same pixel format, work in bytes
+	size_t nb = (size_t)n*src_psz;
+	size_t ab = (size_t)a*src_psz;
+	uint8_t* save = malloc(ab);
 
+	if (save == NULL)
+	    return;
 	while(height--) {
-	    memcpy(save, src_from, a);
-	    memmove(dst, src, n);
-	    memcpy(dst_to, save, a);
+	    memcpy(save, src_from, ab);
+	    memmove(dst, src, nb);
+	    memcpy(dst_to, save, ab);
 	    src      += src_wb;
 	    src_from += src_wb;
 	    dst      += dst_wb;
@@ -2094,18 +2112,33 @@ void epx_pixmap_copy_to(epx_pixmap_t* src, epx_pixmap_t* dst)
 void epx_pixmap_scroll_left(epx_pixmap_t* src, epx_pixmap_t* dst,
 			    int rotate, unsigned int amount, epx_pixel_t fill)
 {
-    int w = (src->width < dst->width) ? src->width : dst->width;
-    int h = (src->height < dst->height) ? src->height : dst->height;
-    int a = amount;
+    unsigned int w = (src->width < dst->width) ? src->width : dst->width;
+    unsigned int h = (src->height < dst->height) ? src->height : dst->height;
 
-    if (rotate)
+    if ((w == 0) || (h == 0))
+	return;
+    if (rotate) {
+	amount %= w;
+	if (amount == 0) {
+	    if (src != dst)
+		epx_copy_area(src->data, src->bytes_per_row, src->pixel_format,
+			      dst->data, dst->bytes_per_row, dst->pixel_format,
+			      w, h);
+	    return;
+	}
 	shift_area_rotate(src->data, src->bytes_per_row, src->pixel_format,
 			  dst->data, dst->bytes_per_row, dst->pixel_format,
-			  w, h, a);
+			  w, h, (int) amount);
+    }
+    else if (amount >= w) {
+	epx_fill_area(dst->data, dst->bytes_per_row, dst->pixel_format, fill,
+		      w, h);
+    }
     else {
 	shift_area(src->data, src->bytes_per_row, src->pixel_format,
-		   dst->data, dst->bytes_per_row, dst->pixel_format, w, h, a);
-	epx_fill_area(dst->data+dst->bytes_per_pixel*(w-amount),
+		   dst->data, dst->bytes_per_row, dst->pixel_format,
+		   w, h, (int) amount);
+	epx_fill_area(EPX_PIXEL_ADDR(dst, w-amount, 0),
 		      dst->bytes_per_row,dst->pixel_format, fill,
 		      amount, h);
     }
@@ -2114,131 +2147,116 @@ void epx_pixmap_scroll_left(epx_pixmap_t* src, epx_pixmap_t* dst,
 void epx_pixmap_scroll_right(epx_pixmap_t* src, epx_pixmap_t* dst,
 			     int rotate, unsigned int amount, epx_pixel_t fill)
 {
-    int w = (src->width < dst->width) ? src->width : dst->width;
-    int h = (src->height < dst->height) ? src->height : dst->height;
-    int a = amount;
+    unsigned int w = (src->width < dst->width) ? src->width : dst->width;
+    unsigned int h = (src->height < dst->height) ? src->height : dst->height;
 
-    if (rotate)
+    if ((w == 0) || (h == 0))
+	return;
+    if (rotate) {
+	amount %= w;
+	if (amount == 0) {
+	    if (src != dst)
+		epx_copy_area(src->data, src->bytes_per_row, src->pixel_format,
+			      dst->data, dst->bytes_per_row, dst->pixel_format,
+			      w, h);
+	    return;
+	}
 	shift_area_rotate(src->data, src->bytes_per_row, src->pixel_format,
 			  dst->data, dst->bytes_per_row, dst->pixel_format,
-			  w, h, -a);
+			  w, h, -(int) amount);
+    }
+    else if (amount >= w) {
+	epx_fill_area(dst->data, dst->bytes_per_row, dst->pixel_format, fill,
+		      w, h);
+    }
     else {
 	shift_area(src->data, src->bytes_per_row, src->pixel_format,
-		   dst->data, dst->bytes_per_row, dst->pixel_format, w, h, -a);
+		   dst->data, dst->bytes_per_row, dst->pixel_format,
+		   w, h, -(int) amount);
 	epx_fill_area(dst->data, dst->bytes_per_row, dst->pixel_format, fill,
 		      amount, h);
+    }
+}
+
+// scroll rows: dst row i = src row (i+amount) mod h when up,
+// dst row (i+amount) = src row i when down. w and h are the common size.
+static void scroll_vertical(epx_pixmap_t* src, epx_pixmap_t* dst,
+			    int up, int rotate, unsigned int amount,
+			    epx_pixel_t fill)
+{
+    unsigned int w = (src->width < dst->width) ? src->width : dst->width;
+    unsigned int h = (src->height < dst->height) ? src->height : dst->height;
+    unsigned int n;
+    // rows moved: src rows [s0, s0+n) -> dst rows [d0, d0+n)
+    unsigned int s0, d0;
+    // rows wrapped/filled: src rows [r0, r0+amount) -> dst rows [f0,f0+amount)
+    unsigned int r0, f0;
+
+    if ((w == 0) || (h == 0))
+	return;
+    if (rotate) {
+	amount %= h;
+	if (amount == 0) {
+	    if (src != dst)
+		epx_copy_area(src->data, src->bytes_per_row, src->pixel_format,
+			      dst->data, dst->bytes_per_row, dst->pixel_format,
+			      w, h);
+	    return;
+	}
+    }
+    else if (amount >= h) {
+	epx_fill_area(dst->data, dst->bytes_per_row, dst->pixel_format, fill,
+		      w, h);
+	return;
+    }
+    n = h - amount;
+    if (up) { s0 = amount; d0 = 0; r0 = 0; f0 = n; }
+    else    { s0 = 0; d0 = amount; r0 = n; f0 = 0; }
+
+    if (rotate && (src == dst)) {
+	// save the rows that are overwritten, packed without padding
+	size_t rb = (size_t)w*dst->bytes_per_pixel;
+	uint8_t* save = malloc(rb*amount);
+	if (save == NULL)
+	    return;
+	epx_copy_area(EPX_PIXEL_ADDR(src,0,r0), src->bytes_per_row,
+		      src->pixel_format, save, rb, src->pixel_format,
+		      w, amount);
+	epx_copy_area(EPX_PIXEL_ADDR(src,0,s0), src->bytes_per_row,
+		      src->pixel_format,
+		      EPX_PIXEL_ADDR(dst,0,d0), dst->bytes_per_row,
+		      dst->pixel_format, w, n);
+	epx_copy_area(save, rb, src->pixel_format,
+		      EPX_PIXEL_ADDR(dst,0,f0), dst->bytes_per_row,
+		      dst->pixel_format, w, amount);
+	free(save);
+    }
+    else {
+	epx_copy_area(EPX_PIXEL_ADDR(src,0,s0), src->bytes_per_row,
+		      src->pixel_format,
+		      EPX_PIXEL_ADDR(dst,0,d0), dst->bytes_per_row,
+		      dst->pixel_format, w, n);
+	if (rotate)
+	    epx_copy_area(EPX_PIXEL_ADDR(src,0,r0), src->bytes_per_row,
+			  src->pixel_format,
+			  EPX_PIXEL_ADDR(dst,0,f0), dst->bytes_per_row,
+			  dst->pixel_format, w, amount);
+	else
+	    epx_fill_area(EPX_PIXEL_ADDR(dst,0,f0), dst->bytes_per_row,
+			  dst->pixel_format, fill, w, amount);
     }
 }
 
 void epx_pixmap_scroll_up(epx_pixmap_t* src, epx_pixmap_t* dst,
 			  int rotate, unsigned int amount, epx_pixel_t fill)
 {
-    if ((amount >= src->height) && !rotate)
-	epx_pixmap_fill(dst, fill);
-    else {
-	uint8_t* dst_ptr;
-	uint8_t* src_ptr;
-	int w = (src->width < dst->width) ? src->width : dst->width;
-	int h;
-
-	amount %= src->height;
-	h = (src->height - amount);
-
-	src_ptr = EPX_PIXEL_ADDR(src,0,amount);
-	dst_ptr = EPX_PIXEL_ADDR(dst,0,0);
-
-	if (rotate) {
-	    if (src == dst) {
-		uint8_t* save = malloc(amount*src->width*dst->bytes_per_pixel);
-		uint8_t* dst_save = EPX_PIXEL_ADDR(dst,0,0);
-
-		epx_copy_area(dst_save, dst->bytes_per_row, dst->pixel_format,
-				save, dst->bytes_per_row, dst->pixel_format,
-				dst->width, amount);
-		epx_copy_area(src_ptr, src->bytes_per_row, src->pixel_format,
-				dst_ptr, dst->bytes_per_row, dst->pixel_format,
-				w, h);
-		dst_ptr = EPX_PIXEL_ADDR(dst,0,h);
-		epx_copy_area(save, dst->bytes_per_row, dst->pixel_format,
-			      dst_ptr, dst->bytes_per_row, dst->pixel_format,
-			      w, amount);
-		free(save);
-	    }
-	    else {
-		epx_copy_area(src_ptr, src->bytes_per_row, src->pixel_format,
-			      dst_ptr, dst->bytes_per_row, dst->pixel_format,
-			      w, h);
-		dst_ptr = EPX_PIXEL_ADDR(dst,0,h);
-		src_ptr = EPX_PIXEL_ADDR(src,0,0);
-		epx_copy_area(src_ptr, src->bytes_per_row, src->pixel_format,
-			      dst_ptr, dst->bytes_per_row, dst->pixel_format,
-			      w, amount);
-	    }
-	}
-	else {
-	    epx_copy_area(src_ptr, src->bytes_per_row, src->pixel_format,
-			  dst_ptr, dst->bytes_per_row, dst->pixel_format, w, h);
-	    dst_ptr = EPX_PIXEL_ADDR(dst,0,h);
-	    epx_fill_area(dst_ptr, dst->bytes_per_row, dst->pixel_format, fill,
-			  dst->width, amount);
-	}
-    }
+    scroll_vertical(src, dst, 1, rotate, amount, fill);
 }
 
 void epx_pixmap_scroll_down(epx_pixmap_t* src, epx_pixmap_t* dst,
 			    int rotate, unsigned int amount, epx_pixel_t fill)
 {
-    if ((amount >= src->height) && !rotate)
-	epx_pixmap_fill(dst, fill);
-    else {
-	uint8_t* dst_ptr;
-	uint8_t* src_ptr;
-	int w = (src->width < dst->width) ? src->width : dst->width;
-	int h;
-
-	amount %= src->height;
-	h = (src->height - amount);
-
-	src_ptr = EPX_PIXEL_ADDR(src,0,0);
-	dst_ptr = EPX_PIXEL_ADDR(dst,0,amount);
-
-	if (rotate) {
-	    if (src == dst) {
-		uint8_t* save = malloc(amount*src->width*dst->bytes_per_pixel);
-		uint8_t* dst_save = EPX_PIXEL_ADDR(dst,0,h);
-
-		epx_copy_area(dst_save, dst->bytes_per_row, dst->pixel_format,
-			      save, dst->bytes_per_row, dst->pixel_format,
-			      dst->width, amount);
-		epx_copy_area(src_ptr, src->bytes_per_row, src->pixel_format,
-			      dst_ptr, dst->bytes_per_row, dst->pixel_format,
-			      w, h);
-		dst_ptr = EPX_PIXEL_ADDR(dst,0,0);
-		epx_copy_area(save, dst->bytes_per_row, dst->pixel_format,
-			      dst_ptr, dst->bytes_per_row, dst->pixel_format,
-			      w, amount);
-		free(save);
-	    }
-	    else {
-		epx_copy_area(src_ptr, src->bytes_per_row, src->pixel_format,
-			      dst_ptr, dst->bytes_per_row, dst->pixel_format,
-			      w, h);
-		src_ptr = EPX_PIXEL_ADDR(src,0,h);
-		dst_ptr = EPX_PIXEL_ADDR(dst,0,0);
-		epx_copy_area(src_ptr, src->bytes_per_row, dst->pixel_format,
-			      dst_ptr, dst->bytes_per_row, dst->pixel_format,
-			      w, amount);
-	    }
-	}
-	else {
-	    epx_copy_area(src_ptr, src->bytes_per_row, src->pixel_format,
-			    dst_ptr, dst->bytes_per_row, dst->pixel_format,
-			    w, h);
-	    dst_ptr = EPX_PIXEL_ADDR(dst,0,0);
-	    epx_fill_area(dst_ptr, dst->bytes_per_row, dst->pixel_format, fill,
-			  dst->width, amount);
-	}
-    }
+    scroll_vertical(src, dst, 0, rotate, amount, fill);
 }
 
 /* scroll pixmap up/dow  left/right rotate/fill */

@@ -16,6 +16,38 @@ Now you can read the pixels:
     {A,R,G,B} = epx:pixmap_get_pixel(Pixmap, 3, 3).
     <<R,G,B>> = epx:pixmap_get_pixels(Pixmap, 3, 3, 1, 1).
 
+# Backends
+
+    x11       X11 (Xlib), the default when DISPLAY is set
+    xcb       X11 (xcb)
+    wayland   Wayland (xdg-shell, shm buffers), used when only WAYLAND_DISPLAY
+              is set, or with EPX_BACKEND=wayland / {epx,[{backend,"wayland"}]}
+    fb        Linux frame buffer + evdev input
+    macos     macOS (cocoa)
+    win32     Windows GDI, UNTESTED draft, see doc/WINDOWS.md
+    none      no display
+
+The backend is selected with the EPX_BACKEND environment variable or the
+`backend` application environment. If no backend can be opened epx:start()
+still returns ok, but window_attach/1 and pixmap_attach/1 raise
+`{no_backend,default}`.
+
+Note that the window manager `close` event is always sent to the window
+owner, independent of the event mask given to window_create/5.
+
+# Tests
+
+    make
+    erlc -o test test/*.erl
+    # regression tests (pixmap/draw defects, see epx_bugs.md)
+    erl -pa ebin -pa test -noshell -eval 'eunit:test(epx_regression_tests,[verbose]),halt().'
+    # TrueType (libschrift) rendering: headless check, png and window
+    erl -pa ebin -pa test -noshell -eval 'test_sft_text:check(),halt().'
+    erl -pa ebin -pa test -noshell -eval 'test_sft_text:png("/tmp/sft.png"),halt().'
+    erl -pa ebin -pa test -noshell -eval 'test_sft_text:show(8000),halt().'
+    # wayland backend
+    erl -pa ebin -pa test -noshell -s test_wayland run -s init stop
+
 # Available backend parameters for backend_open / backend_adjust / window_adjust 
 
 ## x11 backend

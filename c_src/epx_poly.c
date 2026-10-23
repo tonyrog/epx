@@ -119,106 +119,6 @@ static void map_edge(epx_edge_t* ep, epx_pos_t* pt, int* v0_ptr, int* v1_ptr)
     ep->flags = flags;
 }
 
-// sort array containing epx_edge_t*. a and b will point
-// to such elements
-static int sort_y(const void* a, const void* b)
-{
-    float a0 = (*((const epx_edge_t**)a))->y;
-    float b0 = (*((const epx_edge_t**)b))->y;
-    return a0 - b0;
-}
-
-static void sort_edges(epx_edge_t** es, size_t n)
-{
-    qsort(es, n, sizeof(epx_edge_t*), sort_y);
-}
-
-// add edge e into list sorted by x values
-static void add_edge(epx_edge_t* e, epx_edge_t** as, int asn, epx_pos_t* pt)
-{
-    int i = asn;
-    float x0 = (float) pt[e->v0].x;
-    DEBUGF("add_edge: active table size = %d, x0=%.2f", asn, x0);
-    as[i] = NULL; // debug
-    while ((i>0) && (x0 < as[i-1]->x)) { // swap until sorted
-	epx_swap_ptr(as[i], as[i-1]);
-	// as[i] = as[i-1];
-	i--;
-    }
-    DEBUGF("insert at pos = %d",  i);
-    e->x = x0;
-    assert(as[i] == NULL);
-    as[i] = e;
-}
-
-static int activate_edges(int y,
-			  epx_edge_t** es, int esn,
-			  epx_edge_t** as, int asn,
-			  epx_pos_t* pt)
-{
-    int added = 0;
-    while(esn && (y >= pt[(*es)->v0].y)) { // activate edge
-	DEBUGF("activate_edge (%d,%d) - (%d,%d)",
-	      pt[(*es)->v0].x, pt[(*es)->v0].y,
-	      pt[(*es)->v1].x, pt[(*es)->v1].y);
-	(*es)->y = y;  // mark current y
-	add_edge(*es, as, asn+added, pt);
-	added++;
-	esn--;
-	es++;
-    }
-    return added;
-}
-
-// remove edge pointer as[i] with n elements
-// FIXME: maybe just NULL mark the deleted edges?
-static void remove_edge(int i, epx_edge_t** as, int n)
-{
-    DEBUGF("remove_edge: %d",  i);
-    n--;
-    while(i < n) {
-	as[i] = as[i+1];
-	i++;
-    }
-}
-
-// update remove and recalc, return number of deleted edges
-static int update_edges(int y, epx_edge_t** as, int asn, epx_pos_t* pt)
-{
-    int i = 0;
-    int deleted = 0;
-    while(i < asn) {
-	if (y == pt[as[i]->v1].y)  { // remove the edge (mark only?)
-	    remove_edge(i, as, asn);
-	    asn--;
-	    deleted++;
-	}
-	else if (y == as[i]->y) { // not processed	    
-	    as[i]->x += as[i]->k;
-	    DEBUGF("update_edge %d : (%d,%d)", i, as[i]->x, as[i]->y);
-	    as[i]->y = (y+1);  // mark as processed
-	    if ((i+1<asn) && (as[i]->x > as[i+1]->x)) { // move up
-		int j = i;
-		do {
-		    epx_swap_ptr(as[j], as[j+1]);
-		    j++;
-		} while((j+1<asn) && (as[j]->x > as[j+1]->x));
-	    }
-	    else if ((i>0) && (as[i-1]->x > as[i]->x)) { // move down
-		int j = i;
-		do {
-		    epx_swap_ptr(as[j], as[j-1]);
-		    j--;
-		} while((j>0) && (as[j-1]->x > as[j]->x));
-		i++;  // since we already sort as[i]
-	    }
-	}
-	else
-	    i++;
-    }
-    return deleted;
-}
-
 static inline int ydir(int y0, int y1)
 {
     if (y0 < y1) return EDGE_FLAG_DOWN;
@@ -367,96 +267,59 @@ int epx_poly_set(epx_poly_t* poly, epx_vertex_t* vp, size_t n)
     return 0;
 }
 
-/* put pixel given address */
-static inline void put_apixel(uint8_t* addr,
-			      epx_pixel_unpack_t unpack,
-			      epx_pixel_pack_t pack,
-			      epx_flags_t flags, epx_pixel_t s)
+// an inclusive pixel span [x0,x1] on a scan line
+typedef struct {
+    int x0;
+    int x1;
+} poly_span_t;
+
+static int span_cmp(const void* a, const void* b)
 {
-    if (((flags & EPX_FLAG_BLEND)==0) || (s.a == EPX_ALPHA_OPAQUE))
-	pack(s, addr);
-    else if (s.a != EPX_ALPHA_TRANSPARENT) {
-	epx_pixel_t d = unpack(addr);
-	d = epx_pixel_blend(s.a, s, d);
-	pack(d, addr);
-    }
+    const poly_span_t* sa = (const poly_span_t*) a;
+    const poly_span_t* sb = (const poly_span_t*) b;
+    return (sa->x0 < sb->x0) ? -1 : ((sa->x0 > sb->x0) ? 1 : 0);
 }
 
-static void poly_point(epx_pixmap_t* pixmap, int x, int y,
-		       epx_flags_t flags, epx_pixel_t fg)
+static int float_cmp(const void* a, const void* b)
 {
-    uint8_t* dst;
+    float fa = *((const float*) a);
+    float fb = *((const float*) b);
+    return (fa < fb) ? -1 : ((fa > fb) ? 1 : 0);
+}
 
-    if (!epx_point_xy_in_rect(x, y, &pixmap->clip))
+// x position on edge v0-v1 at y (y0 != y1), y is clamped to the edge
+static inline float edge_x(epx_pos_t* p0, epx_pos_t* p1, float y)
+{
+    float ylo = (p0->y < p1->y) ? p0->y : p1->y;
+    float yhi = (p0->y < p1->y) ? p1->y : p0->y;
+    if (y < ylo) y = ylo;
+    if (y > yhi) y = yhi;
+    return p0->x + (y - p0->y)*(float)(p1->x - p0->x)/(float)(p1->y - p0->y);
+}
+
+// sort and merge spans and draw each pixel once
+static void fill_spans(epx_pixmap_t* pixmap, poly_span_t* sp, int n, int y,
+		       epx_flags_t flags, epx_pixel_t color)
+{
+    int i;
+    poly_span_t cur;
+
+    if (n == 0)
 	return;
-    dst = EPX_PIXEL_ADDR(pixmap,x,y);
-    put_apixel(dst,pixmap->func.unpack,pixmap->func.pack,
-	       flags, fg);
+    qsort(sp, n, sizeof(poly_span_t), span_cmp);
+    cur = sp[0];
+    for (i = 1; i < n; i++) {
+	if (sp[i].x0 <= cur.x1+1) {
+	    if (sp[i].x1 > cur.x1)
+		cur.x1 = sp[i].x1;
+	}
+	else {
+	    epx_draw_line_horizontal(pixmap, cur.x0, cur.x1, y, flags, color);
+	    cur = sp[i];
+	}
+    }
+    epx_draw_line_horizontal(pixmap, cur.x0, cur.x1, y, flags, color);
 }
-
-/* scan all active edge:
-** a) horizontal edge (x0,y0) --- (x1,y0)
-**
-**                        (x0,y0)
-**                        / \				\
-** b) non monotonic edge /   \				\
-**                           (x1,y1)
-** c) normal edge (x0,y0)
-**                  \				\
-**                   \				\
-**                  (x1,y1)
-*/
-
-static inline void scan_edge(epx_pixmap_t* pixmap, epx_edge_t* ep,
-			     epx_pos_t* pt,
-			     int x_offs, int y_offs, int y,
-			     int* x_ptr, int* p_ptr,
-			     epx_flags_t fill_style, epx_pixel_t fill_color)
-			     
-{
-    if (ep->flags & EDGE_FLAG_HORIZONTAL) {
-	int x0 = pt[ep->v0].x;
-	int x1 = pt[ep->v1].x;
-	if (x1 < x0)
-	    epx_swap_int(x0,x1);
-	epx_draw_line_horizontal(pixmap,
-				 x0+x_offs,
-				 x1+x_offs,
-				 y+y_offs,
-				 fill_style, epx_pixel_white);
-	*p_ptr  = 0;
-	*x_ptr = x1;	    
-    }
-    else if ((ep->flags & EDGE_FLAG_DOWN) &&
-	     (y == pt[get_edge_orig_v0(ep)].y)) {
-	int x = pt[get_edge_orig_v0(ep)].x;
-	poly_point(pixmap,x+x_offs,y+y_offs,fill_style, epx_pixel_green);
-	*x_ptr = x;
-    }
-    else if ((ep->flags & EDGE_FLAG_UP) &&
-	     (y == pt[get_edge_orig_v1(ep)].y)) {
-	int x = pt[get_edge_orig_v1(ep)].x;
-	poly_point(pixmap,x+x_offs,y+y_offs, fill_style, epx_pixel_yellow);
-	*x_ptr = x;
-    }
-    else if (*p_ptr) {
-	int x0 = *x_ptr;
-	int x1 = ep->x;
-	epx_draw_line_horizontal(pixmap,
-				 x0+x_offs,
-				 x1+x_offs,
-				 y+y_offs,
-				 fill_style, fill_color); // epx_pixel_dimGray);
-	*p_ptr = 0;
-	*x_ptr = x1;
-    }
-    else {
-	*p_ptr = 1;
-	*x_ptr = ep->x;
-    }
-}
-
-			     
 
 // Scan line polynomial algorithm
 void epx_poly_draw(epx_poly_t* poly,
@@ -464,70 +327,105 @@ void epx_poly_draw(epx_poly_t* poly,
 		   int x_offs, int y_offs)
 {
     int ymin, ymax;
-    float fymin, fymax;
-    float fxmin, fxmax;
     
     if (gc == NULL)
 	gc = &epx_default_gc;
 
+    if (poly->nes == 0)
+	return;
+
     if ((pixmap->ctm != poly->last_ctm) ||
 	(pixmap->ctm->version != poly->last_vsn)) {
 	transform_edges(poly, pixmap->ctm);
-	sort_edges(poly->es, poly->nes);
 	poly->last_ctm = pixmap->ctm;
 	poly->last_vsn = pixmap->ctm->version;
     }
-    
-    fymin = poly->ymin;
-    fymax = poly->ymax;
-    fxmin = poly->xmin;
-    fxmax = poly->xmax;
-    
-    epx_t2d_transform_xy(pixmap->ctm, &fxmin, &fymin);
-    epx_t2d_transform_xy(pixmap->ctm, &fxmax, &fymax);
 
-    ymin = (int)roundf(fymin);
-    ymax = (int)roundf(fymax);
-
-    DEBUGF("draw ymin=%d, ymax=%d", ymin, ymax);
-    
-    if (gc->fill_style != EPX_FILL_STYLE_NONE) {
-	int esn = poly->nes;  // number of remaining edges in es
-	int asn = 0;          // number of active edges
-	epx_edge_t** as = poly->as;
-	epx_edge_t** es = poly->es;
-	epx_pos_t* pt = poly->pos_table;    	
-	int y;
-
-	for (y = ymin; y <= ymax; y++) {
-	    int i;
-	    int k;
-	    int p = 0;
-	    int x = 0;
-	    
-	    DEBUGF("render y=%d, asn=%d, esn=%d", y, asn, esn);
-	    k = activate_edges(y, es, esn, as, asn, pt);
-	    DEBUGF("  activate %d edges", k);
-	    asn += k;  // activated k edges in as
-	    es  += k;  // skip "removed" edges
-	    esn -= k;  // number of edges in es left
-
-	    DEBUGF("  draw asn=%d esn=%d", asn, esn);
-
-	    scan_edge(pixmap, as[0], pt, x_offs, y_offs, y,
-		      &x, &p, gc->fill_style, gc->fill_color);
-	    
-	    for (i = 1; i < asn; i++) {
-		scan_edge(pixmap, as[i], pt, x_offs, y_offs, y,
-			  &x, &p, gc->fill_style, gc->fill_color);
-	    }
-	    DEBUGF("  update asn=%d", asn);
-	    k = update_edges(y, as, asn, poly->pos_table);
-	    DEBUGF("remove %d edges after update", k);
-	    asn -= k;  // remove k edges from as
+    {
+	size_t i;
+	ymin = ymax = poly->pos_table[0].y;
+	for (i = 1; i < poly->nvs; i++) {
+	    if (poly->pos_table[i].y < ymin) ymin = poly->pos_table[i].y;
+	    if (poly->pos_table[i].y > ymax) ymax = poly->pos_table[i].y;
 	}
     }
-    else {
+    DEBUGF("draw ymin=%d, ymax=%d", ymin, ymax);
+
+    if (gc->fill_style != EPX_FILL_STYLE_NONE) {
+	// Even-odd scan line fill, the interior is sampled on integer
+	// scan lines using half open edges [ylo,yhi) and the edges them
+	// self are added to the spans so the boundary is always covered.
+	// Spans are merged so every pixel is drawn once (blending).
+	int n = (int) poly->nes;
+	epx_pos_t* pt = poly->pos_table;
+	float* xs;
+	poly_span_t* sp;
+	int y;
+
+	xs = (float*) malloc(n*sizeof(float));
+	sp = (poly_span_t*) malloc(2*n*sizeof(poly_span_t));
+	if ((xs == NULL) || (sp == NULL)) {
+	    free(xs);
+	    free(sp);
+	    return;
+	}
+	for (y = ymin; y <= ymax; y++) {
+	    int i;
+	    int nx = 0;
+	    int ns = 0;
+
+	    for (i = 0; i < n; i++) {
+		epx_edge_t* ep = &poly->edge_table[i];
+		epx_pos_t* p0 = &pt[ep->v0];
+		epx_pos_t* p1 = &pt[ep->v1];
+		int ylo = (p0->y < p1->y) ? p0->y : p1->y;
+		int yhi = (p0->y < p1->y) ? p1->y : p0->y;
+
+		if ((y < ylo) || (y > yhi))
+		    continue;
+		if (ylo == yhi) { // horizontal edge
+		    sp[ns].x0 = (p0->x < p1->x) ? p0->x : p1->x;
+		    sp[ns].x1 = (p0->x < p1->x) ? p1->x : p0->x;
+		    ns++;
+		}
+		else {
+		    float xa = edge_x(p0, p1, y-0.5f);
+		    float xb = edge_x(p0, p1, y+0.5f);
+		    if (xa > xb) { float t = xa; xa = xb; xb = t; }
+		    // pixels with center on the edge segment in this row,
+		    // at least the pixel nearest to the edge at y
+		    sp[ns].x0 = (int) ceilf(xa);
+		    sp[ns].x1 = (int) floorf(xb);
+		    if (sp[ns].x0 > sp[ns].x1)
+			sp[ns].x0 = sp[ns].x1 = (int) roundf(edge_x(p0,p1,y));
+		    ns++;
+		    if (y < yhi)
+			xs[nx++] = edge_x(p0, p1, y);
+		}
+	    }
+	    qsort(xs, nx, sizeof(float), float_cmp);
+	    for (i = 0; i+1 < nx; i += 2) {
+		int x0 = (int) ceilf(xs[i]);
+		int x1 = (int) floorf(xs[i+1]);
+		if (x0 <= x1) {
+		    sp[ns].x0 = x0;
+		    sp[ns].x1 = x1;
+		    ns++;
+		}
+	    }
+	    for (i = 0; i < ns; i++) {
+		sp[i].x0 += x_offs;
+		sp[i].x1 += x_offs;
+	    }
+	    fill_spans(pixmap, sp, ns, y+y_offs,
+		       gc->fill_style, gc->fill_color);
+	}
+	free(xs);
+	free(sp);
+    }
+    else if ((gc->line_style & (EPX_FLAG_SOLID|EPX_FLAG_BLEND|EPX_FLAG_SUM|
+				 EPX_FLAG_AALIAS|EPX_FLAG_TEXTURED|
+				 EPX_LINE_STYLE_DASHED)) != 0) {
 	int i;
 	epx_pos_t* pt = poly->pos_table;
 	// FIXME: do not draw pixel twise!

@@ -119,8 +119,8 @@
 	 active_font_color,
 	 fill   = none :: epx:epx_fill_style(),
 	 events  :: epx:epx_window_event_flags(),
-	 halign  = center :: top|bottom|center,  %% text alignment
-	 valign  = center :: left|right|center,  %% text alignment
+	 halign  = center :: left|right|center,  %% text alignment
+	 valign  = center :: top|bottom|center,  %% text alignment
 	 min     :: number(),          %% type=value|slider
 	 max     :: number(),          %% type=value|slider
 	 format = "~w" :: string(),    %% io_lib:format format

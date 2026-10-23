@@ -1808,6 +1808,13 @@ backend_adjust_(_Backend, _Dict) ->
 window_create(_X,_Y,_Width,_Height) ->
     ?nif_stub().
 
+%% Create a window with an event mask. Events in the mask are sent
+%% as {epx_event, Window, Event} to the process that attached the window.
+%% Note: `close' (the window manager close button, WM_DELETE_WINDOW)
+%% is ALWAYS sent, whatever the mask, so that an application can not
+%% end up with a window that can not be closed. The `close' flag is
+%% accepted for symmetry but has no effect. The window stays on the
+%% screen until the application detaches it or it is collected.
 -spec window_create(X::coord(), Y::coord(),
 		    Width::dim(),Height::dim(),
 		    Flags::epx_window_event_flags()) ->

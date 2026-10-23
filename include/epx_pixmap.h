@@ -22,6 +22,8 @@
 #ifndef __EPX_PIXMAP_H__
 #define __EPX_PIXMAP_H__
 
+#include <stddef.h>
+#include <stdint.h>
 #include "epx_geometry.h"
 #include "epx_object.h"
 #include "epx_pixel.h"
@@ -38,7 +40,7 @@ typedef struct _epx_filter_ {
 } epx_filter_t;
 
 #define EPX_PIXEL_ADDR(map,x,y) \
-    ((map)->data + (((y)*(int)(map)->bytes_per_row) + ((x)*(int)(map)->bytes_per_pixel)))
+    ((map)->data + (((ptrdiff_t)(y)*(ptrdiff_t)(map)->bytes_per_row) + ((ptrdiff_t)(x)*(ptrdiff_t)(map)->bytes_per_pixel)))
 
 // #define EPX_PIXMAP_ALIGNMENT  8  // MMX
 #define EPX_PIXMAP_ALIGNMENT  16    // SSE2

@@ -1633,6 +1633,7 @@ static int get_border_flag(ErlNifEnv* env, const ERL_NIF_TERM term,
     else if (term == ATOM(outside)) *flags = EPX_BORDER_LOCATION_OUTSIDE;
     else if (term == ATOM(inside))  *flags = EPX_BORDER_LOCATION_INSIDE;
     else if (term == ATOM(center))  *flags = EPX_BORDER_LOCATION_CENTER;
+    else if (term == ATOM(none))    *flags = EPX_FLAG_NONE;
     else return 0;
     return 1;
 }
@@ -1736,9 +1737,12 @@ static ERL_NIF_TERM make_flags(ErlNifEnv* env, epx_flags_t flags)
     if (flags & EPX_BORDER_STYLE_NRIGHT) fv[i++] = ATOM(nright);
     if (flags & EPX_BORDER_STYLE_NBOTTOM) fv[i++] = ATOM(nbottom);
     if (flags & EPX_BORDER_STYLE_NLEFT) fv[i++] = ATOM(nleft);
-    if (flags & EPX_BORDER_LOCATION_OUTSIDE) fv[i++] = ATOM(outside);
-    if (flags & EPX_BORDER_LOCATION_INSIDE) fv[i++] = ATOM(inside);
-    if (flags & EPX_BORDER_LOCATION_CENTER) fv[i++] = ATOM(center);
+    switch(flags & EPX_BORDER_LOCATION_MASK) {
+    case EPX_BORDER_LOCATION_OUTSIDE: fv[i++] = ATOM(outside); break;
+    case EPX_BORDER_LOCATION_INSIDE:  fv[i++] = ATOM(inside); break;
+    case EPX_BORDER_LOCATION_CENTER:  fv[i++] = ATOM(center); break;
+    default: break;
+    }
     return enif_make_list_from_array(env, fv, i);
 }
 
@@ -2957,7 +2961,7 @@ static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
 
     // special case !parent, x=0, y=0, w=0, h=0 => all pixels (with alignment)
     if (!src->parent && !x && !y && !w && !h)
-	bt = enif_make_resource_binary(env, src, src->data, src->sz);
+	bt = enif_make_resource_binary(env, src->res, src->data, src->sz);
     else {
 	epx_rect_t r  = {{x,y},{w,h}};
 	epx_rect_t sr = {{0,0},{src->width,src->height}};
@@ -3042,6 +3046,11 @@ static ERL_NIF_TERM pixmap_put_pixels(ErlNifEnv* env, int argc,
     if (!enif_inspect_iolist_as_binary(env, argv[6], &bin))
 	return enif_make_badarg(env);
     if (!get_flags(env, argv[7], &flags))
+	return enif_make_badarg(env);
+    // the format must be convertible and the data must cover w*h pixels
+    if (epx_pixel_unpack_func(fmt) == NULL)
+	return enif_make_badarg(env);
+    if (bin.size < (size_t)w*(size_t)h*EPX_PIXEL_BYTE_SIZE(fmt))
 	return enif_make_badarg(env);
 
     epx_pixmap_put_pixels(pixmap, x, y, w, h, fmt, flags,
@@ -4446,7 +4455,7 @@ static ERL_NIF_TERM poly_set(ErlNifEnv* env, int argc,
 	int arity;
 	float f;
 	list = tail;
-	if (enif_get_tuple(env, head, &arity, &pair) || (arity == 2))
+	if (enif_get_tuple(env, head, &arity, &pair) && (arity == 2))
 	    is_pair_list = 1;
 	else if (get_fsigned(env, head, &f)) {
 	    if (!enif_get_list_cell(env, list, &head, &tail))
@@ -6262,7 +6271,9 @@ static ERL_NIF_TERM sft_glyph_kerning(ErlNifEnv* env, int argc,
 			    enif_make_double(env, kerning.yShift));
 }
 
-// Fetch SFT_Transform FIXME! use same t2d for schrift and epx....
+// Fetch SFT_Transform from a #t2d{} record (or undefined = identity)
+// The SFT_Transform index layout (SFT_SX,SFT_RY,SFT_TX,SFT_RX,SFT_SY,SFT_TY)
+// is the same as the field order in #t2d { sx,ry,tx, rx,sy,ty }.
 static int get_t2d(ErlNifEnv* env, const ERL_NIF_TERM arg, SFT_Transform t)
 {
     const ERL_NIF_TERM* elem;
@@ -6271,10 +6282,10 @@ static int get_t2d(ErlNifEnv* env, const ERL_NIF_TERM arg, SFT_Transform t)
     if (arg == ATOM(undefined)) {
 	t[SFT_SX] = 1.0; t[SFT_RY] = 0.0; t[SFT_TX] = 0.0;
 	t[SFT_RX] = 0.0; t[SFT_SY] = 1.0; t[SFT_TY] = 0.0;
-	//          0.0              0.0              1.0 
+	//          0.0              0.0              1.0
     }
     else {
-	if (!enif_get_tuple(env, arg, &arity, &elem) || (arity != 7))		
+	if (!enif_get_tuple(env, arg, &arity, &elem) || (arity != 7))
 	    return 0;
 	if (elem[0] != ATOM(t2d))
 	    return 0;
@@ -6289,136 +6300,49 @@ static int get_t2d(ErlNifEnv* env, const ERL_NIF_TERM arg, SFT_Transform t)
 }
 
 //
-//     | Tsx Try Ttx | | x |   | Tsx*x+Try*y+Ttx |
-// D = | Trx Tsy Tty |*| y | = | Trx*x+Tsy*y+Tty |
-//     | 0   0   1   | | 1 |   | 1               |
+// The user transform form is applied (by sft_render) to the glyph image
+// coordinates, i.e. pixel coordinates (y downwards) relative to the top
+// left corner of the untransformed glyph box (minWidth x minHeight).
+// Compute the bounding box of the transformed glyph box and adjust the
+// translation part of form so that the transformed box starts at (0,0),
+// otherwise rotated/mirrored glyphs end up at negative coordinates and
+// get clipped away by the rasterizer. Return the size of the image.
 //
-static void transform_point(SFT_Transform t, float* xp, float* yp)
+static void sft_glyph_box(SFT_Transform form, const SFT_GMetrics* mtx,
+			  int* wp, int* hp)
 {
-    float x = *xp;
-    float y = *yp;
-    *xp = t[SFT_SX]*x + t[SFT_RY]*y + t[SFT_TX];
-    *yp = t[SFT_RX]*x + t[SFT_SY]*y + t[SFT_TY];
-}
-
-static void transform_points(SFT_Transform t, float* xp, float* yp, size_t n)
-{
-    while(n--) {
-	transform_point(t, xp, yp);
-	xp++;
-	yp++;
-    }
-}
-
-static void transform_box(SFT_Transform t, float* wp, float* hp)
-{
-    float w = *wp;
-    float h = *hp;
-    float min_x, max_x;
-    float min_y, max_y;
-    float xs[] = {0, w, w, 0};
-    float ys[] = {0, 0, h, h};
+    float w = (float) mtx->minWidth;
+    float h = (float) mtx->minHeight;
+    float xs[4] = {0, w, w, 0};
+    float ys[4] = {0, 0, h, h};
+    float min_x, max_x, min_y, max_y;
     int i;
-    
-    transform_points(t, xs, ys, 4);
+
+    for (i = 0; i < 4; i++) {
+	float x = xs[i], y = ys[i];
+	xs[i] = form[SFT_SX]*x + form[SFT_RY]*y + form[SFT_TX];
+	ys[i] = form[SFT_RX]*x + form[SFT_SY]*y + form[SFT_TY];
+    }
     min_x = max_x = xs[0];
     min_y = max_y = ys[0];
     for (i = 1; i < 4; i++) {
-	min_x = fminf(min_x, xs[i]);
-	max_x = fmaxf(max_x, xs[i]);
-	
-	min_y = fminf(min_y, ys[i]);
-	max_y = fmaxf(max_y, ys[i]);
+	min_x = fminf(min_x, xs[i]); max_x = fmaxf(max_x, xs[i]);
+	min_y = fminf(min_y, ys[i]); max_y = fmaxf(max_y, ys[i]);
     }
-    *wp = max_x - min_x;
-    *hp = max_y - min_y;
-}
-
-// dst could be any of s and t that maybe the same like compose(a, a, a)
-//
-//     | Tsx Try Ttx | | Ssx Sry Stx |   | Tsx*Ssx+Try*Srx Tsx*Sry+Try*Ssy Tsx*Stx+Try*Sty+Ttx |
-// D = | Trx Tsy Tty |*| Srx Ssy Sty | = | Trx*Ssx+Tsy*Srx Trx*Sry+Tsy*Ssy Trx*Stx+Tsy*Sty+Tty |
-//     | 0   0   1   | | 0   0   1   |   | 0   0   1                                           |
-//
-static void compose(SFT_Transform T, SFT_Transform S, SFT_Transform D)
-{
-    Float_t Tsx = T[SFT_SX];
-    Float_t Try = T[SFT_RY];
-    Float_t Trx = T[SFT_RX];
-    Float_t Tsy = T[SFT_SY];
-    
-    Float_t Ssx = S[SFT_SX];
-    Float_t Sry = S[SFT_RY];
-    Float_t Stx = S[SFT_TY];
-    Float_t Sty = S[SFT_TY];
-    D[SFT_SX] = Tsx*Ssx + Try*S[SFT_RX];
-    D[SFT_RY] = Tsx*Sry + Try*S[SFT_SY];
-    D[SFT_RX] = Trx*Ssx + Tsy*S[SFT_RX];
-    D[SFT_SY] = Trx*Sry + Tsy*S[SFT_SY];
-    D[SFT_TX] = Tsx*Stx + Try*Sty + T[SFT_TX];
-    D[SFT_TY] = Trx*Stx + Tsy*Sty + T[SFT_TY];
-}
-//
-//     | Tsx Try Ttx | | 1 0 Stx |   | Tsx Try Tsx*Stx+Try*Sty+Ttx |
-// D = | Trx Tsy Tty |*| 0 1 Sty | = | Trx Tsy Trx*Stx+Tsy*Sty+Tty |
-//     | 0   0   1   | | 0 0 1   |   | 0   0   1                   |
-//
-static void translate(SFT_Transform T, float Stx, float Sty, SFT_Transform D)
-{
-    D[SFT_TX] = T[SFT_TX] + T[SFT_SX]*Stx + T[SFT_RY]*Sty;
-    D[SFT_TY] = T[SFT_TY] + T[SFT_RX]*Stx + T[SFT_SY]*Sty;
-    D[SFT_SX] = T[SFT_SX];
-    D[SFT_RY] = T[SFT_RY];
-    D[SFT_SY] = T[SFT_SY];
-    D[SFT_RX] = T[SFT_RX];
-}    
-
-//
-//     | Tsx Try Ttx | | Ssx 0   0 |   | Tsx*Ssx Tsy*Ssy Ttx |
-// D = | Trx Tsy Tty |*| 0   Ssy 0 | = | Trx*Ssx Tsy*Ssy Tty |
-//     | 0   0   1   | | 0   0   1 |   | 0   0   1       |
-//
-static void scale(SFT_Transform T, float Ssx, float Ssy, SFT_Transform D)
-{
-    D[SFT_SX] = T[SFT_SX]*Ssx;
-    D[SFT_RY] = T[SFT_SY]*Ssy;
-    D[SFT_TX] = T[SFT_TX];    
-    D[SFT_RX] = T[SFT_RX]*Ssx;
-    D[SFT_SY] = T[SFT_SY]*Ssy;
-    D[SFT_TY] = T[SFT_TY];
-}    
-
-//
-// Rotate - Transform "matrix"
-//  | sx  ry  tx |   | c  -s   0 |     | sx*c+ry*s  -sx*s+ry*c tx |
-//  | rx  sy  ty | * | s   c   0 |  =  | rx*c+sy*s  -rx*s+sy*c ty |
-//  | 0   0   1  |   | 0   0   1 |     | 0          0          1  |
-//
-
-static void rotate(SFT_Transform T, float a, SFT_Transform D)
-{
-    float c = cosf(a);
-    float s = sinf(a);
-    float ax, ay;
-    
-    ax =  T[SFT_SX]*c + T[SFT_RY]*s;
-    ay = -T[SFT_SX]*s + T[SFT_RY]*c;
-
-    D[SFT_SX] = ax;
-    D[SFT_RY] = ay;
-    D[SFT_TX] = T[SFT_TX];
-    
-    ax = T[SFT_RX]*c + T[SFT_SY]*s;
-    ay = -T[SFT_RX]*s + T[SFT_SY]*c;
-
-    D[SFT_RX] = ax;
-    D[SFT_RY] = ay;
-    D[SFT_TY] = T[SFT_TY];
+    form[SFT_TX] -= min_x;
+    form[SFT_TY] -= min_y;
+    // small epsilon so that exact integer sizes are not rounded up
+    *wp = (int) ceilf(max_x - min_x - 1e-4f);
+    *hp = (int) ceilf(max_y - min_y - 1e-4f);
 }
 
 //
 // sft_glyph_render(Sft::epx_sft(), Glyph::integer(), Transform::t2d()) ->
 //         Pixmap::epx_pixmap().
+//  Render glyph into a new l8 (alpha) pixmap. With the identity transform
+//  the pixmap is minWidth x minHeight and should be placed at
+//  (PenX + leftSideBearing, BaseLine + yOffset).
+//
 static ERL_NIF_TERM sft_glyph_render(ErlNifEnv* env, int argc,
 				     const ERL_NIF_TERM argv[])
 {
@@ -6426,13 +6350,12 @@ static ERL_NIF_TERM sft_glyph_render(ErlNifEnv* env, int argc,
     epx_sft_t* sft;
     epx_nif_pixmap_t* pm;
     epx_pixmap_t* pixmap = NULL;
-    int w, h;
-    float width, height;
+    int w, h, y;
     unsigned int glyph;
     SFT_Transform form;
     SFT_Image img;
     ERL_NIF_TERM t;
-    SFT_GMetrics mtx;    
+    SFT_GMetrics mtx;
 
     if (!get_sft(env, argv[0], &sft))
 	return EXCP_ERROR_N(env, 0, "sft object expected");
@@ -6443,26 +6366,25 @@ static ERL_NIF_TERM sft_glyph_render(ErlNifEnv* env, int argc,
     if (!get_t2d(env, argv[2], form))
 	return EXCP_ERROR_N(env, 2, "transform expected");
 
-    width = (float) ( (mtx.minWidth + 3) & ~3 );
-    height = (float) mtx.minHeight;
-    enif_fprintf(stderr, "render: width=%f, heigt=%f\r\n", width, height);
-    transform_box(form, &width, &height);
-    // translate(form, width / 2, height / 2, form);
-    enif_fprintf(stderr, "render': width=%f, heigt=%f\r\n", width, height);
-    w = (int) roundf(width);
-    h = (int) roundf(height);
-    
+    sft_glyph_box(form, &mtx, &w, &h);
+    if (w <= 0) w = 1;  // glyph without outline (space etc)
+    if (h <= 0) h = 1;
+
     if ((pixmap = epx_pixmap_create(w, h, EPX_FORMAT_L8)) == NULL)
 	return enif_make_badarg(env);
+    for (y = 0; y < h; y++)
+	memset(EPX_PIXEL_ADDR(pixmap, 0, y), 0, w*pixmap->bytes_per_pixel);
     pm = enif_alloc_resource(pixmap_res, sizeof(epx_nif_pixmap_t));
     pm->pixmap = pixmap;
     pixmap->owner = (void*) enif_self(env, &pm->own);
     pixmap->res = pm;
 
     // draw the glyph into the pixmap
+    memset(&img, 0, sizeof(img));
     img.pixels = EPX_PIXEL_ADDR(pixmap, 0, 0);
     img.bytes_per_row = pixmap->bytes_per_row;
-    img.bytes_per_pixel = pixmap->bytes_per_pixel;    
+    img.bytes_per_pixel = pixmap->bytes_per_pixel;
+    img.pixel_format = pixmap->pixel_format;
     img.width  = w;
     img.height = h;
     img.xoffs = 0;
@@ -6470,6 +6392,7 @@ static ERL_NIF_TERM sft_glyph_render(ErlNifEnv* env, int argc,
     img.xlen  = w;
     img.ylen  = h;
     img.render = NULL;
+    img.render_arg = NULL;
     sft_render(&sft->sft, (SFT_Glyph) glyph, form, &img);
     t = make_pixmap(env, pixmap);
     enif_release_resource(pm);
@@ -6484,23 +6407,28 @@ static ERL_NIF_TERM sft_glyph_render(ErlNifEnv* env, int argc,
 // render pixel callback
 // probably faster to render into L8 buffer
 // then use accelartion on the L8 buffer onto pixmap!
-static void render_pixel(unsigned char* addr, int i, int j, uint8_t value,
+static void render_pixel(unsigned char* addr, int x, int y, uint8_t value,
 			 uint16_t fmt, void* arg)
 {
     epx_gc_t* gc = (epx_gc_t*) arg;
     epx_pixel_t color = gc->foreground_color;
     uint8_t fader_value = gc->fader_value;
     epx_pixel_unpack_t unpack;
-    epx_pixel_pack_t pack;    
+    epx_pixel_pack_t pack;
     epx_pixel_t s;
     epx_pixel_t d;
     uint8_t a;
     (void) d; (void) unpack;
-    (void) i; (void) j;
+    (void) x; (void) y;
 
-    s.a = value; // EPX_ALPHA_OPAQUE;
-    s.r = s.g = s.b = 0;
-    s = epx_pixel_add(color,s);		    
+#ifdef BLEND
+    if (value == 0)  // fully transparent, nothing to blend
+	return;
+#endif
+    // same color handling as epx_font_draw_glyph
+    s.px = 0;
+    s.a = value;
+    s = epx_pixel_add(color,s);
 #ifdef BLEND
     // BLEND glyph pixels and background
     unpack = epx_pixel_unpack_func(fmt);
@@ -6514,30 +6442,33 @@ static void render_pixel(unsigned char* addr, int i, int j, uint8_t value,
     a = ((s.a * fader_value) >> 8);
     s = epx_pixel_shadow(a, s);
     pack = epx_pixel_pack_func(fmt);
-    pack(s, addr);    
-#endif    
+    pack(s, addr);
+#endif
 }
 
 //
 // sft_glyph_render_to(Sft::epx_sft(), Gc::epx_gc(),
 //                     Glyph::integer(), Transform::t2d(),
 //                      X::number(), Y::number(), Pixmap::epx_pixmap()) -> ok.
+//  Blend the glyph, using gc foreground color and fader value, onto pixmap
+//  with the top left corner of the (transformed) glyph box at X,Y.
+//  For identity transform use X = PenX + leftSideBearing,
+//  Y = BaseLine + yOffset.
 //
 static ERL_NIF_TERM sft_glyph_render_to(ErlNifEnv* env, int argc,
 					const ERL_NIF_TERM argv[])
 {
     (void) argc;
-    epx_gc_t* gc;    
+    epx_gc_t* gc;
     epx_sft_t* sft;
     epx_pixmap_t* pixmap = NULL;
     int x, y, w, h;
-    float width, height;
     unsigned int glyph;
     SFT_Transform form;
     SFT_Image img;
     SFT_GMetrics mtx;
     epx_rect_t r;
-    
+
     if (!get_sft(env, argv[0], &sft))
 	return EXCP_ERROR_N(env, 0, "sft object expected");
     if (!get_gc(env, argv[1], &gc))
@@ -6553,33 +6484,26 @@ static ERL_NIF_TERM sft_glyph_render_to(ErlNifEnv* env, int argc,
     if (!get_pixmap(env, argv[6], &pixmap))
 	return EXCP_ERROR_N(env, 6, "pixmap expected");
 
-    width = (float) ( (mtx.minWidth + 3) & ~3 );
-    height = (float) mtx.minHeight;
-    enif_fprintf(stderr, "render_to: width=%f, heigt=%f\r\n", width, height);
-    transform_box(form, &width, &height);
-    enif_fprintf(stderr, "render_to': width=%f, heigt=%f\r\n", width, height);
-    w = (int) roundf(width);
-    h = (int) roundf(height);
+    sft_glyph_box(form, &mtx, &w, &h);
+    if ((w <= 0) || (h <= 0))
+	return ATOM(ok);  // nothing to draw (space etc)
 
     // check that we may have pixels to draw
-    // y should be at baseline?
     epx_rect_set(&r, x, y, w, h);
     if (!epx_rect_intersect(&r, &pixmap->clip, &r))
 	return ATOM(ok);  // empty! w=0 || h=0
 
+    memset(&img, 0, sizeof(img));
     img.pixels = EPX_PIXEL_ADDR(pixmap, r.xy.x, r.xy.y);
     img.bytes_per_row = pixmap->bytes_per_row;
     img.bytes_per_pixel = pixmap->bytes_per_pixel;
     img.pixel_format = pixmap->pixel_format;
     img.width  = w;  // glyph width
     img.height = h;  // glyph height
-    img.xoffs = (x < r.xy.x) ? (r.xy.x-x) : 0;
-    img.yoffs = (y < r.xy.y) ? (r.xy.y-y) : 0;
+    img.xoffs = r.xy.x - x;  // r is inside x,y,w,h so xoffs >= 0
+    img.yoffs = r.xy.y - y;
     img.xlen  = r.wh.width;
     img.ylen  = r.wh.height;
-    enif_fprintf(stderr, "render_to: xoffs=%u, yoffs=%u, xlen=%u, ylen=%u\r\n",
-		 img.xoffs, img.yoffs, img.xlen, img.ylen);
-
     img.render_arg = (void*) gc;
     img.render = render_pixel;
     // draw the glyph into the image
@@ -6914,9 +6838,7 @@ static void* backend_main(void* arg)
 	    DEBUGF("backend_main: EPX_MESSAGE_WINDOW_SWAP");
 	    DEBUGF("  window=%p, owner=%p", m.window, m.window->owner);
 	    if (m.window->owner != NULL)
-		epx_window_swap(m.window);	    
-	    DEBUGF("    unref: m.window %p", m.window);
-	    epx_window_swap(m.window);	    
+		epx_window_swap(m.window);
 	    break;
 
 	case EPX_MESSAGE_BACKEND_ADJUST:
@@ -6948,7 +6870,10 @@ static void* backend_main(void* arg)
 	    DEBUGF("backend_main: EPX_MESSAGE_PIXMAP_DRAW");
 	    DEBUGF("  window=%p, owner=%p", m.wdraw.window,
 		   m.wdraw.window->owner);
+	    // the window may have been detached (by an earlier message)
+	    // after the draw was sent, then window->backend is NULL
 	    if ((m.wdraw.window->owner != NULL) &&
+		(m.wdraw.window->backend == backend) &&
 		!epx_backend_draw_begin(backend, m.wdraw.window)) {
 		epx_backend_pixmap_draw(backend, m.wdraw.pixmap, m.wdraw.window,
 					m.wdraw.src_x, m.wdraw.src_y,
@@ -6969,7 +6894,8 @@ static void* backend_main(void* arg)
 
 	    pid = m.window->owner;
 	    if (pid != NULL) {
-		epx_backend_pixmap_sync(backend, NULL, m.window);	
+		if (m.window->backend == backend)
+		    epx_backend_pixmap_sync(backend, NULL, m.window);
 		msg = enif_make_tuple3(priv->env,
 				       ATOM(epx_event),
 				       make_window(priv->env, m.window),
@@ -7209,6 +7135,8 @@ static ERL_NIF_TERM window_create(ErlNifEnv* env, int argc,
     if (!get_coord(env, NULL, argv[0], argv[1], &x, &y))
 	return enif_make_badarg(env);
     if (!get_dim(env, NULL, argv[2], argv[3], &width, &height))
+	return enif_make_badarg(env);
+    if ((width == 0) || (height == 0))
 	return enif_make_badarg(env);
     if (argc == 5) {
 	if (!get_event_flags(env, argv[4], &events))

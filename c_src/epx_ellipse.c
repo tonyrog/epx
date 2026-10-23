@@ -19,6 +19,7 @@
  *
  */
 #include <math.h>
+#include <stdint.h>
 
 #include "../include/epx.h"
 
@@ -47,199 +48,136 @@ static inline void line_ellipse2(epx_pixmap_t* pixmap,
 }
 
 
-// General idea:
-// trace two ellipses and draw border from
-// outer to inner x and fill interior from inner x1, to inner x2
-//  x1   x2           x3  x4
-//   | B  |    FILL   | B |
-//   |      BORDER        |   (inner y is done)
+// Horizontal span of a rounded rectangle [x0,x1]x[y0,y1] with corner
+// radii rx,ry (corner centers at x0+rx,y0+ry etc) on row y.
+// Return 0 if the row is outside the shape.
+static int rrect_span(int x0, int x1, int y0, int y1,
+		      int64_t rx, int64_t ry, int y, int* l, int* r)
+{
+    int64_t cyt, cyb, dy, inset;
+
+    if ((y < y0) || (y > y1) || (x0 > x1))
+	return 0;
+    cyt = (int64_t)y0 + ry;
+    cyb = (int64_t)y1 - ry;
+    if (y < cyt)      dy = cyt - y;
+    else if (y > cyb) dy = y - cyb;
+    else              dy = 0;
+    if ((dy == 0) || (ry == 0))
+	inset = 0;
+    else {
+	double t = (double)dy / (double)ry;
+	double c = (t >= 1.0) ? 0.0 : (double)rx*sqrt(1.0 - t*t);
+	inset = rx - (int64_t) floor(c + 0.5);
+    }
+    if ((int64_t)x0 + inset > (int64_t)x1 - inset)
+	return 0;
+    *l = (int)(x0 + inset);
+    *r = (int)(x1 - inset);
+    return 1;
+}
+
 //
+// Draw a rounded rectangle ring, the outer shape is [x0,x1]x[y0,y1]
+// (inclusive) with corner radii rx,ry. The ring is bw pixels wide
+// drawn with bf/bc, the interior is filled with ff/fc unless ff is none.
+// An ellipse is the case where the corners meet. Each pixel is drawn
+// once (so blending works) and only rows within the clip are scanned.
+//
+void epx_draw_rrect_ring(epx_pixmap_t* pixmap,
+			 int x0, int y0, int x1, int y1,
+			 unsigned int rx, unsigned int ry,
+			 unsigned int bw, epx_flags_t bf, epx_pixel_t bc,
+			 epx_flags_t ff, epx_pixel_t fc)
+{
+    int do_fill = (ff != EPX_FILL_STYLE_NONE);
+    int64_t w = (int64_t)x1 - x0 + 1;
+    int64_t h = (int64_t)y1 - y0 + 1;
+    int64_t irx, iry;
+    int ix0, ix1, iy0, iy1;
+    int ytop, ybot, y;
+    int ym;
+
+    if ((w <= 0) || (h <= 0))
+	return;
+    // radii can not be more than half the size
+    if ((int64_t)rx > (w-1)/2) rx = (unsigned int)((w-1)/2);
+    if ((int64_t)ry > (h-1)/2) ry = (unsigned int)((h-1)/2);
+    // inner shape
+    if ((int64_t)bw*2 >= w || (int64_t)bw*2 >= h) {
+	ix0 = 1; ix1 = 0; iy0 = 1; iy1 = 0;  // empty
+    }
+    else {
+	ix0 = x0 + bw; ix1 = x1 - bw;
+	iy0 = y0 + bw; iy1 = y1 - bw;
+    }
+    irx = ((int64_t)rx > (int64_t)bw) ? (int64_t)rx - bw : 0;
+    iry = ((int64_t)ry > (int64_t)bw) ? (int64_t)ry - bw : 0;
+
+    ytop = (y0 > epx_rect_top(&pixmap->clip)) ? y0 :
+	epx_rect_top(&pixmap->clip);
+    ybot = (y1 < epx_rect_bottom(&pixmap->clip)) ? y1 :
+	epx_rect_bottom(&pixmap->clip);
+    ym = (int)(((int64_t)y0 + y1) / 2);
+
+    for (y = ytop; y <= ybot; y++) {
+	int oll, orr, il, ir;
+	int nl, nr;
+	int inner;
+
+	if (!rrect_span(x0, x1, y0, y1, rx, ry, y, &oll, &orr))
+	    continue;
+	inner = (bw == 0) ? (il = oll, ir = orr, 1) :
+	    rrect_span(ix0, ix1, iy0, iy1, irx, iry, y, &il, &ir);
+	// close gaps: use the inner span of the row nearer the edge
+	if (inner && (bw > 0)) {
+	    int yn = (y <= ym) ? y-1 : y+1;
+	    if (!rrect_span(ix0, ix1, iy0, iy1, irx, iry, yn, &nl, &nr))
+		inner = 0;
+	    else {
+		if (nl > il) il = nl;
+		if (nr < ir) ir = nr;
+		if (il > ir) inner = 0;
+	    }
+	}
+	if (inner) {
+	    if (il < oll) il = oll;
+	    if (ir > orr) ir = orr;
+	}
+	if (!inner) {
+	    if (bw > 0)
+		epx_draw_line_horizontal(pixmap, oll, orr, y, bf, bc);
+	}
+	else {
+	    if (il > oll)
+		epx_draw_line_horizontal(pixmap, oll, il-1, y, bf, bc);
+	    if (ir < orr)
+		epx_draw_line_horizontal(pixmap, ir+1, orr, y, bf, bc);
+	    if (do_fill)
+		epx_draw_line_horizontal(pixmap, il, ir, y, ff, fc);
+	}
+    }
+}
+
+// Ellipse with border, the ellipse is centered at (x+a, y+b)
+// where a=width/2, b=height/2 and covers x..x+2a, y..y+2b
+// ww and hh stretch the ellipse in to a rounded rectangle.
 void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,
 			     int x, int y,
 			     unsigned int width, unsigned int height,
 			     unsigned int ww, unsigned int hh)
 {
-    unsigned int bw   = gc->border_width;
     unsigned int a    = width >> 1;
     unsigned int b    = height >> 1;
-    int xc = x + a;
-    int yc = y + b;
-    epx_pixel_t bc     = gc->border_color;
-    epx_pixel_t fill   = gc->fill_color;
-    epx_flags_t ff     = gc->fill_style;
-    epx_flags_t bf     = gc->border_style;
-    int do_fill = (ff != EPX_FILL_STYLE_NONE);
-    unsigned int a0    = (a > bw) ? a-bw : 1;
-    unsigned int b0    = (b > bw) ? b-bw : 1;
-    // Inner circle
-    int xi  = a0;
-    int yi  = 0;
-    // FIXME: only allow a,b to be in 16 bit range to avoid overflow...
-    unsigned long a2_i = (a0)*(a0);
-    unsigned long b2_i = (b0)*(b0);
-    long pya_i = a2_i;
-    long pxb_i = (2*(a0)-1)*b2_i;
-    long f_i = 0;
-    long fx_i, fxy_i, fy_i;
-    int do_yi = 1;
-    // Outer circle
-    int xo  = a;
-    int yo  = 0;
-    unsigned long a2_o = (a)*(a);
-    unsigned long b2_o = (b)*(b);
-    long pya_o = a2_o;
-    long pxb_o = (2*(a)-1)*b2_o;
-    long f_o = 0;
-    long fx_o, fxy_o, fy_o;
-    int do_yo = 1;
 
     if ((a==0) || (b==0))
 	return;
-
-    while(xi >= 0) {
-	if ((xi == 0) && (yi == 0)) {
-	    if (do_fill) {
-		epx_pixmap_put_pixel(pixmap, xc, yc, bf, bc);
-	    }
-	    else
-		epx_pixmap_put_pixel(pixmap, xc, yc, bf, bc);
-	}
-	else if (xi == 0) {
-	    if (do_fill) {
-		epx_pixmap_put_pixel(pixmap,xc,yc+yi, bf, bc);
-		epx_pixmap_put_pixel(pixmap,xc,yc-yi, bf, bc);
-	    }
-	    else {
-		epx_pixmap_put_pixel(pixmap,xc,yc+yi, bf, bc);
-		epx_pixmap_put_pixel(pixmap,xc,yc-yi, bf, bc);
-	    }
-	}
-	else if (yi == 0) {
-	    if (bw >= 1) {
-		if (do_yi) {
-		    epx_draw_line_horizontal(pixmap,xc-xo,xc-xi,yc,bf,bc);
-		    epx_draw_line_horizontal(pixmap,ww+xc+xi,ww+xc+xo,yc,bf,bc);
-		}
-	    }
-	    else if (bw == 1) {
-		epx_pixmap_put_pixel(pixmap,xc-xo,yc,bf,bc);
-		epx_pixmap_put_pixel(pixmap,xc+xo,yc,bf,bc);
-	    }
-	    if (do_fill) {
-		if (do_yi) {
-		    epx_draw_line_horizontal(pixmap,xc-xi+1,xc+xi-1,yc,ff,fill);
-		}
-	    }
-	}
-	else {
-	    if (bw >= 1) {
-		if (do_yi) {
-		    // top left
-		    epx_draw_line_horizontal(pixmap,xc-xo,xc-xi,yc-yi,bf,bc);
-		    // bot left
-		    epx_draw_line_horizontal(pixmap,xc-xo,xc-xi,hh+yc+yi,bf,bc);
-		    // top right
-		    epx_draw_line_horizontal(pixmap,ww+xc+xi,ww+xc+xo,yc-yi,bf,bc);
-		    // bot right
-		    epx_draw_line_horizontal(pixmap,ww+xc+xi,ww+xc+xo,hh+yc+yi,bf,bc);		    
-		}
-	    }
-	    else if (bw == 1) {
-		plot_ellipse4(pixmap, xc, yc, xo, yi, bf, bc, ww, hh);
-	    }
-	    if (do_fill) {
-		if (do_yi) {
-		    line_ellipse2(pixmap, xc, yc, xi-1, yi, ff, fill, ww, hh);
-		}
-	    }
-	}
-
-	// Update Inner circle
-	fx_i  = f_i - pxb_i;
-	fxy_i = f_i - pxb_i + pya_i;
-	fy_i  = f_i + pya_i;
-
-	if (epx_abs_less(fx_i,fxy_i) && epx_abs_less(fx_i,fy_i)) {
-	    do_yi=0; xi--; f_i = fx_i;
-	    pxb_i -= (b2_i + b2_i);
-	}
-	else if (epx_abs_less(fxy_i,fy_i)) {
-	    do_yi=1; xi--; yi++; f_i=fxy_i;
-	    pya_i += (a2_i + a2_i); pxb_i -= (b2_i + b2_i);
-	}
-	else {
-	    do_yi=1; yi++; f_i=fy_i; pya_i += (a2_i + a2_i);
-	}
-
-	while (yo < yi) {
-	    // Update Outer circle
-	    fx_o  = f_o - pxb_o;
-	    fxy_o = f_o - pxb_o + pya_o;
-	    fy_o  = f_o + pya_o;
-
-	    if (epx_abs_less(fx_o,fxy_o) && epx_abs_less(fx_o,fy_o)) {
-		do_yo=0; xo--; f_o = fx_o;
-		pxb_o -= (b2_o + b2_o);
-	    }
-	    else if (epx_abs_less(fxy_o,fy_o)) {
-		do_yo=1; xo--; yo++; f_o=fxy_o;
-		pya_o += (a2_o + a2_o); pxb_o -= (b2_o + b2_o);
-	    }
-	    else {
-		do_yo=1; yo++; f_o=fy_o; pya_o += (a2_o + a2_o);
-	    }
-	}
-    }
-
-    /* Do remaining outer cirlce */
-    while(xo >= 0) {
-	// fprintf(stderr, "xo=%d, yo=%d, yi=%d\n", xo, yo, yi);
-	if ((xo == 0) && (yo == 0)) {
-	    epx_pixmap_put_pixel(pixmap, xc, yc, bf, bc);
-	}
-	else if (xo == 0) {
-	    epx_pixmap_put_pixel(pixmap,xc,yc+yo, bf, bc);
-	    epx_pixmap_put_pixel(pixmap,xc,yc-yo, bf, bc);
-	}
-	else if (yo == 0) {
-	    if (bw > 1) {
-		if (do_yo) {
-		    epx_draw_line_horizontal(pixmap,xc-xo,xc+xo,yc,bf,bc);
-		}
-	    }
-	    else if (bw == 1) {
-		epx_pixmap_put_pixel(pixmap,xc-xo,yc,bf,bc);
-		epx_pixmap_put_pixel(pixmap,xc+xo,yc,bf,bc);
-	    }
-	}
-	else {
-	    if (bw > 1) {
-		if (do_yo) {
-		    line_ellipse2(pixmap, xc, yc, xo, yo, bf, bc, ww, hh);
-		}
-	    }
-	    else if (bw == 1) {
-		plot_ellipse4(pixmap, xc, yc, xo, yo, bf, bc, ww, hh);
-	    }
-	}
-
-	// Update Outer circle
-	fx_o  = f_o - pxb_o;
-	fxy_o = f_o - pxb_o + pya_o;
-	fy_o  = f_o + pya_o;
-
-	if (epx_abs_less(fx_o,fxy_o) && epx_abs_less(fx_o,fy_o)) {
-	    do_yo=0; xo--; f_o = fx_o;
-	    pxb_o -= (b2_o + b2_o);
-	}
-	else if (epx_abs_less(fxy_o,fy_o)) {
-	    do_yo=1; xo--; yo++; f_o=fxy_o;
-	    pya_o += (a2_o + a2_o); pxb_o -= (b2_o + b2_o);
-	}
-	else {
-	    do_yo=1; yo++; f_o=fy_o; pya_o += (a2_o + a2_o);
-	}
-    }
+    epx_draw_rrect_ring(pixmap, x, y,
+			(int)((int64_t)x + 2*(int64_t)a + ww),
+			(int)((int64_t)y + 2*(int64_t)b + hh),
+			a, b, gc->border_width,
+			gc->border_style, gc->border_color,
+			gc->fill_style, gc->fill_color);
 }
 
 
@@ -268,14 +206,13 @@ void epx_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
     int do_y = 1;
     int do_fill;
     int do_aalias;
-    // FIXME: only allow a,b to be in 16 bit range to avoid overflow...
-    unsigned long a2 = a*a;
-    unsigned long b2 = b*b;
-    long pya = a2;
-    long pxb = (2*a-1)*b2;
-    long f = 0;
-    long fx, fxy, fy;
-    unsigned long ax, axy, ay;
+    int64_t a2 = (int64_t)a*a;
+    int64_t b2 = (int64_t)b*b;
+    int64_t pya = a2;
+    int64_t pxb = (2*(int64_t)a-1)*b2;
+    int64_t f = 0;
+    int64_t fx, fxy, fy;
+    int64_t ax, axy, ay;
     epx_flags_t ff = gc->fill_style;
     epx_pixel_t fc = gc->fill_color;
     epx_flags_t lf = gc->border_style;   // gc->line_style;
@@ -386,9 +323,9 @@ void epx_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
 	fx  = f - pxb;
 	fxy = f - pxb + pya;
 	fy  = f + pya;
-	ax  = labs(fx);
-	axy = labs(fxy);
-	ay  = labs(fy);
+	ax  = (fx < 0) ? -fx : fx;
+	axy = (fxy < 0) ? -fxy : fxy;
+	ay  = (fy < 0) ? -fy : fy;
 
 	if ((ax < axy) && (ax < ay)) {
 	    do_y=0; xo--; f = fx; pxb -= (b2 + b2);

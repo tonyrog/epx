@@ -799,7 +799,7 @@ load_callbacks_(UserMod, UserMap) ->
 	handle_info = load_callback_(UserMod, UserMap,handle_info, 2),
 	handle_continue = load_callback_(UserMod, UserMap, handle_continue, 2),
 	code_change = load_callback_(UserMod, UserMap, code_change, 3),
-	terminate = load_callback_(UserMod, UserMap, close, 2),
+	terminate = load_callback_(UserMod, UserMap, terminate, 2),
 	close = load_callback_(UserMod, UserMap, close, 1),
 	configure = load_callback_(UserMod, UserMap, configure, 2),
 	key_press = load_callback_(UserMod, UserMap, key_press, 2),
@@ -1941,7 +1941,7 @@ user_draw_area(Where, Pixels, Region, State=#state{user_cb=Cb}) ->
 			    io:format("draw4: ~p crash ~p\n~p\n", 
 				      [Where, Reason, Stack]),
 		    epx:pixmap_set_clip(Pixels, SaveClip),
-		    State#state.user_state
+		    State
 	    end
     end.
 
@@ -1978,6 +1978,8 @@ dirty_content_region_(Dirty, State, ViewRect) when is_list(Dirty) ->
 	    epx_rect:intersect(epx_rect:union(Dirty), ViewRect)
     end.
 
+dirty_window_area(all, _State) ->
+    all;
 dirty_window_area(Dirty, State) when tuple_size(Dirty) =:= 4 ->
     view_to_window_rect(Dirty, State);
 dirty_window_area(Dirty, State) when is_list(Dirty) ->

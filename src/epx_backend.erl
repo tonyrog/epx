@@ -55,8 +55,16 @@
 default() ->
     backend(default).
 
+%% raise {no_backend,ID} when the backend is missing (for example
+%% when no display could be opened) and epx_not_started when the
+%% epx application is not running
 backend(ID) ->
-    ets:lookup_element(?TABLE, ID, 2).
+    try ets:lookup(?TABLE, ID) of
+	[{_, Backend}] -> Backend;
+	[] -> erlang:error({no_backend, ID})
+    catch
+	error:badarg -> erlang:error(epx_not_started)
+    end.
 
 %% create a new backend - return backend {ok,ID}
 %% or {error,Reason} when bad arg
@@ -124,7 +132,9 @@ init(Args) ->
 	    {ok, #state { next_id = 2 }}
     catch
 	error:Error ->
-	    ?epx_info("backend_open no default backend, failed ~p", [Error]),
+	    ?epx_warning("backend_open ~s failed ~p, no default backend "
+			 "(window_attach/1 and pixmap_attach/1 will fail "
+			 "with {no_backend,default})", [BeName, Error]),
 	    {ok, #state {}}
     end.
 
@@ -266,20 +276,36 @@ assumed_backend() ->
 				    end
 			    end
 		    end;
-		{unix,linux} -> 
+		{unix,linux} ->
+		    %% x11 is preferred (also under Xwayland), wayland is
+		    %% used when there is no X11 display or when selected
+		    %% with EPX_BACKEND=wayland or application env
+		    %% {epx, [{backend, "wayland"}]}
 		    case os:getenv("DISPLAY") of
 			false ->
-			    case is_backend("fb") of
-				true -> "fb";
-				false -> "none"
+			    case os:getenv("WAYLAND_DISPLAY") of
+				false ->
+				    case is_backend("fb") of
+					true -> "fb";
+					false -> "none"
+				    end;
+				_ ->
+				    case is_backend("wayland") of
+					true -> "wayland";
+					false -> "none"
+				    end
 			    end;
 			_ ->
 			    case is_backend("x11") of
 				true ->
 				    %% fixme check if X11 is running
 				    "x11";
-				false -> 
-				    "none"
+				false ->
+				    case os:getenv("WAYLAND_DISPLAY") =/= false
+					andalso is_backend("wayland") of
+					true -> "wayland";
+					false -> "none"
+				    end
 			    end
 		    end;
 		{unix,_} -> 

@@ -369,14 +369,20 @@ static void compose(SFT_Transform T, SFT_Transform S, SFT_Transform D)
     
     Float_t Ssx = S[SFT_SX];
     Float_t Sry = S[SFT_RY];
-    Float_t Stx = S[SFT_TY];
+    Float_t Srx = S[SFT_RX];
+    Float_t Ssy = S[SFT_SY];
+    Float_t Stx = S[SFT_TX];
     Float_t Sty = S[SFT_TY];
-    D[SFT_SX] = Tsx*Ssx + Try*S[SFT_RX];
-    D[SFT_RY] = Tsx*Sry + Try*S[SFT_SY];
-    D[SFT_RX] = Trx*Ssx + Tsy*S[SFT_RX];
-    D[SFT_SY] = Trx*Sry + Tsy*S[SFT_SY];
-    D[SFT_TX] = Tsx*Stx + Try*Sty + T[SFT_TX];
-    D[SFT_TY] = Trx*Stx + Tsy*Sty + T[SFT_TY];
+    Float_t Ttx = T[SFT_TX];
+    Float_t Tty = T[SFT_TY];
+    /* D = T*S, i.e. apply S first then T. D may alias T and/or S
+     * so all inputs are read before anything is written. */
+    D[SFT_SX] = Tsx*Ssx + Try*Srx;
+    D[SFT_RY] = Tsx*Sry + Try*Ssy;
+    D[SFT_RX] = Trx*Ssx + Tsy*Srx;
+    D[SFT_SY] = Trx*Sry + Tsy*Ssy;
+    D[SFT_TX] = Tsx*Stx + Try*Sty + Ttx;
+    D[SFT_TY] = Trx*Stx + Tsy*Sty + Tty;
 }
 
 
@@ -1685,42 +1691,51 @@ draw_lines(Outline *outl, Raster buf)
     }
 }
 
-/* Integrate the values in the buffer to arrive at the final grayscale image. */
+/* Integrate the values in the buffer to arrive at the final grayscale image.
+ * Only the visible window [xoffs, xoffs+xlen) x [yoffs, yoffs+ylen) of
+ * the raster is written to imptr->pixels (which points at the first
+ * visible pixel). The coverage accumulator runs along each row, so the
+ * cover of clipped cells to the left of the window must still be added
+ * in, and the accumulator is restarted for every row (the cover of a
+ * full row always sums to zero, upstream relies on that and runs one
+ * accumulator over the whole raster).
+ */
 static void
 post_process(Raster buf, SFT_Image* imptr)
 {
     Cell cell;
-    Float_t accum = FloatConst(0.0), value;
-    unsigned int i;
-    unsigned int h;
+    Float_t accum, value;
+    unsigned int y, x;
     unsigned int bw = buf.width;
     unsigned char* dst0 = (unsigned char*) imptr->pixels;
     unsigned int stride = imptr->bytes_per_row;
     unsigned int pxsize = imptr->bytes_per_pixel;
     uint16_t pxfmt  = imptr->pixel_format;
-	
-    i = imptr->yoffs * bw;  // skip cliped rows
-    h = imptr->ylen;        // number of rows rendered
-    // note that imptr->pixels must point to the first pixel
-    // that is to be draw, taking into account clipping etc.
-    while(h--) {
-	unsigned int w = imptr->xlen;
+    unsigned int y1 = imptr->yoffs + imptr->ylen;
+    unsigned int x1 = imptr->xoffs + imptr->xlen;
+
+    if (y1 > (unsigned int) buf.height) y1 = buf.height;
+    if (x1 > bw) x1 = bw;
+
+    for (y = imptr->yoffs; y < y1; y++) {
+	const Cell* row = &buf.cells[y * bw];
 	unsigned char* dst = dst0;
-	int j = i + imptr->xoffs;   // skip clipped pixels
-	while(w--) {
-	    cell     = buf.cells[j++];
+	accum = FloatConst(0.0);
+	for (x = 0; x < imptr->xoffs; x++)  // skip clipped pixels
+	    accum += row[x].cover;
+	for (; x < x1; x++) {
+	    cell     = row[x];
 	    value    = FloatAbs(accum + cell.area);
 	    value    = MIN(value, FloatConst(1.0));
 	    value    = value * FloatConst(255.0) + FloatConst(0.5);
 	    if (imptr->render == NULL) // assume L8 format
 		*dst = (uint8_t) value;
-	    else {
-		imptr->render(dst,i,j,(uint8_t)value,pxfmt,imptr->render_arg);
-	    }
+	    else
+		imptr->render(dst,(int)x,(int)y,(uint8_t)value,pxfmt,
+			      imptr->render_arg);
 	    dst += pxsize;
 	    accum += cell.cover;
 	}
-	i += bw;
 	dst0 += stride;
     }
 }

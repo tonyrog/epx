@@ -18,6 +18,7 @@ WIN32     = No
 LINUX     = No
 X11       = No
 XCB       = No
+WAYLAND   = No
 FB        = No
 GLX       = No
 AGL       = No
@@ -57,6 +58,12 @@ ifeq ($(TARGET_SYS),)
 FB  = Yes
 X11 = Yes
 XCB = Yes
+# Wayland backend is built when wayland-client/wayland-cursor and
+# wayland-scanner are available (override with WAYLAND=No / WAYLAND=Yes)
+ifeq ($(origin WAYLAND), file)
+WAYLAND := $(shell pkg-config --exists wayland-client wayland-cursor && \
+		   which wayland-scanner >/dev/null 2>&1 && echo Yes || echo No)
+endif
 CFLAGS += -DHAVE_MTTR
 else
 FB  = Yes
@@ -75,6 +82,14 @@ GLX      = Yes
 LD_SHARED := $(CC) -bundle -flat_namespace -undefined suppress
 ARCH_FLAGS  += -arch i386 -arch x86_64 
 DLL_LIBS=
+endif
+
+# Windows: MSYS2 / MinGW-w64 (uname -s = MINGW64_NT-..., UCRT64_NT-...)
+# UNTESTED, see doc/WINDOWS.md
+ifneq (,$(findstring MINGW,$(OSNAME))$(findstring UCRT,$(OSNAME))$(findstring CLANG,$(OSNAME)))
+WIN32 = Yes
+LD_SHARED := $(CC) -shared
+DLL_LIBS =
 endif
 
 ifeq ($(WITH_X11), 1)
@@ -148,6 +163,15 @@ ifeq ($(GLX), Yes)
 	CFG_LDFLAGS += -lGL -lGLU
 endif
 
+ifeq ($(WAYLAND), Yes)
+	WAYLAND_SCANNER ?= wayland-scanner
+	DFLAGS += -DWAYLAND -I$(OBJDIR)
+	CFLAGS += $(shell pkg-config --cflags wayland-client wayland-cursor)
+	BE_OBJS += epx_backend_wl.o xdg-shell-protocol.o
+	BE_LD_FLAGS += $(shell pkg-config --libs wayland-client wayland-cursor)
+	CFG_LDFLAGS += $(shell pkg-config --libs wayland-client wayland-cursor)
+endif
+
 endif
 
 #
@@ -198,6 +222,8 @@ endif
 ifeq ($(WIN32),Yes)
 	DFLAGS += -DWIN32
 	BE_OBJS += epx_backend_win32.o
+	BE_LD_FLAGS += -lgdi32 -luser32
+	CFG_LDFLAGS += -lgdi32 -luser32
 endif
 
 ifeq ($(FB),Yes)
@@ -271,7 +297,11 @@ LIB_OBJS = \
 	epx.o
 
 EPX_LIB = $(LIBDIR)/epx.a
+ifeq ($(WIN32),Yes)
+EPX_NIF = $(LIBDIR)/epx_nif.dll
+else
 EPX_NIF = $(LIBDIR)/epx_nif.so
+endif
 
 EPX_LIB_OBJS  = $(LIB_OBJS:%=$(OBJDIR)/%)
 EPX_SIMD_OBJS = $(SIMD_OBJS:%=$(OBJDIR)/%)
@@ -313,6 +343,7 @@ epx-config: $(OBJDIR)/epx-config
 
 clean_target:
 	-rm -f $(EPX_LIB) $(OBJDIR)/*.o $(EPX_NIF)
+	-rm -f $(OBJDIR)/xdg-shell-client-protocol.h $(OBJDIR)/xdg-shell-protocol.c
 
 $(EPX_LIB): $(EPX_LIB_OBJS) $(EPX_SIMD_OBJS) $(EPX_BE_OBJS)
 	rm -f $@
@@ -333,5 +364,19 @@ $(OBJDIR)/epx-config: epx-config.src ../vsn.mk
 # we should probably generate dependcies dependent on (at least) debug flags!
 $(OBJDIR)/%.o:	%.c
 	$(CC) -c -o $@ -MMD -MF .$<.d $(CFLAGS) $(ARCH_FLAGS) $(DFLAGS) $<
+
+#
+# Wayland xdg-shell protocol code generated from xdg-shell.xml
+#
+$(OBJDIR)/xdg-shell-client-protocol.h: xdg-shell.xml
+	$(WAYLAND_SCANNER) client-header $< $@
+
+$(OBJDIR)/xdg-shell-protocol.c: xdg-shell.xml
+	$(WAYLAND_SCANNER) private-code $< $@
+
+$(OBJDIR)/xdg-shell-protocol.o: $(OBJDIR)/xdg-shell-protocol.c
+	$(CC) -c -o $@ $(CFLAGS) $(ARCH_FLAGS) $(DFLAGS) $<
+
+$(OBJDIR)/epx_backend_wl.o: $(OBJDIR)/xdg-shell-client-protocol.h
 
 -include .*.d

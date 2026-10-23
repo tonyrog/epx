@@ -135,8 +135,8 @@ struct SFT_Image
     unsigned int bytes_per_pixel;  // step size
     uint16_t pixel_format;
     void* render_arg;
-    // render pixel callback or NULL
-    void (*render)(unsigned char* pxaddr, int i, int j, uint8_t value,
+    // render pixel callback or NULL, x,y is the pixel position in glyph image
+    void (*render)(unsigned char* pxaddr, int x, int y, uint8_t value,
 		   uint16_t pxfmt, void* arg);
 };
 

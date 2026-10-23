@@ -19,6 +19,7 @@
 //
 #ifndef __EPX_GEOMETRY_H__
 #define __EPX_GEOMETRY_H__
+#include <limits.h>
 
 #ifdef debug
 #include <assert.h>
@@ -197,9 +198,18 @@ static inline int epx_rect_left(const epx_rect_t* r)
     return r->xy.x;
 }
 
+// right/bottom edge saturated to the int range (no wrap)
+static inline int epx_rect_edge_(int x, unsigned int w)
+{
+    long long e = (long long)x + (long long)w - 1;
+    if (e > INT_MAX) return INT_MAX;
+    if (e < INT_MIN) return INT_MIN;
+    return (int) e;
+}
+
 static inline int epx_rect_right(const epx_rect_t* r)
 {
-    return r->xy.x+r->wh.width-1;
+    return epx_rect_edge_(r->xy.x, r->wh.width);
 }
 
 static inline int epx_rect_top(const epx_rect_t* r)
@@ -209,7 +219,7 @@ static inline int epx_rect_top(const epx_rect_t* r)
 
 static inline int epx_rect_bottom(const epx_rect_t* r)
 {
-    return r->xy.y+r->wh.height-1;
+    return epx_rect_edge_(r->xy.y, r->wh.height);
 }
 
 static inline unsigned int epx_rect_width(const epx_rect_t* r)

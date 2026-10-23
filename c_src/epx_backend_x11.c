@@ -41,6 +41,8 @@ extern int epx_gl_load_texture(epx_pixmap_t* pic, GLuint* textureName,
 #endif
 
 
+#define X11_MAX_COORD 32767
+
 /* This structure is stored in epx_window_t opaque field */
 typedef struct {
     Window window;
@@ -622,6 +624,26 @@ static int x11_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
 
     if (w == NULL)
 	return -1;
+    // The X protocol holds dst_x,dst_y in 16 bit signed and width,height
+    // in 16 bit unsigned, no window is larger than 32767 so cut the
+    // area to [0,32767] to avoid wrap around.
+    if (dst_x < 0) {
+	if ((long)width <= -(long)dst_x) return 0;
+	src_x -= dst_x; width += dst_x; dst_x = 0;
+    }
+    if (dst_y < 0) {
+	if ((long)height <= -(long)dst_y) return 0;
+	src_y -= dst_y; height += dst_y; dst_y = 0;
+    }
+    if ((dst_x > X11_MAX_COORD) || (dst_y > X11_MAX_COORD))
+	return 0;
+    if ((long)dst_x + (long)width > X11_MAX_COORD+1)
+	width = X11_MAX_COORD+1 - dst_x;
+    if ((long)dst_y + (long)height > X11_MAX_COORD+1)
+	height = X11_MAX_COORD+1 - dst_y;
+    if ((width == 0) || (height == 0))
+	return 0;
+
     if (window->opengl) {
 #ifdef HAVE_OPENGL
 	// Fixme check for errors
@@ -645,9 +667,46 @@ static int x11_draw(epx_backend_t* backend, epx_pixmap_t* pixmap,
     }
     else {
 	Drawable d = (b->double_buffer && w->pm) ? w->pm : w->window;
-	XPutImage(b->display, d, 
-		  w->gc, ximg, src_x, src_y, dst_x, dst_y,
-		  width, height);
+	if ((pixmap->pixel_format == EPX_FORMAT_RGBA) ||
+	    (pixmap->pixel_format == EPX_FORMAT_ABGR)) {
+	    // Xlib only swaps bytes, it can not move the channels of
+	    // rgba/abgr into a 24 bit visual, convert the area to argb
+	    XImage timg = *ximg;
+	    unsigned int bpr;
+	    uint8_t* data;
+	    if ((src_x < 0) || (src_y < 0) ||
+		((unsigned int)src_x >= pixmap->width) ||
+		((unsigned int)src_y >= pixmap->height))
+		return 0;
+	    if (width > pixmap->width - src_x)
+		width = pixmap->width - src_x;
+	    if (height > pixmap->height - src_y)
+		height = pixmap->height - src_y;
+	    bpr = width*4;
+	    if ((data = malloc((size_t)bpr*height)) == NULL)
+		return -1;
+	    epx_copy_area(EPX_PIXEL_ADDR(pixmap, src_x, src_y),
+			  pixmap->bytes_per_row, pixmap->pixel_format,
+			  data, bpr, EPX_FORMAT_ARGB, width, height);
+	    timg.width = width;
+	    timg.height = height;
+	    timg.data = (char*) data;
+	    timg.bytes_per_line = bpr;
+	    timg.bits_per_pixel = 32;
+#if BYTE_ORDER == BIG_ENDIAN
+	    timg.byte_order  = LSBFirst;
+#else
+	    timg.byte_order  = MSBFirst;
+#endif
+	    XInitImage(&timg);
+	    XPutImage(b->display, d, w->gc, &timg, 0, 0, dst_x, dst_y,
+		      width, height);
+	    free(data);
+	}
+	else
+	    XPutImage(b->display, d, 
+		      w->gc, ximg, src_x, src_y, dst_x, dst_y,
+		      width, height);
     }
     return 0;
 }
@@ -696,6 +755,17 @@ static int x11_window_attach(epx_backend_t* backend, epx_window_t* window)
     unsigned long valuemask;
 
     if (window->opaque != NULL)
+	return -1;
+    // X11 can not create a window of size 0 and holds sizes and
+    // positions in 16 bit, a failed XCreateWindow would hang the wait
+    // for MapNotify below
+    if ((window->area.wh.width == 0) || (window->area.wh.height == 0) ||
+	(window->area.wh.width > X11_MAX_COORD) ||
+	(window->area.wh.height > X11_MAX_COORD) ||
+	(window->area.xy.x < -X11_MAX_COORD) ||
+	(window->area.xy.x > X11_MAX_COORD) ||
+	(window->area.xy.y < -X11_MAX_COORD) ||
+	(window->area.xy.y > X11_MAX_COORD))
 	return -1;
     if ((xwin = (X11Window*) malloc(sizeof(X11Window))) == NULL)
 	return -1;
