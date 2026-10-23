@@ -35,12 +35,20 @@ still returns ok, but window_attach/1 and pixmap_attach/1 raise
 Note that the window manager `close` event is always sent to the window
 owner, independent of the event mask given to window_create/5.
 
+# Documentation
+
+    doc/EPXW.md     epxw window behaviour: callbacks, client api, drawing
+    doc/EPXY.md     epxy widget api
+    doc/WINDOWS.md  notes for the win32 backend
+
 # Tests
 
     make
     erlc -o test test/*.erl
-    # regression tests (pixmap/draw defects, see epx_bugs.md)
+    # regression tests (pixmap/draw defects, see epx_bugs.md, png reader, epxy names)
     erl -pa ebin -pa test -noshell -eval 'eunit:test(epx_regression_tests,[verbose]),halt().'
+    # epxw window behaviour (redraw merging, partial update, client api)
+    erl -pa ebin -pa test -noshell -eval 'eunit:test(epxw_tests,[verbose]),halt().'
     # TrueType (libschrift) rendering: headless check, png and window
     erl -pa ebin -pa test -noshell -eval 'test_sft_text:check(),halt().'
     erl -pa ebin -pa test -noshell -eval 'test_sft_text:png("/tmp/sft.png"),halt().'

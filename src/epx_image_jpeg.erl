@@ -52,7 +52,7 @@
 
 -define(emit_record(T,R), emit_record(R, record_info(fields, T))).
 
--define(debug, true).
+%% -define(debug, true).
 -include("dbg.hrl").
 -ifdef(debug).
 -define(dbg_emit_record(T,R), emit_record(R, record_info(fields, T))).
@@ -385,8 +385,9 @@ read_mcu(JFd,[],[],MCU,Dcc) ->
     MCUt = make_mcu(lists:reverse(MCU)),
     {JFd,MCUt,lists:reverse(Dcc)}.
 
+%% MCUList is in component order [Y,Cb,Cr]
 make_mcu(MCUList) ->
-    case lists:reverse(MCUList) of
+    case MCUList of
 	[[Y1,Y2,Y3,Y4],[Cb],[Cr]] ->
 	    {{Y1,Y2,Y3,Y4},Cb,Cr};
 	[[Y1,Y2],[Cb],[Cr]] ->
@@ -561,9 +562,9 @@ append_rgb(Y,Cb,Cr,Pixels) ->
     Y1  = Y   + 128,
     Cr1 = Cr  + 128,
     Cb1 = Cb  + 128,
-    R = clamp_byte(round(?R(Y1,Cr1,Cb1))),
-    G = clamp_byte(round(?G(Y1,Cr1,Cb1))),
-    B = clamp_byte(round(?B(Y1,Cr1,Cb1))),
+    R = clamp_byte(round(?R(Y1,Cb1,Cr1))),
+    G = clamp_byte(round(?G(Y1,Cb1,Cr1))),
+    B = clamp_byte(round(?B(Y1,Cb1,Cr1))),
     <<Pixels/binary,R,G,B>>.
 
 clamp_byte(X) -> max(0,min(X,255)).

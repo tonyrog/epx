@@ -173,16 +173,16 @@ update_txt(IMG,Key,Value) ->
 
 
 %% determine the epx_image format
-bytes_per_row(l1,W) -> W div 8;
-bytes_per_row(l2,W) -> W div 4;
-bytes_per_row(l4,W) -> W div 2;
+bytes_per_row(l1,W) -> (W+7) div 8;
+bytes_per_row(l2,W) -> (W+3) div 4;
+bytes_per_row(l4,W) -> (W+1) div 2;
 bytes_per_row(l8,W) -> W;
 bytes_per_row(l16,W) -> W*2;
 bytes_per_row(r8g8b8,W) -> W*3;
 bytes_per_row(r16g16b16,W) -> W*6;
-bytes_per_row(palette1,W) -> W div 8;
-bytes_per_row(palette2,W) -> W div 4;
-bytes_per_row(palette4,W) -> W div 2;
+bytes_per_row(palette1,W) -> (W+7) div 8;
+bytes_per_row(palette2,W) -> (W+3) div 4;
+bytes_per_row(palette4,W) -> (W+1) div 2;
 bytes_per_row(palette8,W) -> W;
 bytes_per_row(l8a8,W) -> W*2;
 bytes_per_row(l16a16,W) -> W*4;
@@ -279,32 +279,120 @@ read(Fd, IMG) ->
     file:position(Fd, 8), %% skip magic
     Z = zlib:open(),
     zlib:inflateInit(Z),
-    Resp = read_image(Fd, [], undefined, Z),
+    Resp = read_image(Fd, [], {undefined,undefined}, Z),
     zlib:close(Z),
     case Resp of
-	{ok, Binary, Palette} ->
-	    {ok,Pixmap} = create_pixmap(IMG, Binary),
-	    {ok, IMG#epx_image { pixmaps = [Pixmap],
-				 palette = Palette }};
+	{ok, _Binary, _Palette} when
+	      element(2,hd(IMG#epx_image.attributes)) =/= 0,
+	      false ->
+	    {error, interlace_not_supported};
+	{ok, Binary, {Palette,Trns}} ->
+	    case attribute(IMG, 'Interlace', 0) of
+		0 ->
+		    {ok,Pixmap} = create_pixmap(IMG, Binary, Palette, Trns),
+		    {ok, IMG#epx_image { pixmaps = [Pixmap],
+					 palette = Palette }};
+		_ ->
+		    {error, interlace_not_supported}
+	    end;
 	Error -> Error
     end.
 
-create_pixmap(IMG, Bin) ->
-    Pix0 = epx:pixmap_create(IMG#epx_image.width,IMG#epx_image.height,
-			     IMG#epx_image.format),
-    Bpp = bpp(IMG#epx_image.format),
-    BytesPerRow = bytes_per_row(IMG#epx_image.format,IMG#epx_image.width),
-    raw_data(Bin,Pix0,0,Bpp,<<>>,IMG#epx_image.format,BytesPerRow).
+%% The pixmap is created in a format epx supports, rows in other png
+%% formats (palette, 16 bit and 1,2,4 bit gray) are converted.
+%% A palette with transparency (tRNS) is expanded to r8g8b8a8
+create_pixmap(IMG, Bin, Palette, Trns) ->
+    Width = IMG#epx_image.width,
+    PngFormat = IMG#epx_image.format,
+    PixFormat = case pixmap_format(PngFormat) of
+		    r8g8b8 when is_binary(Trns), Palette =/= undefined ->
+			r8g8b8a8;
+		    PixFormat0 -> PixFormat0
+		end,
+    Pix0 = epx:pixmap_create(Width,IMG#epx_image.height,PixFormat),
+    Bpp = bpp(PngFormat),
+    BytesPerRow = bytes_per_row(PngFormat,Width),
+    Convert = row_converter(PngFormat, Width, Palette, Trns),
+    raw_data(Bin,Pix0,0,Bpp,<<>>,PixFormat,Width,BytesPerRow,Convert).
 
-raw_data(Bin,Pix,Ri,Bpp,Row0,Format,Width) ->
+raw_data(Bin,Pix,Ri,Bpp,Row0,Format,Width,BytesPerRow,Convert) ->
     case Bin of
-	<<Filter:8,Row:Width/binary,Bin1/binary>> ->
+	<<Filter:8,Row:BytesPerRow/binary,Bin1/binary>> ->
 	    Row1 = filter(Filter,Bpp,Row,Row0), %% Filter method=0 assumed
-	    epx:pixmap_put_pixels(Pix,0,Ri,Width,1,Format,Row1),
-	    raw_data(Bin1,Pix,Ri+1,Bpp,Row1,Format,Width);
+	    epx:pixmap_put_pixels(Pix,0,Ri,Width,1,Format,Convert(Row1)),
+	    raw_data(Bin1,Pix,Ri+1,Bpp,Row1,Format,Width,BytesPerRow,Convert);
 	_ ->
 	    {ok, Pix}
     end.
+
+pixmap_format(l8) -> l8;
+pixmap_format(l8a8) -> l8a8;
+pixmap_format(r8g8b8) -> r8g8b8;
+pixmap_format(r8g8b8a8) -> r8g8b8a8;
+pixmap_format(l16a16) -> l8a8;
+pixmap_format(r16g16b16) -> r8g8b8;
+pixmap_format(r16g16b16a16) -> r8g8b8a8;
+pixmap_format(palette1) -> r8g8b8;
+pixmap_format(palette2) -> r8g8b8;
+pixmap_format(palette4) -> r8g8b8;
+pixmap_format(palette8) -> r8g8b8;
+pixmap_format(_) -> l8.  %% l1,l2,l4,l16
+
+row_converter(Format, Width, Palette, Trns) ->
+    case Format of
+	l8 -> fun(Row) -> Row end;
+	l8a8 -> fun(Row) -> Row end;
+	r8g8b8 -> fun(Row) -> Row end;
+	r8g8b8a8 -> fun(Row) -> Row end;
+	l16 -> fun high_bytes/1;
+	l16a16 -> fun high_bytes/1;
+	r16g16b16 -> fun high_bytes/1;
+	r16g16b16a16 -> fun high_bytes/1;
+	l1 -> fun(Row) -> gray_row(Row, 1, Width) end;
+	l2 -> fun(Row) -> gray_row(Row, 2, Width) end;
+	l4 -> fun(Row) -> gray_row(Row, 4, Width) end;
+	palette1 -> palette_row(1, Width, Palette, Trns);
+	palette2 -> palette_row(2, Width, Palette, Trns);
+	palette4 -> palette_row(4, Width, Palette, Trns);
+	palette8 -> palette_row(8, Width, Palette, Trns)
+    end.
+
+high_bytes(Row) ->
+    << <<H>> || <<H:8,_:8>> <= Row >>.
+
+gray_row(Row, Bits, Width) ->
+    Max = (1 bsl Bits) - 1,
+    << <<((V*255) div Max)>> || <<V:Bits>> <= first_bits(Row,Bits*Width) >>.
+
+palette_row(Bits, Width, Palette, Trns) ->
+    Colors = palette_colors(palette_list(Palette), Trns),
+    N = tuple_size(Colors),
+    Black = if is_binary(Trns) -> <<0,0,0,0>>; true -> <<0,0,0>> end,
+    fun(Row) ->
+	    << <<(palette_color(I, Colors, N, Black))/binary>> ||
+		<<I:Bits>> <= first_bits(Row, Bits*Width) >>
+    end.
+
+palette_list(undefined) -> [];
+palette_list(Palette) -> Palette.
+
+%% tRNS hold alpha for the first entries, the rest are opaque
+palette_colors(Palette, Trns) when is_binary(Trns) ->
+    Alpha = binary_to_list(Trns) ++ lists:duplicate(length(Palette), 255),
+    list_to_tuple([<<R,G,B,A>> ||
+		      {{R,G,B},A} <- lists:zip(Palette,
+					       lists:sublist(Alpha,
+							     length(Palette)))]);
+palette_colors(Palette, _) ->
+    list_to_tuple([<<R,G,B>> || {R,G,B} <- Palette]).
+
+palette_color(I, Colors, N, _Black) when I < N -> element(I+1, Colors);
+palette_color(_I, _Colors, _N, Black) -> Black.
+
+%% skip padding bits at end of row
+first_bits(Row, NBits) ->
+    <<Bits:NBits/bitstring, _/bitstring>> = Row,
+    Bits.
 
 filter(0,_,Row,_Prior) -> Row;
 filter(1, Bpp, Row, Prior) -> filter_sub(Row,Prior,Bpp);
@@ -519,7 +607,16 @@ read_image(Fd, Acc, Palette, Z) ->
 	{ok, Length, ?PLTE} ->
 	    case read_chunk_crc(Fd, Length) of
 		{ok, Chunk} ->
-		    read_image(Fd, Acc, plte(Chunk), Z);
+		    {_, Trns} = Palette,
+		    read_image(Fd, Acc, {plte(Chunk),Trns}, Z);
+		Error ->
+		    Error
+	    end;
+	{ok, Length, ?tRNS} ->
+	    case read_chunk_crc(Fd, Length) of
+		{ok, Chunk} ->
+		    {Plte, _} = Palette,
+		    read_image(Fd, Acc, {Plte,Chunk}, Z);
 		Error ->
 		    Error
 	    end;

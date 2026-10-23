@@ -249,11 +249,11 @@ stop() ->
 %%%===================================================================
 
 start(Options) ->
-    application:start(epx),
+    application:ensure_all_started(epx),
     gen_server:start({local, ?SERVER}, ?MODULE, Options, []).
 
 start_link(Options) ->
-    application:start(epx),
+    application:ensure_all_started(epx),
     gen_server:start_link({local, ?SERVER}, ?MODULE, Options, []).
 
 %%%===================================================================
@@ -368,9 +368,13 @@ handle_call({new,ID,Flags}, _From, State) ->
 		{ok,_W} ->
 		    {reply,{error,ealready},State}
 	    end;
-	{Root,ID1} ->
-	    case widget_find(Root) of
-		error ->
+	{?DEFAULT_WINDOW_ID,ID1} -> %% "screen.id" is the same as "id"
+	    handle_call({new,ID1,Flags}, _From, State);
+	{Root,_ID1} ->
+	    case {widget_find(ID),widget_find(Root)} of
+		{{ok,_},_} ->
+		    {reply,{error,ealready},State};
+		{_,error} ->
 		    case widget_create(ID,?DEFAULT_WINDOW_ID,Flags,State) of
 			{ok,_W} ->
 			    {reply, ok, State};
@@ -379,8 +383,10 @@ handle_call({new,ID,Flags}, _From, State) ->
 				     [ID, Reason]),
 			    {reply, Error, State}
 		    end;
-		{ok,Win} when Win#widget.type =:= window ->
-		    case widget_create(ID1,Win#widget.id,Flags,State) of
+		{_,{ok,Win}} when Win#widget.type =:= window ->
+		    %% the widget is stored under its full name "win.id"
+		    %% so set/get/delete find it with the same ID
+		    case widget_create(ID,Win#widget.id,Flags,State) of
 			{ok,_W} ->
 			    {reply, ok, State};
 			Error={error,Reason} ->
@@ -388,7 +394,7 @@ handle_call({new,ID,Flags}, _From, State) ->
 				     [ID, Reason]),
 			    {reply, Error, State}
 		    end;
-		{ok,_W} -> %% not under a window, must be under "screen"
+		{_,{ok,_W}} -> %% not under a window, must be under "screen"
 		    case widget_create(ID,?DEFAULT_WINDOW_ID,Flags,State) of
 			{ok,_W1} ->
 			    {reply, ok, State};
@@ -419,7 +425,7 @@ handle_call({delete,ID}, _From, State) ->
     end;
 handle_call({add_callback,Pid,ID,Signal,Cb}, _From, State) ->
     Ref = erlang:monitor(process, Pid),
-    Sub = #sub{id=ID,ref=Ref,signal=Signal,callback=Cb},
+    Sub = #sub{id=canonical_id(ID),ref=Ref,signal=Signal,callback=Cb},
     Subs = [Sub|State#state.subs],
     {reply, {ok,Ref}, State#state { subs=Subs}};
 handle_call({remove_callback,Ref}, _From, State) ->
@@ -431,7 +437,7 @@ handle_call({remove_callback,Ref}, _From, State) ->
 	    {reply, ok, State#state { subs=Subs} }
     end;
 handle_call(stop,_From,State) ->
-    {stop, normal, State};
+    {stop, normal, ok, State};
     
 handle_call(_Request, _From, State) ->
     ?dbg("unknown call ~p\n", [_Request]),
@@ -545,12 +551,7 @@ widget_create(ID,WID,Flags,State) ->
 		     _ ->
 			 W1#widget { window=WID }
 		 end,
-	    Y = if W2#widget.type =:= window ->
-			W2#widget.id;
-		   true ->
-			W2#widget.window++"."++W2#widget.id
-		end,
-	    tree_db:insert(State#state.wtree,{Y,W2#widget.id}),
+	    tree_db:insert(State#state.wtree,{tree_key(W2),W2#widget.id}),
 	    W3 = update_widget(W2),
 	    widget_store(W3),
 	    self() ! refresh,
@@ -560,6 +561,13 @@ widget_create(ID,WID,Flags,State) ->
 	    ?warning("widget ~p not created ~p\n", [ID, Reason]),
 	    {error,Reason}
     end.
+
+%% Key in the widget tree. Widgets below a window are named
+%% "win.id" and that full name is both the widget id and the tree key,
+%% widgets below the default window are named without "screen."
+tree_key(#widget{type=window,id=ID}) -> ID;
+tree_key(#widget{window=?DEFAULT_WINDOW_ID,id=ID}) -> ?DEFAULT_WINDOW_ID++"."++ID;
+tree_key(#widget{id=ID}) -> ID.
 
 widget_store(W) ->
     %% ?dbg("widget_store: ~p\n", [W]),
@@ -574,8 +582,12 @@ widget_fetch(ID) ->
 	W when is_record(W, widget) -> W
     end.
 
+%% "screen.id" names the same widget as "id"
+canonical_id(?DEFAULT_WINDOW_ID++"."++ID) when ID =/= [] -> ID;
+canonical_id(ID) -> ID.
+
 widget_find(ID) ->
-    case get(ID) of
+    case get(canonical_id(ID)) of
 	undefined ->
 	    error;
 	W when is_record(W, widget) -> 
@@ -1541,8 +1553,7 @@ widget_delete(W = #widget{id=Wid,type=Type}, State) ->
 	    Wset1 = sets:del_element(Wid,State#state.wset),
 	    State#state { wset=Wset1 };
        true ->
-	    tree_db:delete(State#state.wtree,
-			   W#widget.window++"."++Wid),
+	    tree_db:delete(State#state.wtree, tree_key(W)),
 	    State
     end.
 

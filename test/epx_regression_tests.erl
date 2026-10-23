@@ -6,6 +6,7 @@
 %%% may show up as a dead emulator rather than an eunit failure.
 -module(epx_regression_tests).
 -include_lib("eunit/include/eunit.hrl").
+-include("../include/epx_image.hrl").
 
 -define(RED,   {255,255,0,0}).
 -define(BLUE,  {255,0,0,255}).
@@ -246,3 +247,75 @@ style_none_test() ->
     epx:gc_set(Gc, line_style, []),
     ok = epx:pixmap_draw_line(P, Gc, 0, 0, 4, 3),
     [] = painted(P).
+
+%% png reader: rows were passed to put_pixels with bytes per row as
+%% width, palette, 16 bit and 1,2,4 bit gray formats were not converted
+png_formats_test() ->
+    Tmp = filename:join(os:getenv("TMPDIR", "/tmp"),
+			"epx_png_test_"++os:getpid()++".png"),
+    try
+	%% 3x2 2-bit gray, 2 bits padding at end of each row
+	ok = file:write_file(Tmp, png(3, 2, 2, 0, [], [<<2#00011011>>, <<2#11100100>>])),
+	{ok, G} = epx_image:load(Tmp),
+	[Pg] = G#epx_image.pixmaps,
+	[{255,0,0,0},{255,85,85,85},{255,170,170,170}] =
+	    [epx:pixmap_get_pixel(Pg, X, 0) || X <- [0,1,2]],
+	{255,255,255,255} = epx:pixmap_get_pixel(Pg, 0, 1),
+	%% 4x1 4-bit palette with transparency
+	Plte = <<255,0,0, 0,255,0, 0,0,255>>,
+	ok = file:write_file(Tmp, png(4, 1, 4, 3, [{"PLTE",Plte},{"tRNS",<<128>>}],
+				      [<<16#01, 16#2F>>])),
+	{ok, I} = epx_image:load(Tmp),
+	[Pi] = I#epx_image.pixmaps,
+	rgba = epx:pixmap_info(Pi, pixel_format),
+	[{128,255,0,0},{255,0,255,0},{255,0,0,255},{0,0,0,0}] =
+	    [epx:pixmap_get_pixel(Pi, X, 0) || X <- [0,1,2,3]],
+	%% 2x1 16-bit rgb
+	ok = file:write_file(Tmp, png(2, 1, 16, 2, [],
+				      [<<1,2,3,4,5,6, 255,255,0,0,128,0>>])),
+	{ok, R} = epx_image:load(Tmp),
+	[Pr] = R#epx_image.pixmaps,
+	[{255,1,3,5},{255,255,0,128}] =
+	    [epx:pixmap_get_pixel(Pr, X, 0) || X <- [0,1]]
+    after
+	file:delete(Tmp)
+    end.
+
+png(W, H, Depth, ColorType, Chunks, Rows) ->
+    Chunk = fun(T, D) ->
+		    TD = <<(list_to_binary(T))/binary, D/binary>>,
+		    <<(byte_size(D)):32, TD/binary, (erlang:crc32(TD)):32>>
+	    end,
+    Data = zlib:compress([[0,Row] || Row <- Rows]),
+    iolist_to_binary(
+      [<<137,$P,$N,$G,$\r,$\n,26,$\n>>,
+       Chunk("IHDR", <<W:32,H:32,Depth,ColorType,0,0,0>>),
+       [Chunk(T, D) || {T,D} <- Chunks],
+       Chunk("IDAT", Data),
+       Chunk("IEND", <<>>)]).
+
+%% epxy: a child of a window other than "screen" was stored under its
+%% short name so set/get/delete with "win.id" failed with enoent
+epxy_names_test_() ->
+    {setup,
+     fun() -> {ok,_} = epxy:start([]) end,
+     fun(_) -> epxy:stop() end,
+     fun() ->
+	     ok = epxy:new("w", [{type,window},{width,100},{height,50}]),
+	     ok = epxy:new("v", [{type,window},{width,100},{height,50}]),
+	     ok = epxy:new("w.btn", [{type,button},{x,1}]),
+	     ok = epxy:new("v.btn", [{type,button},{x,2}]),
+	     ok = epxy:new("btn", [{type,button},{x,3}]),
+	     {error,ealready} = epxy:new("w.btn", [{type,button}]),
+	     {error,ealready} = epxy:new("screen.btn", [{type,button}]),
+	     [{x,1}] = epxy:get("w.btn", [x]),
+	     [{x,2}] = epxy:get("v.btn", [x]),
+	     [{x,3}] = epxy:get("btn", [x]),
+	     [{x,3}] = epxy:get("screen.btn", [x]),
+	     ok = epxy:set("w.btn", [{x,4}]),
+	     [{x,4}] = epxy:get("w.btn", [x]),
+	     [{x,2}] = epxy:get("v.btn", [x]),
+	     ok = epxy:delete("w"),
+	     [] = epxy:get("w.btn", [x]),
+	     [{x,2}] = epxy:get("v.btn", [x])
+     end}.

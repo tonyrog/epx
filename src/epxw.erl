@@ -13,6 +13,8 @@
 %% API
 -export([start_link/3, start/3]).
 -export([start/1]).
+%% api callable from client processes
+-export([call/2, call/3, cast/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -225,6 +227,7 @@
 	 selection_border_color = grey10,
 	 max_dirty              = 10,    %% max number of rectangles in region
 	 dirty_list             = false, %% call draw with [rect]/rect
+	 partial_update         = true,  %% only send dirty area to window
 
 	 top_bar                = 0,
 	 left_bar               = 0,
@@ -349,6 +352,7 @@
 	 width  :: integer(),      %% window width
 	 height :: integer(),      %% window height
 	 dirty  :: all | [epx:epx_rect()],  %% [] clean!
+	 redraw = false :: boolean(), %% redraw message is pending
 	 status = "" :: string(),  %% bottom status text
 	 profile :: #profile{},
 	 menu_profile :: #menu_profile{},
@@ -413,7 +417,31 @@ export_state(State) ->
     put(?STATE_KEY, State).
 
 state() ->
-    get(?STATE_KEY).
+    case get(?STATE_KEY) of
+	undefined -> erlang:error(not_in_epxw_callback);
+	State -> State
+    end.
+
+%%%===================================================================
+%%% CLIENT API (from other processes)
+%%%===================================================================
+
+%% Run Fun(UserState) -> {Reply, NewUserState} inside the epxw process,
+%% the callback API (invalidate, set_view_rect ...) may be used in Fun.
+-spec call(Win::pid()|atom(),
+	   Fun::fun((UserState::term()) -> {Reply::term(), NewState::term()})) ->
+	  Reply::term().
+call(Win, Fun) when is_function(Fun, 1) ->
+    gen_server:call(Win, {?MODULE, call, Fun}).
+
+call(Win, Fun, Timeout) when is_function(Fun, 1) ->
+    gen_server:call(Win, {?MODULE, call, Fun}, Timeout).
+
+%% Run Fun(UserState) -> NewUserState inside the epxw process
+-spec cast(Win::pid()|atom(),
+	   Fun::fun((UserState::term()) -> NewState::term())) -> ok.
+cast(Win, Fun) when is_function(Fun, 1) ->
+    gen_server:cast(Win, {?MODULE, cast, Fun}).
 
 %% CALLBACK API
 window() -> (state())#state.window.
@@ -769,7 +797,7 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 init_res(UserState, InitType, Rect, State) ->
     State1 = State#state { user_state = UserState},
     State2 = user_event(Rect,?CALLBACK(State1,configure),State1),
-    State3 = draw_(State2, Rect),
+    State3 = draw_(State2, all),
     if InitType =:= ok ->
 	    {ok, State3};
        true->
@@ -852,6 +880,16 @@ load_callback_(UserMod, UserMap, Func, Arity) ->
 			 {noreply, NewState :: term(), hibernate} |
 			 {stop, Reason :: term(), Reply :: term(), NewState :: term()} |
 			 {stop, Reason :: term(), NewState :: term()}.
+handle_call({?MODULE, call, Fun}, _From, State) ->
+    export_state(State),
+    try Fun(State#state.user_state) of
+	{Reply, UState} ->
+	    {reply, Reply, dstate(UState, sync)}
+    catch
+	error:Reason:Stack ->
+	    io:format("epxw:call crash ~p\n~p\n", [Reason, Stack]),
+	    {reply, {error, Reason}, State}
+    end;
 handle_call(Request, From, State) ->
     case ?CALLBACK(State, handle_call) of
 	undefined ->
@@ -860,7 +898,7 @@ handle_call(Request, From, State) ->
 	    export_state(State),
 	    try HandleCall(Request, From, State#state.user_state) of
 		Reply ->
-		    reply(Reply)
+		    reply(Reply, sync)
 	    catch
 		error:Reason:Stack ->
 		    io:format("handle_call: ~p\ncrash ~p\n~p\n", 
@@ -880,6 +918,16 @@ handle_call(Request, From, State) ->
 			 {noreply, NewState :: term(), Timeout :: timeout()} |
 			 {noreply, NewState :: term(), hibernate} |
 			 {stop, Reason :: term(), NewState :: term()}.
+handle_cast({?MODULE, cast, Fun}, State) ->
+    export_state(State),
+    try Fun(State#state.user_state) of
+	UState ->
+	    {noreply, dstate(UState, async)}
+    catch
+	error:Reason:Stack ->
+	    io:format("epxw:cast crash ~p\n~p\n", [Reason, Stack]),
+	    {noreply, State}
+    end;
 handle_cast(Request, State) ->
     case ?CALLBACK(State, handle_cast) of
 	undefined ->
@@ -888,7 +936,7 @@ handle_cast(Request, State) ->
 	    export_state(State),
 	    try HandleCast(Request, State#state.user_state) of
 		Reply ->
-		    reply(Reply)
+		    reply(Reply, async)
 	    catch
 		error:Reason:Stack ->
 		    io:format("handle_cast: ~p\ncrash ~p\n~p\n", 
@@ -913,11 +961,7 @@ handle_info(Info=#epx_event{win=Win,data=Event}, State) when
       Win =:= State#state.window ->
     try epx_event(Event, State) of
 	{noreply, State1} ->
-	    if State1#state.dirty =:= [] ->
-		    {noreply,State1};
-	       true ->
-		    {noreply,draw_(State1)}
-	    end;
+	    {noreply, redraw(State1, async)};
 	Reply ->
 	    Reply
     catch
@@ -925,6 +969,13 @@ handle_info(Info=#epx_event{win=Win,data=Event}, State) when
 	    io:format("handle_info: ~p\ncrash ~p\n~p\n", 
 		      [Info, Reason, Stack]),
 	    {stop, Reason, State}	
+    end;
+handle_info({?MODULE, redraw}, State) ->
+    State1 = State#state { redraw = false },
+    if State1#state.dirty =:= [] ->
+	    {noreply, State1};
+       true ->
+	    {noreply, draw_(State1)}
     end;
 handle_info(Info, State) ->
     case ?CALLBACK(State, handle_info) of
@@ -935,7 +986,7 @@ handle_info(Info, State) ->
 	    export_state(State),
 	    try HandleInfo(Info, State#state.user_state) of
 		Reply ->
-		    reply(Reply)
+		    reply(Reply, async)
 	    catch
 		error:Reason:Stack ->
 		    io:format("handle_info: ~p\ncrash ~p\n~p\n", 
@@ -944,30 +995,42 @@ handle_info(Info, State) ->
 	    end
     end.
 
-reply({reply,Reply,UState}) ->
-    State = dstate(UState),
+%% handle_call replies are drawn before the reply is sent (sync),
+%% other callbacks schedule a redraw message (async) so that a burst
+%% of events and messages result in one redraw
+reply({reply,Reply,UState}, Mode) ->
+    State = dstate(UState, Mode),
     {reply, Reply, State};
-reply({reply,Reply,UState,Arg}) ->
-    State = dstate(UState),
+reply({reply,Reply,UState,Arg}, Mode) ->
+    State = dstate(UState, Mode),
     {reply, Reply, State, Arg};
-reply({noreply,UState}) ->
-    State = dstate(UState),
+reply({noreply,UState}, Mode) ->
+    State = dstate(UState, Mode),
     {noreply, State};
-reply({noreply,UState,Arg}) ->
-    State = dstate(UState),
+reply({noreply,UState,Arg}, Mode) ->
+    State = dstate(UState, Mode),
     {noreply, State,Arg};
-reply({stop, Reason, UState}) ->
-    State = dstate(UState),
-    {stop, Reason, State}.
+reply({stop, Reason, Reply, UState}, _Mode) ->
+    State = state(),
+    {stop, Reason, Reply, State#state { user_state = UState }};
+reply({stop, Reason, UState}, _Mode) ->
+    State = state(),
+    {stop, Reason, State#state { user_state = UState }}.
 
 %% redraw state if dirty
-dstate(UState) ->
+dstate(UState, Mode) ->
     State = state(),
-    if State#state.dirty =:= [] ->
-	    State#state { user_state = UState };
-       true ->
-	    draw_(State#state { user_state = UState })
-    end.
+    redraw(State#state { user_state = UState }, Mode).
+
+redraw(State, _Mode) when State#state.dirty =:= [] ->
+    State;
+redraw(State, sync) ->
+    draw_(State);
+redraw(State, async) when State#state.redraw ->
+    State;
+redraw(State, async) ->
+    self() ! {?MODULE, redraw},
+    State#state { redraw = true }.
 
 
 -spec handle_continue(Info :: term(), State :: term()) ->
@@ -984,7 +1047,7 @@ handle_continue(Info, State) ->
 	    export_state(State),
 	    try HandleContinue(Info, State#state.user_state) of
 		Reply ->
-		    reply(Reply)
+		    reply(Reply, async)
 	    catch
 		error:Reason:Stack ->
 		    io:format("handle_continue: ~p\ncrash ~p\n~p\n", 
@@ -1781,7 +1844,7 @@ view_to_window_y(Y,
 		 State = 
 		     #state { scale = {_Sx,Sy},
 			      content= 
-				  #window_content{view_xpos=Ty}}) ->
+				  #window_content{view_ypos=Ty}}) ->
     {_Cx,Cy} = drawing_origin(State),
     ?VIEW_TO_WINDOW_Y(Y,Ty,Sy,Cy).
 
@@ -1841,7 +1904,11 @@ draw__(State = #state { profile = Profile }, Dirty) ->
 
     fill_pixels(Pixels,Dirty,ScreenColor),
 
+    %% clip content drawing to the dirty area (window coordinates)
+    SaveClip = epx:pixmap_info(Pixels, clip),
+    epx:pixmap_set_clip(Pixels, content_clip(Dirty, State)),
     {Dirty1, State1} = draw_content_(Pixels,Dirty,State),
+    epx:pixmap_set_clip(Pixels, SaveClip),
     epx:pixmap_ltm_reset(Pixels),
     epx_gc:set_border_width(0), %% FIXME: use special gc for user content
     State2 = draw_vscroll(Pixels,VBar,HBar,State1),
@@ -1851,7 +1918,7 @@ draw__(State = #state { profile = Profile }, Dirty) ->
     State6 = draw_right_bar(Pixels,State5),
     State7 = draw_bottom_bar(Pixels,State6),
     State8 = draw_menu(Pixels,State7),
-    update_window(State8, Dirty1).
+    update_window(State8, Dirty, Dirty1).
 
 draw_menu(Pixels, State) ->
     if State#state.operation =:= menu, State#state.pt1 =/= undefined ->
@@ -1977,14 +2044,6 @@ dirty_content_region_(Dirty, State, ViewRect) when is_list(Dirty) ->
        true ->
 	    epx_rect:intersect(epx_rect:union(Dirty), ViewRect)
     end.
-
-dirty_window_area(all, _State) ->
-    all;
-dirty_window_area(Dirty, State) when tuple_size(Dirty) =:= 4 ->
-    view_to_window_rect(Dirty, State);
-dirty_window_area(Dirty, State) when is_list(Dirty) ->
-    [view_to_window_rect(R, State) || R <- Dirty].
-    
 
 %% intersect (and remove empty) rectangles with Rect
 intersect_region([R|Rs], Rect) ->
@@ -2119,23 +2178,84 @@ draw(Draw) when is_function(Draw) ->
 %% Area maybe a window rect (ltm = unit) or a dirty region in 
 %% window coordinates.
 draw_window(Pixels, State, Area) ->
-    copy_pixels(Pixels, Area, State#state.screen),
-    Area1 = dirty_window_area(Area, State),
+    Area1 = case content_window_area(Area, State) of
+		[] -> [drawing_rect(State)]; %% nothing invalidated
+		A -> A
+	    end,
+    copy_pixels(Pixels, Area1, State#state.screen),
     draw_pixels(State#state.screen,Area1,State#state.window,
 		State#state.width,State#state.height).
 
-update_window(State, Dirty) ->
+%% Dirty0 is the dirty area before drawing (all or view rectangles)
+%% Dirty is in view coordinates and intersected with the visible area.
+update_window(State, Dirty0, Dirty) ->
     ?verbose("UPDATE Dirty = ~w\n", [Dirty]),
-    copy_pixels(pixels(State),Dirty,State#state.screen),
-    %% At this point Dirty MUST be in view coordinates and intersected
-    %% with visible area. Not convert into window coordinates
-    _Dirty1 = dirty_window_area(Dirty, State),
-    ?verbose("UPDATE WINDOW Dirty = ~w\n", [_Dirty1]),
-    Dirty2 = all,  %% FIXME!
-    draw_pixels(State#state.screen,Dirty2,State#state.window,
+    Area = update_area(Dirty0, Dirty, State),
+    ?verbose("UPDATE WINDOW Area = ~w\n", [Area]),
+    copy_pixels(pixels(State),Area,State#state.screen),
+    draw_pixels(State#state.screen,Area,State#state.window,
 		State#state.width,State#state.height),
     epx:sync(State#state.screen,State#state.window),
     State#state { dirty = [] }.
+
+%% Window area to send to the window. The content part is the dirty
+%% region in window coordinates, the bars, scrollbars and status
+%% (that are always redrawn) are added as four strips around the
+%% drawing area.
+update_area(all, _Dirty, _State) ->
+    all;
+update_area(_Dirty0, Dirty, State) ->
+    case (State#state.profile)#profile.partial_update of
+	false -> all;
+	true ->
+	    {Cx,Cy,Cw,Ch} = drawing_rect(State),
+	    W = State#state.width,
+	    H = State#state.height,
+	    Strips = [{0,0,W,Cy},                       %% top
+		      {0,Cy+Ch,W,H-(Cy+Ch)},             %% bottom
+		      {0,Cy,Cx,Ch},                      %% left
+		      {Cx+Cw,Cy,W-(Cx+Cw),Ch}],          %% right
+	    content_window_area(Dirty, State) ++
+		[R || R={_,_,Rw,Rh} <- Strips, Rw > 0, Rh > 0]
+    end.
+
+content_clip(Dirty, State) ->
+    case (State#state.profile)#profile.partial_update of
+	true when Dirty =/= all ->
+	    case content_window_area(dirty_content_region(Dirty, State),
+				     State) of
+		[] -> {0,0,0,0};
+		Rs -> epx_rect:union(Rs)
+	    end;
+	_ ->
+	    drawing_rect(State)
+    end.
+
+%% drawing area (content without bars and scrollbars) in window coordinates
+drawing_rect(State) ->
+    ScrollBars = {HBar,VBar} = scrollbars(State),
+    {Cx,Cy} = drawing_origin_(State,ScrollBars),
+    {Cx,Cy,max(0,drawing_width_(VBar,State)),max(0,drawing_height_(HBar,State))}.
+
+%% dirty view region to a list of integer window rectangles
+content_window_area(all, _State) ->
+    all;
+content_window_area(Dirty, State) ->
+    Drawing = drawing_rect(State),
+    [R || R={_,_,Rw,Rh} <- [window_int_rect(R, Drawing, State) ||
+			       R <- region_list(Dirty)],
+	  Rw > 0, Rh > 0].
+
+region_list(R) when tuple_size(R) =:= 4 -> [R];
+region_list(undefined) -> [];
+region_list(Rs) when is_list(Rs) -> Rs.
+
+%% view rect to integer window rect (rounded outwards) inside Drawing
+window_int_rect(R, Drawing, State) ->
+    {X,Y,W,H} = view_to_window_rect(R, State),
+    X0 = floor(X), Y0 = floor(Y),
+    X1 = ceil(X+W), Y1 = ceil(Y+H),
+    epx_rect:intersect({X0,Y0,X1-X0,Y1-Y0}, Drawing).
 
 copy_pixels(undefined, _Rect, _Screen) -> %% no off-screen
     ok;
@@ -2144,7 +2264,7 @@ copy_pixels(Screen, _Rect, Screen) -> %% no off-screen
 copy_pixels(_Pixels, [], _Screen) -> %% nothing
     ok;
 copy_pixels(Pixels, all, Screen) -> %% everything
-    epx:epx_copy_to(Pixels, Screen);
+    epx:pixmap_copy_to(Pixels, Screen);
 copy_pixels(Pixels, {X,Y,W,H}, Screen) ->
     epx:pixmap_copy_area(Pixels,Screen,X,Y,X,Y,W,H);
 copy_pixels(Pixels, Rs, Screen) when is_list(Rs) ->
@@ -2586,6 +2706,7 @@ load_profile(E) ->
 
        max_dirty = ?ld(max_dirty, E, D),
        dirty_list = ?ld(dirty_list, E, D),
+       partial_update = ?ld(partial_update, E, D),
 
        menu_font_name = ?ld(menu_font_name, E, D),
        menu_font_size = ?ld(menu_font_size, E, D),
