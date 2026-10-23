@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="xdg_shell">
+  <!--
+    Minimal transcription of the stable xdg-shell protocol
+    (wayland-protocols stable/xdg-shell/xdg-shell.xml), embedded here
+    because the wayland-protocols package may not be installed.
+
+    Requests and events are listed in the exact upstream order since
+    opcodes are positional. Descriptions are stripped. All interfaces
+    referenced by xdg_surface (xdg_positioner, xdg_popup) are included so
+    that the generated type tables are complete.
+
+    Copyright © 2008-2013 Kristian Høgsberg
+    Copyright © 2013      Rafael Antognolli
+    Copyright © 2013      Jasper St. Pierre
+    Copyright © 2010-2013 Intel Corporation
+    Copyright © 2015-2017 Samsung Electronics Co., Ltd
+    Copyright © 2015-2017 Red Hat Inc.
+    (MIT license, see upstream file)
+  -->
+
+  <interface name="xdg_wm_base" version="6">
+    <enum name="error">
+      <entry name="role" value="0"/>
+      <entry name="defunct_surfaces" value="1"/>
+      <entry name="not_the_topmost_popup" value="2"/>
+      <entry name="invalid_popup_parent" value="3"/>
+      <entry name="invalid_surface_state" value="4"/>
+      <entry name="invalid_positioner" value="5"/>
+      <entry name="unresponsive" value="6"/>
+    </enum>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="create_positioner">
+      <arg name="id" type="new_id" interface="xdg_positioner"/>
+    </request>
+
+    <request name="get_xdg_surface">
+      <arg name="id" type="new_id" interface="xdg_surface"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <request name="pong">
+      <arg name="serial" type="uint"/>
+    </request>
+
+    <event name="ping">
+      <arg name="serial" type="uint"/>
+    </event>
+  </interface>
+
+  <interface name="xdg_positioner" version="6">
+    <enum name="error">
+      <entry name="invalid_input" value="0"/>
+    </enum>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="set_size">
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </request>
+
+    <request name="set_anchor_rect">
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </request>
+
+    <enum name="anchor">
+      <entry name="none" value="0"/>
+      <entry name="top" value="1"/>
+      <entry name="bottom" value="2"/>
+      <entry name="left" value="3"/>
+      <entry name="right" value="4"/>
+      <entry name="top_left" value="5"/>
+      <entry name="bottom_left" value="6"/>
+      <entry name="top_right" value="7"/>
+      <entry name="bottom_right" value="8"/>
+    </enum>
+
+    <request name="set_anchor">
+      <arg name="anchor" type="uint" enum="anchor"/>
+    </request>
+
+    <enum name="gravity">
+      <entry name="none" value="0"/>
+      <entry name="top" value="1"/>
+      <entry name="bottom" value="2"/>
+      <entry name="left" value="3"/>
+      <entry name="right" value="4"/>
+      <entry name="top_left" value="5"/>
+      <entry name="bottom_left" value="6"/>
+      <entry name="top_right" value="7"/>
+      <entry name="bottom_right" value="8"/>
+    </enum>
+
+    <request name="set_gravity">
+      <arg name="gravity" type="uint" enum="gravity"/>
+    </request>
+
+    <enum name="constraint_adjustment" bitfield="true">
+      <entry name="none" value="0"/>
+      <entry name="slide_x" value="1"/>
+      <entry name="slide_y" value="2"/>
+      <entry name="flip_x" value="4"/>
+      <entry name="flip_y" value="8"/>
+      <entry name="resize_x" value="16"/>
+      <entry name="resize_y" value="32"/>
+    </enum>
+
+    <request name="set_constraint_adjustment">
+      <arg name="constraint_adjustment" type="uint" enum="constraint_adjustment"/>
+    </request>
+
+    <request name="set_offset">
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+    </request>
+
+    <request name="set_reactive" since="3"/>
+
+    <request name="set_parent_size" since="3">
+      <arg name="parent_width" type="int"/>
+      <arg name="parent_height" type="int"/>
+    </request>
+
+    <request name="set_parent_configure" since="3">
+      <arg name="serial" type="uint"/>
+    </request>
+  </interface>
+
+  <interface name="xdg_surface" version="6">
+    <enum name="error">
+      <entry name="not_constructed" value="1"/>
+      <entry name="already_constructed" value="2"/>
+      <entry name="unconfigured_buffer" value="3"/>
+      <entry name="invalid_serial" value="4"/>
+      <entry name="invalid_size" value="5"/>
+      <entry name="defunct_role_object" value="6"/>
+    </enum>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="get_toplevel">
+      <arg name="id" type="new_id" interface="xdg_toplevel"/>
+    </request>
+
+    <request name="get_popup">
+      <arg name="id" type="new_id" interface="xdg_popup"/>
+      <arg name="parent" type="object" interface="xdg_surface" allow-null="true"/>
+      <arg name="positioner" type="object" interface="xdg_positioner"/>
+    </request>
+
+    <request name="set_window_geometry">
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </request>
+
+    <request name="ack_configure">
+      <arg name="serial" type="uint"/>
+    </request>
+
+    <event name="configure">
+      <arg name="serial" type="uint"/>
+    </event>
+  </interface>
+
+  <interface name="xdg_toplevel" version="6">
+    <enum name="error">
+      <entry name="invalid_resize_edge" value="0"/>
+      <entry name="invalid_parent" value="1"/>
+      <entry name="invalid_size" value="2"/>
+    </enum>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="set_parent">
+      <arg name="parent" type="object" interface="xdg_toplevel" allow-null="true"/>
+    </request>
+
+    <request name="set_title">
+      <arg name="title" type="string"/>
+    </request>
+
+    <request name="set_app_id">
+      <arg name="app_id" type="string"/>
+    </request>
+
+    <request name="show_window_menu">
+      <arg name="seat" type="object" interface="wl_seat"/>
+      <arg name="serial" type="uint"/>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+    </request>
+
+    <request name="move">
+      <arg name="seat" type="object" interface="wl_seat"/>
+      <arg name="serial" type="uint"/>
+    </request>
+
+    <enum name="resize_edge">
+      <entry name="none" value="0"/>
+      <entry name="top" value="1"/>
+      <entry name="bottom" value="2"/>
+      <entry name="left" value="4"/>
+      <entry name="top_left" value="5"/>
+      <entry name="bottom_left" value="6"/>
+      <entry name="right" value="8"/>
+      <entry name="top_right" value="9"/>
+      <entry name="bottom_right" value="10"/>
+    </enum>
+
+    <request name="resize">
+      <arg name="seat" type="object" interface="wl_seat"/>
+      <arg name="serial" type="uint"/>
+      <arg name="edges" type="uint" enum="resize_edge"/>
+    </request>
+
+    <enum name="state">
+      <entry name="maximized" value="1"/>
+      <entry name="fullscreen" value="2"/>
+      <entry name="resizing" value="3"/>
+      <entry name="activated" value="4"/>
+      <entry name="tiled_left" value="5" since="2"/>
+      <entry name="tiled_right" value="6" since="2"/>
+      <entry name="tiled_top" value="7" since="2"/>
+      <entry name="tiled_bottom" value="8" since="2"/>
+      <entry name="suspended" value="9" since="6"/>
+    </enum>
+
+    <request name="set_max_size">
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </request>
+
+    <request name="set_min_size">
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </request>
+
+    <request name="set_maximized"/>
+
+    <request name="unset_maximized"/>
+
+    <request name="set_fullscreen">
+      <arg name="output" type="object" interface="wl_output" allow-null="true"/>
+    </request>
+
+    <request name="unset_fullscreen"/>
+
+    <request name="set_minimized"/>
+
+    <event name="configure">
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="states" type="array"/>
+    </event>
+
+    <event name="close"/>
+
+    <event name="configure_bounds" since="4">
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </event>
+
+    <enum name="wm_capabilities" since="5">
+      <entry name="window_menu" value="1"/>
+      <entry name="maximize" value="2"/>
+      <entry name="fullscreen" value="3"/>
+      <entry name="minimize" value="4"/>
+    </enum>
+
+    <event name="wm_capabilities" since="5">
+      <arg name="capabilities" type="array"/>
+    </event>
+  </interface>
+
+  <interface name="xdg_popup" version="6">
+    <enum name="error">
+      <entry name="invalid_grab" value="0"/>
+    </enum>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="grab">
+      <arg name="seat" type="object" interface="wl_seat"/>
+      <arg name="serial" type="uint"/>
+    </request>
+
+    <event name="configure">
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </event>
+
+    <event name="popup_done"/>
+
+    <request name="reposition" since="3">
+      <arg name="positioner" type="object" interface="xdg_positioner"/>
+      <arg name="token" type="uint"/>
+    </request>
+
+    <event name="repositioned" since="3">
+      <arg name="token" type="uint"/>
+    </event>
+  </interface>
+</protocol>
