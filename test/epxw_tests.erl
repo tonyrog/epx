@@ -124,3 +124,46 @@ view_transform_test() ->
     after
 	stop(Win)
     end.
+
+%% named widgets in an epxw application
+widgets_test() ->
+    Self = self(),
+    {ok, Win} =
+	epxw:start(#{ init => fun(_) -> {ok, #{}} end,
+		      draw => fun(_Pixels, _Area, S) -> S end,
+		      widget => fun(Name, Env, S) ->
+					Self ! {widget, Name, maps:get(event,Env)},
+					S
+				end,
+		      button_press => fun(Ev, S) -> Self ! {press, Ev}, S end
+		    }, [],
+		   [{width,?W},{height,?H},{bottom_bar,0},{scroll_bar_size,0},
+		    {widgets, [{"ok", [{type,button},{x,10},{y,10},
+				       {width,40},{height,20},{text,"OK"}]}]}]),
+    try
+	EpxWin = epxw:call(Win, fun(S) -> {epxw:window(), S} end),
+	Ev = fun(E) -> Win ! #epx_event{win=EpxWin, data=E} end,
+	%% hit the button: widget signals, no button_press callback
+	Ev({button_press,[left],{20,15,0}}),
+	Ev({button_release,[left],{20,15,0}}),
+	receive {widget,"ok",button_press} -> ok after 500 -> error(no_press) end,
+	receive {widget,"ok",button_release} -> ok after 500 -> error(no_release) end,
+	receive {press,_} -> error(press_not_consumed) after 100 -> ok end,
+	%% miss the button: normal button_press callback
+	Ev({button_press,[left],{150,80,0}}),
+	receive {press,{button_press,[left],_}} -> ok after 500 -> error(no_user_press) end,
+	Ev({button_release,[left],{150,80,0}}),
+	%% create, set and read widgets from a client
+	ok = epxw:call(Win, fun(S) ->
+				    {epxw:widget_new("v", [{type,value},{x,60},{y,10},
+							   {width,40},{height,20}]), S}
+			    end),
+	ok = epxw:call(Win, fun(S) -> {epxw:widget_set("v", [{value,42}]), S} end),
+	[{value,42}] = epxw:call(Win, fun(S) -> {epxw:widget_get("v", [value]), S} end),
+	["ok","v"] = epxw:call(Win, fun(S) -> {epxw:widgets(), S} end),
+	{error,ealready} = epxw:call(Win, fun(S) -> {epxw:widget_new("v", []), S} end),
+	ok = epxw:call(Win, fun(S) -> {epxw:widget_delete("v"), S} end),
+	{error,enoent} = epxw:call(Win, fun(S) -> {epxw:widget_set("v", []), S} end)
+    after
+	stop(Win)
+    end.

@@ -47,8 +47,10 @@ owner, independent of the event mask given to window_create/5.
     erlc -o test test/*.erl
     # regression tests (pixmap/draw defects, see epx_bugs.md, png reader, epxy names)
     erl -pa ebin -pa test -noshell -eval 'eunit:test(epx_regression_tests,[verbose]),halt().'
-    # epxw window behaviour (redraw merging, partial update, client api)
+    # epxw window behaviour (redraw merging, partial update, client api, widgets)
     erl -pa ebin -pa test -noshell -eval 'eunit:test(epxw_tests,[verbose]),halt().'
+    # epxy widgets (windows, buttons, sliders, text, menus, panels)
+    erl -pa ebin -pa test -noshell -eval 'eunit:test(epxy_tests,[verbose]),halt().'
     # TrueType (libschrift) rendering: headless check, png and window
     erl -pa ebin -pa test -noshell -eval 'test_sft_text:check(),halt().'
     erl -pa ebin -pa test -noshell -eval 'test_sft_text:png("/tmp/sft.png"),halt().'

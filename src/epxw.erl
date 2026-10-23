@@ -56,6 +56,9 @@
 -export([profile_set/2]).
 -export([window_info_get/1]).
 -export([window_info_set/2]).
+%% named widgets (see epxy_widget), callable from callbacks
+-export([widget_new/2, widget_set/2, widget_get/2, widget_delete/1,
+	 widgets/0]).
 	 
 %% -define(DEBUG, true).
 
@@ -143,6 +146,8 @@
 -callback command(Symbol::term(), Mod::epx_keymod(), State :: term()) -> 
     {noreply, NewState :: term()} |
     {reply, {Symbol1::term(), Mod1::epx_keymod()}, NewState :: term()}.
+-callback widget(Name::string(), Event::map(), State :: term()) ->
+    NewState :: term().
 
 
 -callback handle_call(Request :: term(), From :: {pid(), Tag :: term()},
@@ -198,7 +203,8 @@
     draw/3, draw/4,
     select/2,
     motion/2,
-    command/3
+    command/3,
+    widget/3
    ]).
 
 -ifdef(DEBUG).
@@ -307,6 +313,8 @@
 				 NewState::term()).
 -type menu_cb() :: fun((Event::term(), State::term()) ->
 			      undefined | epx_menu:epx_menu()).
+-type widget_cb() :: fun((Name::string(), Event::map(), State::term()) ->
+				NewState::term()).
 
 -record(callbacks, 
 	{
@@ -332,7 +340,8 @@
 	 select :: undefined | select_cb(),
 	 motion :: undefined | motion_cb(),
          command :: undefined | command_cb(),
-	 menu :: undefined | menu_cb()
+	 menu :: undefined | menu_cb(),
+	 widget :: undefined | widget_cb()
  }).
 
 -define(CALLBACK(S,Name), (((S)#state.user_cb)#callbacks.Name)).
@@ -341,6 +350,7 @@
 
 -define(SYS_MOTION,  16#01).
 -define(USER_MOTION, 16#02).
+-define(WIDGET_MOTION, 16#04).
 
 -record(state, 
 	{
@@ -353,6 +363,9 @@
 	 height :: integer(),      %% window height
 	 dirty  :: all | [epx:epx_rect()],  %% [] clean!
 	 redraw = false :: boolean(), %% redraw message is pending
+	 widgets :: undefined | epxy_tree:tree(), %% named widgets
+	 widget_tick = false :: boolean(), %% animation tick is pending
+	 frame_time = 33 :: integer(),     %% animation frame time (ms)
 	 status = "" :: string(),  %% bottom status text
 	 profile :: #profile{},
 	 menu_profile :: #menu_profile{},
@@ -727,7 +740,9 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 				  UserCb#callbacks.focus_out}
 				]),
     ScrollEvents = [key_press, key_release, button_press, button_release],
-    Window = epx:window_create(50,50,Width,Height,EventMask++ScrollEvents),
+    WinX = proplists:get_value(x, Env, 50),
+    WinY = proplists:get_value(y, Env, 50),
+    Window = epx:window_create(WinX,WinY,Width,Height,EventMask++ScrollEvents),
 
     Width1 = Width +
 	WInfo#window_info.left_bar +
@@ -772,12 +787,14 @@ init([User,UserOpts,Opts]) when (is_atom(User) orelse is_map(User)),
 		content = WContent,
 		user_mod = UserMod,
 		user_cb  = UserCb,
-		user_state = undefined
+		user_state = undefined,
+		frame_time = max(1, round(1000 / proplists:get_value(fps, Env, 30)))
 	       },
 
     ViewWidth = proplists:get_value(view_width, Env, Width),
     ViewHeight = proplists:get_value(view_height, Env, Height),
-    State1 = set_view_rect(State0, {0,0,ViewWidth,ViewHeight}),
+    State01 = set_view_rect(State0, {0,0,ViewWidth,ViewHeight}),
+    State1 = init_widgets(proplists:get_value(widgets, Env, []), State01),
     export_state(State1),
     Rect = {0,0,Width,Height},
     case UserCb#callbacks.init of
@@ -843,7 +860,8 @@ load_callbacks_(UserMod, UserMap) ->
 	select = load_callback_(UserMod, UserMap, select, 2),
 	motion = load_callback_(UserMod, UserMap, motion, 2),
 	command = load_callback_(UserMod, UserMap, command, 3),
-	menu = load_callback_(UserMod, UserMap, menu, 2)
+	menu = load_callback_(UserMod, UserMap, menu, 2),
+	widget = load_callback_(UserMod, UserMap, widget, 3)
        }}.
 
 load_callback_(UserMod, UserMap, Func, Arity) ->
@@ -959,7 +977,7 @@ handle_cast(Request, State) ->
 
 handle_info(Info=#epx_event{win=Win,data=Event}, State) when 
       Win =:= State#state.window ->
-    try epx_event(Event, State) of
+    try widget_event(Event, State) of
 	{noreply, State1} ->
 	    {noreply, redraw(State1, async)};
 	Reply ->
@@ -970,6 +988,17 @@ handle_info(Info=#epx_event{win=Win,data=Event}, State) when
 		      [Info, Reason, Stack]),
 	    {stop, Reason, State}	
     end;
+handle_info({?MODULE, widget_tick}, State) ->
+    State1 = State#state { widget_tick = false },
+    State2 = case State1#state.widgets of
+		 undefined -> State1;
+		 T -> lists:foldl(fun add_dirty_area/2, State1,
+				  [R || R <- epxy_tree:animating_bounds(T),
+					R =/= undefined])
+	     end,
+    {noreply, redraw(State2, async)};
+handle_info({?MODULE, widget_signals, Sigs}, State) ->
+    {noreply, redraw(widget_signals(Sigs, State), async)};
 handle_info({?MODULE, redraw}, State) ->
     State1 = State#state { redraw = false },
     if State1#state.dirty =:= [] ->
@@ -1310,8 +1339,13 @@ epx_event(close, State) ->
 	    {stop, normal, State};
 	Cb ->
 	    export_state(State),
-	    Cb(State#state.user_state),
-	    {stop, normal, state()}
+	    case Cb(State#state.user_state) of
+		{noreply, UserState} -> %% keep the window open
+		    State1 = state(),
+		    {noreply, State1#state { user_state = UserState }};
+		_ ->
+		    {stop, normal, state()}
+	    end
     end;
 epx_event(_Event, State) ->
     ?dbg("unhandled epx event: ~p\n", [_Event]),
@@ -1955,7 +1989,8 @@ draw_content_(Pixmap, Dirty, State) ->
     export_state(State),
     UserState = user_draw_content(Pixmap,DirtyRegion,State),
     State1 = state(),
-    {DirtyRegion, State1#state { user_state = UserState }}.
+    State2 = draw_widgets(Pixmap, State1#state { user_state = UserState }),
+    {DirtyRegion, State2}.
 
 user_draw_content(Pixmap, Region, State=#state{user_cb=Cb}) ->
     case Cb#callbacks.draw of  %% prefere draw for content if present
@@ -2916,3 +2951,163 @@ next_pixmap(W,H,PixelFormat) ->
     NPW = 1 bsl ceil(math:log2(W)),
     NPH = 1 bsl ceil(math:log2(H)),
     epx:pixmap_create(NPW, NPH, PixelFormat).
+
+%%%===================================================================
+%%% Named widgets
+%%%===================================================================
+
+%% Create widget Name (see epxy_widget for properties)
+-spec widget_new(Name::string(), Props::[{atom(),term()}]) ->
+	  ok | {error, term()}.
+widget_new(Name, Props) ->
+    S0 = state(),
+    case epxy_tree:add(Name, Props, widget_tree(S0)) of
+	{ok, T1, Dirty} ->
+	    export_state(widget_dirty(Dirty, S0#state { widgets = T1 })),
+	    ok;
+	Error ->
+	    Error
+    end.
+
+-spec widget_set(Name::string(), Props::[{atom(),term()}]) ->
+	  ok | {error, term()}.
+widget_set(Name, Props) ->
+    S0 = state(),
+    case epxy_tree:set(Name, Props, widget_tree(S0)) of
+	{ok, T1, Sigs, Dirty} ->
+	    export_state(widget_dirty(Dirty, S0#state { widgets = T1 })),
+	    %% signals are delivered after the current callback
+	    if Sigs =:= [] -> ok;
+	       true -> self() ! {?MODULE, widget_signals, Sigs}, ok
+	    end;
+	Error ->
+	    Error
+    end.
+
+-spec widget_get(Name::string(), Keys::[atom()]) -> [{atom(),term()}].
+widget_get(Name, Keys) ->
+    epxy_tree:get(Name, Keys, widget_tree(state())).
+
+-spec widget_delete(Name::string()) -> ok | {error, enoent}.
+widget_delete(Name) ->
+    S0 = state(),
+    case epxy_tree:delete(Name, widget_tree(S0)) of
+	{ok, T1, Dirty} ->
+	    export_state(widget_dirty(Dirty, S0#state { widgets = T1 })),
+	    ok;
+	Error ->
+	    Error
+    end.
+
+%% names of all widgets
+-spec widgets() -> [string()].
+widgets() ->
+    epxy_tree:names(widget_tree(state())).
+
+widget_tree(#state { widgets = undefined }) -> epxy_tree:new();
+widget_tree(#state { widgets = T }) -> T.
+
+%% widgets given with the widgets option
+init_widgets([], State) ->
+    State;
+init_widgets(Ws, State) ->
+    T = lists:foldl(
+	  fun({Name,Props}, Ti) ->
+		  case epxy_tree:add(Name, Props, Ti) of
+		      {ok, Ti1, _Dirty} -> Ti1;
+		      Error ->
+			  io:format("epxw: widget ~s not created ~p\n",
+				    [Name, Error]),
+			  Ti
+		  end
+	  end, widget_tree(State), Ws),
+    State#state { widgets = T }.
+
+%% Window events are offered to the widgets first. Events used by a
+%% widget are not passed on to the other callbacks.
+widget_event(Event, State) when State#state.widgets =:= undefined;
+				State#state.operation =:= menu ->
+    epx_event(Event, State);
+widget_event(Event, State) ->
+    case is_widget_event(Event) of
+	false ->
+	    epx_event(Event, State);
+	true ->
+	    VEvent = transform_event(Event, State),
+	    {T1,Sigs,Effs,Dirty,Used} =
+		try epxy_tree:event(VEvent, State#state.widgets)
+		catch
+		    error:Reason:Stack ->
+			io:format("widget event ~p crash ~p\n~p\n",
+				  [Event, Reason, Stack]),
+			{State#state.widgets,[],[],[],false}
+		end,
+	    State1 = State#state { widgets = T1 },
+	    if Used ->
+		    case Event of
+			{motion,_,_} -> flush_motion(State#state.window);
+			_ -> ok
+		    end,
+		    State2 = widget_effects(Effs, State1),
+		    State3 = widget_dirty(Dirty, State2),
+		    {noreply, widget_signals(Sigs, State3)};
+	       true ->
+		    epx_event(Event, State1)
+	    end
+    end.
+
+is_widget_event({key_press,_,_,_}) -> true;
+is_widget_event({key_release,_,_,_}) -> true;
+is_widget_event({button_press,_,_}) -> true;
+is_widget_event({button_release,_,_}) -> true;
+is_widget_event({motion,_,_}) -> true;
+is_widget_event(_) -> false.
+
+widget_effects(Effs, State) ->
+    lists:foldl(fun(motion_on, S) -> enable_motion_(true, ?WIDGET_MOTION, S);
+		   (motion_off, S) -> enable_motion_(false, ?WIDGET_MOTION, S);
+		   (_, S) -> S
+		end, State, Effs).
+
+widget_dirty(all, State) ->
+    all_dirty_area(State);
+widget_dirty(Rects, State) ->
+    lists:foldl(fun(undefined, S) -> S;
+		   (R, S) -> add_dirty_area(R, S)
+		end, State, Rects).
+
+%% deliver widget signals to the widget/3 callback
+widget_signals(Sigs, State) ->
+    case ?CALLBACK(State, widget) of
+	undefined ->
+	    State;
+	Cb ->
+	    lists:foldl(
+	      fun({Name,Env}, S) ->
+		      export_state(S),
+		      try Cb(Name, Env, S#state.user_state) of
+			  UserState ->
+			      S1 = state(),
+			      S1#state { user_state = UserState }
+		      catch
+			  error:Reason:Stack ->
+			      io:format("widget: ~s ~p crash ~p\n~p\n",
+					[Name, Env, Reason, Stack]),
+			      S
+		      end
+	      end, State, Sigs)
+    end.
+
+%% draw widgets on top of the content, the view transform is set
+draw_widgets(_Pixmap, State) when State#state.widgets =:= undefined ->
+    State;
+draw_widgets(Pixmap, State) ->
+    {T1, Animating} = epxy_tree:draw(State#state.widgets, Pixmap),
+    State1 = State#state { widgets = T1 },
+    if Animating, not State1#state.widget_tick ->
+	    erlang:send_after(State1#state.frame_time, self(),
+			      {?MODULE, widget_tick}),
+	    State1#state { widget_tick = true };
+       true ->
+	    State1
+    end.

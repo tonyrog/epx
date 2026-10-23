@@ -7,5 +7,5 @@
   {modules, ["@@MODULES@@"]},
   {mod,{epx_app,[]}},
   {env, []},
-  {applications,[kernel,stdlib,tree_db]}
+  {applications,[kernel,stdlib]}
   ]}.
