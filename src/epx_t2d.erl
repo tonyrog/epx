@@ -29,6 +29,7 @@
 	 point/3, point/2, points/2, 
 	 rectangle/5, rectangle/2, rectangle_to_poly/2
 	]).
+-export([rotate_rad/2]).
 
 -include("../include/epx_t2d.hrl").
 
@@ -144,9 +145,13 @@ scale(T, Sx, Sy) when is_number(Sx), is_number(Sy) ->
 %%  | rx  sy  ty | * | s   c   0 |  =  | rx*c+sy*s  -rx*s+sy*c ty |
 %%  | 0   0   1  |   | 0   0   1 |     | 0          0          1  |
 %% @end
--spec rotate(t2d(), number()) -> t2d().
+-spec rotate(t2d(), Degree:number()) -> t2d().
 rotate(T, Angle) ->
     A = deg_to_rad(deg_norm(Angle)),
+    rotate_rad(T, A).
+
+-spec rotate_rad(t2d(), Radians::number()) -> t2d().
+rotate_rad(T, A) ->
     C = math:cos(A),
     S = math:sin(A),
 
