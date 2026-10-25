@@ -145,7 +145,7 @@ scale(T, Sx, Sy) when is_number(Sx), is_number(Sy) ->
 %%  | rx  sy  ty | * | s   c   0 |  =  | rx*c+sy*s  -rx*s+sy*c ty |
 %%  | 0   0   1  |   | 0   0   1 |     | 0          0          1  |
 %% @end
--spec rotate(t2d(), Degree:number()) -> t2d().
+-spec rotate(t2d(), Degree::number()) -> t2d().
 rotate(T, Angle) ->
     A = deg_to_rad(deg_norm(Angle)),
     rotate_rad(T, A).

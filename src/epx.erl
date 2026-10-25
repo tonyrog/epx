@@ -156,6 +156,7 @@
 -export([sft_glyph_info/2]).
 -export([sft_glyph_kerning/3]).
 -export([sft_glyph_render/3, sft_glyph_render_to/7]).
+-export([sft_glyph_box/2, sft_glyph_draw/5]).
 -export([sft_info/1, sft_info/2, sft_info_/2]).
 
 %% Backend
@@ -1745,6 +1746,27 @@ sft_glyph_render(_Sft, _Glyph, _Transform) ->
 sft_glyph_render_to(_Sft, _Gc, _Glyph, _Transform, _X, _Y, _Pixmap) ->
     ?nif_stub().            
     
+%% @doc
+%%   The box covered by the glyph image, in pixels relative to the pen
+%%   point on the baseline (y downwards). {0,0,0,0} when the glyph has
+%%   no outline (space).
+%% @end
+-spec sft_glyph_box(Sft::epx_sft(), Glyph::integer()) ->
+	  {X::integer(),Y::integer(),W::integer(),H::integer()}.
+sft_glyph_box(_Sft, _Glyph) ->
+    ?nif_stub().
+
+%% @doc
+%%   Draw glyph on Pixmap with gc foreground color. Transform maps pen
+%%   space (origin at the pen point on the baseline, y down) to the
+%%   pixmap user coordinates, the pixmap ltm is applied after it.
+%%   See doc/TEXT.md and epx_text.
+%% @end
+-spec sft_glyph_draw(Sft::epx_sft(), Gc::epx_gc(), Glyph::integer(),
+		     Transform::t2d()|undefined, Pixmap::epx_pixmap()) -> ok.
+sft_glyph_draw(_Sft, _Gc, _Glyph, _Transform, _Pixmap) ->
+    ?nif_stub().
+
 sft_info_keys() ->
     [ family_name, subfamily_name, descent, ascent, line_gap ].
 

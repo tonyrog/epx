@@ -295,6 +295,27 @@ sft_gmetrics(const SFT *sft, SFT_Glyph glyph, SFT_GMetrics *metrics)
 }
 
 int
+sft_gbox(const SFT *sft, SFT_Glyph glyph, int box[4])
+{
+	uint_fast32_t outline;
+	int bbox[4];
+
+	box[0] = box[1] = box[2] = box[3] = 0;
+	if (outline_offset(sft->font, glyph, &outline) < 0)
+		return -1;
+	if (!outline)
+		return 0;
+	if (glyph_bbox(sft, outline, bbox) < 0)
+		return -1;
+	/* same box as sft_render: x from bbox[0], top from bbox[3] (y up) */
+	box[0] = bbox[0];
+	box[1] = sft->flags & SFT_DOWNWARD_Y ? -bbox[3] : bbox[1];
+	box[2] = bbox[2] - bbox[0] + 1;
+	box[3] = bbox[3] - bbox[1] + 1;
+	return 1;
+}
+
+int
 sft_kerning(const SFT *sft, SFT_Glyph leftGlyph, SFT_Glyph rightGlyph,
             SFT_Kerning *kerning)
 {

@@ -190,7 +190,9 @@ static void epx_unload(ErlNifEnv* env, void* priv_data);
     NIF("sft_glyph_info", 2, sft_glyph_info)			\
     NIF("sft_glyph_kerning", 3, sft_glyph_kerning)		\
     NIF("sft_glyph_render", 3, sft_glyph_render)		\
-    NIF("sft_glyph_render_to", 7, sft_glyph_render_to)
+    NIF("sft_glyph_render_to", 7, sft_glyph_render_to)	\
+    NIF("sft_glyph_box", 2, sft_glyph_box_)			\
+    NIF("sft_glyph_draw", 5, sft_glyph_draw)
 
 // Declare all nif functions
 #undef NIF
@@ -6507,6 +6509,160 @@ static ERL_NIF_TERM sft_glyph_render_to(ErlNifEnv* env, int argc,
     img.render_arg = (void*) gc;
     img.render = render_pixel;
     // draw the glyph into the image
+    sft_render(&sft->sft, (SFT_Glyph) glyph, form, &img);
+    return ATOM(ok);
+}
+
+//
+// sft_glyph_box(Sft::epx_sft(), Glyph::integer()) -> {X,Y,W,H}
+//  The box covered by the glyph image in pixels relative to the pen
+//  point on the baseline (y downwards). {0,0,0,0} for glyphs without
+//  outline (space).
+//
+static ERL_NIF_TERM sft_glyph_box_(ErlNifEnv* env, int argc,
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_sft_t* sft;
+    unsigned int glyph;
+    int box[4];
+
+    if (!get_sft(env, argv[0], &sft))
+	return EXCP_ERROR_N(env, 0, "sft object expected");
+    if (!enif_get_uint(env, argv[1], &glyph))
+	return EXCP_ERROR_N(env, 1, "glyph id expected");
+    if (sft_gbox(&sft->sft, (SFT_Glyph) glyph, box) < 0)
+	return EXCP_ERROR_N(env, 1, "glyph id is not valid");
+    return enif_make_tuple4(env,
+			    enif_make_int(env, box[0]),
+			    enif_make_int(env, box[1]),
+			    enif_make_int(env, box[2]),
+			    enif_make_int(env, box[3]));
+}
+
+// R = A*B for transforms stored as SX RY TX / RX SY TY
+static void sft_t2d_mul(const SFT_Transform a, const SFT_Transform b,
+			SFT_Transform r)
+{
+    SFT_Transform t;
+    t[SFT_SX] = a[SFT_SX]*b[SFT_SX] + a[SFT_RY]*b[SFT_RX];
+    t[SFT_RY] = a[SFT_SX]*b[SFT_RY] + a[SFT_RY]*b[SFT_SY];
+    t[SFT_TX] = a[SFT_SX]*b[SFT_TX] + a[SFT_RY]*b[SFT_TY] + a[SFT_TX];
+    t[SFT_RX] = a[SFT_RX]*b[SFT_SX] + a[SFT_SY]*b[SFT_RX];
+    t[SFT_SY] = a[SFT_RX]*b[SFT_RY] + a[SFT_SY]*b[SFT_SY];
+    t[SFT_TY] = a[SFT_RX]*b[SFT_TX] + a[SFT_SY]*b[SFT_TY] + a[SFT_TY];
+    memcpy(r, t, sizeof(t));
+}
+
+//
+// sft_glyph_draw(Sft::epx_sft(), Gc::epx_gc(), Glyph::integer(),
+//                Transform::t2d(), Pixmap::epx_pixmap()) -> ok.
+//
+//  Blend the glyph onto Pixmap with the gc foreground color and fader.
+//  Transform maps glyph (pen) space to the user coordinates of Pixmap:
+//  pen space has its origin at the pen point on the baseline, x to the
+//  right and y downwards, in pixels at the font size. The transform of
+//  the pixmap (ltm) is applied after Transform, so
+//
+//      device = Pixmap.ltm * Transform * pen
+//
+//  With the identity transform the glyph is drawn with its pen point at
+//  (0,0). Sub pixel positions are kept.
+//
+static ERL_NIF_TERM sft_glyph_draw(ErlNifEnv* env, int argc,
+				   const ERL_NIF_TERM argv[])
+{
+    (void) argc;
+    epx_gc_t* gc;
+    epx_sft_t* sft;
+    epx_pixmap_t* pixmap = NULL;
+    unsigned int glyph;
+    SFT_Transform user, form, ctm, box_to_pen;
+    SFT_Image img;
+    int box[4];
+    float xs[4], ys[4];
+    float min_x, max_x, min_y, max_y;
+    int i, x0, y0, w, h, r;
+    epx_rect_t rect;
+
+    if (!get_sft(env, argv[0], &sft))
+	return EXCP_ERROR_N(env, 0, "sft object expected");
+    if (!get_gc(env, argv[1], &gc))
+	return EXCP_ERROR_N(env, 1, "gc expected");
+    if (!enif_get_uint(env, argv[2], &glyph))
+	return EXCP_ERROR_N(env, 2, "glyph id expected");
+    if (!get_t2d(env, argv[3], user))
+	return EXCP_ERROR_N(env, 3, "transform expected");
+    if (!get_pixmap(env, argv[4], &pixmap))
+	return EXCP_ERROR_N(env, 4, "pixmap expected");
+
+    if ((r = sft_gbox(&sft->sft, (SFT_Glyph) glyph, box)) < 0)
+	return EXCP_ERROR_N(env, 2, "glyph id is not valid");
+    if (r == 0)
+	return ATOM(ok);  // no outline (space etc)
+
+    // form = ctm * user * box_to_pen : glyph box coordinates -> device
+    box_to_pen[SFT_SX] = 1.0; box_to_pen[SFT_RY] = 0.0; box_to_pen[SFT_TX] = box[0];
+    box_to_pen[SFT_RX] = 0.0; box_to_pen[SFT_SY] = 1.0; box_to_pen[SFT_TY] = box[1];
+    if (pixmap->ctm) {
+	ctm[SFT_SX] = pixmap->ctm->sx; ctm[SFT_RY] = pixmap->ctm->ry;
+	ctm[SFT_TX] = pixmap->ctm->tx;
+	ctm[SFT_RX] = pixmap->ctm->rx; ctm[SFT_SY] = pixmap->ctm->sy;
+	ctm[SFT_TY] = pixmap->ctm->ty;
+    }
+    else {
+	ctm[SFT_SX] = 1.0; ctm[SFT_RY] = 0.0; ctm[SFT_TX] = 0.0;
+	ctm[SFT_RX] = 0.0; ctm[SFT_SY] = 1.0; ctm[SFT_TY] = 0.0;
+    }
+    sft_t2d_mul(user, box_to_pen, form);
+    sft_t2d_mul(ctm, form, form);
+
+    // device bounding box of the glyph box
+    xs[0] = 0; ys[0] = 0;
+    xs[1] = box[2]; ys[1] = 0;
+    xs[2] = box[2]; ys[2] = box[3];
+    xs[3] = 0; ys[3] = box[3];
+    for (i = 0; i < 4; i++) {
+	float x = xs[i], y = ys[i];
+	xs[i] = form[SFT_SX]*x + form[SFT_RY]*y + form[SFT_TX];
+	ys[i] = form[SFT_RX]*x + form[SFT_SY]*y + form[SFT_TY];
+    }
+    min_x = max_x = xs[0];
+    min_y = max_y = ys[0];
+    for (i = 1; i < 4; i++) {
+	min_x = fminf(min_x, xs[i]); max_x = fmaxf(max_x, xs[i]);
+	min_y = fminf(min_y, ys[i]); max_y = fmaxf(max_y, ys[i]);
+    }
+    if (!isfinite(min_x) || !isfinite(min_y) ||
+	!isfinite(max_x) || !isfinite(max_y))
+	return EXCP_ERROR_N(env, 3, "transform not finite");
+    // integer image position, keep the fraction in the transform
+    x0 = (int) floorf(min_x);
+    y0 = (int) floorf(min_y);
+    w  = (int) ceilf(max_x) - x0;
+    h  = (int) ceilf(max_y) - y0;
+    if ((w <= 0) || (h <= 0))
+	return ATOM(ok);
+    form[SFT_TX] -= x0;
+    form[SFT_TY] -= y0;
+
+    epx_rect_set(&rect, x0, y0, w, h);
+    if (!epx_rect_intersect(&rect, &pixmap->clip, &rect))
+	return ATOM(ok);
+
+    memset(&img, 0, sizeof(img));
+    img.pixels = EPX_PIXEL_ADDR(pixmap, rect.xy.x, rect.xy.y);
+    img.bytes_per_row = pixmap->bytes_per_row;
+    img.bytes_per_pixel = pixmap->bytes_per_pixel;
+    img.pixel_format = pixmap->pixel_format;
+    img.width  = w;
+    img.height = h;
+    img.xoffs = rect.xy.x - x0;
+    img.yoffs = rect.xy.y - y0;
+    img.xlen  = rect.wh.width;
+    img.ylen  = rect.wh.height;
+    img.render_arg = (void*) gc;
+    img.render = render_pixel;
     sft_render(&sft->sft, (SFT_Glyph) glyph, form, &img);
     return ATOM(ok);
 }

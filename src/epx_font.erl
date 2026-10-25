@@ -58,7 +58,7 @@
 
 -define(DEFAULT_CACHE_SIZE, (64*1024*1024)).
 -define(GENERATE_TIMEOUT, 30000).
--define(CACHE_VERSION, 1).  %% bump when generated fonts change
+-define(CACHE_VERSION, 2).  %% bump when generated fonts change
 
 %% scalable font
 -record(ttf,

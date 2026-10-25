@@ -9,10 +9,12 @@
 %%%    test_sft_text:show()             - render sample text in a window
 %%%
 %%%   Coordinate conventions (SFT_DOWNWARD_Y):
-%%%    gmetrics.yoffset is the offset from the baseline down to the top
-%%%    of the glyph box (negative for glyphs above the baseline), so a glyph
-%%%    is drawn with its top left corner at
-%%%      (PenX + left_side_bearing, BaseLine + yoffset)
+%%%    epx:sft_glyph_box/2 gives the glyph image box {Bx,By,W,H} relative
+%%%    to the pen point (By is negative for glyphs above the baseline), so
+%%%    an untransformed glyph is drawn with its top left corner at
+%%%      (PenX + Bx, BaseLine + By)
+%%%    (Bx may differ from left_side_bearing by a pixel.) For transformed
+%%%    text see epx_text and doc/TEXT.md.
 %%% @end
 -module(test_sft_text).
 
@@ -33,9 +35,10 @@ draw_string(Pixmap, Sft, Color, X, Y, String, Transform) ->
     Gc = epx:gc_create(),
     epx:gc_set(Gc, foreground_color, color_no_alpha(Color)),
     layout(Sft, String,
-	   fun(Gid, GM, PenX) ->
-		   GX = floor(PenX + GM#gmetrics.left_side_bearing),
-		   GY = Y + GM#gmetrics.yoffset,
+	   fun(Gid, _GM, PenX) ->
+		   {Bx,By,_W,_H} = epx:sft_glyph_box(Sft, Gid),
+		   GX = floor(PenX) + Bx,
+		   GY = Y + By,
 		   ok = epx:sft_glyph_render_to(Sft, Gc, Gid, Transform,
 						GX, GY, Pixmap)
 	   end, X).

@@ -163,12 +163,11 @@ render_glyph(Sft, C) ->
 	    missing;
 	Gid ->
 	    GM = epx:sft_glyph_info(Sft, Gid),
-	    W = GM#gmetrics.min_width,
-	    H = GM#gmetrics.min_height,
-	    Xoffs = floor(GM#gmetrics.left_side_bearing),
+	    %% the glyph image box relative to the pen point
+	    {Xoffs, Y, W, H} = epx:sft_glyph_box(Sft, Gid),
 	    Dwx = round(GM#gmetrics.advance_width),
 	    %% efnt: glyph top is at baseline - yoffs - height
-	    Yoffs = -(GM#gmetrics.yoffset + H),
+	    Yoffs = -(Y + H),
 	    Rows = if W > 0, H > 0 ->
 			   Pix = epx:sft_glyph_render(Sft, Gid, undefined),
 			   Data = epx:pixmap_get_pixels(Pix, 0, 0, W, H),

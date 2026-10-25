@@ -149,6 +149,10 @@ void      sft_freefont(SFT_Font *font);
 extern int sft_lmetrics(const SFT *sft, SFT_LMetrics *metrics);
 extern int sft_lookup  (const SFT *sft, SFT_UChar codepoint, SFT_Glyph *glyph);
 extern int sft_gmetrics(const SFT *sft, SFT_Glyph glyph, SFT_GMetrics *metrics);
+/* glyph box in pixels relative to the pen point, y downwards:
+ * box = {x0, y0, width, height}, 0 when the glyph has no outline,
+ * -1 on error. The rendered glyph image covers exactly this box. */
+extern int sft_gbox(const SFT *sft, SFT_Glyph glyph, int box[4]);
 extern int sft_kerning (const SFT *sft, SFT_Glyph leftGlyph,
 			SFT_Glyph rightGlyph, SFT_Kerning *kerning);
 extern int sft_render  (const SFT *sft, SFT_Glyph glyph,

@@ -91,9 +91,7 @@ glyphs_like_sft() ->
 	lists:foreach(
 	  fun(C) ->
 		  Gid = epx:sft_glyph(Sft, C),
-		  GM = epx:sft_glyph_info(Sft, Gid),
-		  W = GM#gmetrics.min_width,
-		  H = GM#gmetrics.min_height,
+		  {Bx,By,W,H} = epx:sft_glyph_box(Sft, Gid),
 		  Ref = epx:pixmap_get_pixels(
 			  epx:sft_glyph_render(Sft, Gid, undefined), 0, 0, W, H),
 		  %% draw the efnt glyph as alpha on black
@@ -102,8 +100,8 @@ glyphs_like_sft() ->
 		  Gc = epx:gc_copy(epx:gc_default()),
 		  epx:gc_set(Gc, font, F),
 		  epx:gc_set(Gc, foreground_color, {0,255,255,255}),
-		  X0 = 20 - floor(GM#gmetrics.left_side_bearing),
-		  Y0 = 20 - GM#gmetrics.yoffset,
+		  X0 = 20 - Bx,
+		  Y0 = 20 - By,
 		  epx:font_draw_string(P, Gc, X0, Y0, [C]),
 		  Got = << <<G>> || Y <- lists:seq(20, 20+H-1),
 				    X <- lists:seq(20, 20+W-1),
@@ -111,7 +109,7 @@ glyphs_like_sft() ->
 		  MaxDiff = lists:max([abs(A-B) || {A,B} <-
 		      lists:zip(binary_to_list(Ref), binary_to_list(Got))]),
 		  ?assert(MaxDiff =< 2)
-	  end, "AgW@")
+	  end, "AgW@(")
     after
 	file:delete(File)
     end.

@@ -75,6 +75,7 @@ Application environment (epx):
 # Documentation
 
     doc/EPXW.md     epxw window behaviour: callbacks, client api, drawing
+    doc/TEXT.md     glyphs, transforms, text along a path (epx_text)
     doc/EPXY.md     epxy widget api
     doc/WINDOWS.md  notes for the win32 backend
 
@@ -90,6 +91,8 @@ Application environment (epx):
     erl -pa ebin -pa test -noshell -eval 'eunit:test(epxy_tests,[verbose]),halt().'
     # ttf -> efnt generation and the font cache
     erl -pa ebin -pa test -noshell -eval 'eunit:test(epx_font_cache_tests,[verbose]),halt().'
+    # transformed TrueType text, strings and paths
+    erl -pa ebin -pa test -noshell -eval 'eunit:test(epx_text_tests,[verbose]),halt().'
     # TrueType (libschrift) rendering: headless check, png and window
     erl -pa ebin -pa test -noshell -eval 'test_sft_text:check(),halt().'
     erl -pa ebin -pa test -noshell -eval 'test_sft_text:png("/tmp/sft.png"),halt().'
