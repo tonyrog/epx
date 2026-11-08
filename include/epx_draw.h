@@ -46,14 +46,21 @@ extern void epx_draw_line_thick(epx_pixmap_t* pixmap,
 				int x1, int y1, int line_width,
 				int flags, epx_pixel_t fg);
 
+// style bits that make something to be painted, a style without any
+// of these (none or []) means nothing is drawn
+#define EPX_PAINT_STYLE_MASK \
+    (EPX_FLAG_SOLID|EPX_FLAG_BLEND|EPX_FLAG_SUM|EPX_FLAG_AALIAS| \
+     EPX_FLAG_TEXTURED|EPX_LINE_STYLE_DASHED|EPX_BORDER_STYLE_DASHED)
+
 extern void epx_draw_ellipse(epx_pixmap_t* pic, epx_gc_t* gc,
 			     int x, int y,
 			     unsigned int width, unsigned int height,
 			     unsigned int ww, unsigned int hh);
 
 extern void epx_draw_rrect_ring(epx_pixmap_t* pixmap,
-				int x0, int y0, int x1, int y1,
-				unsigned int rx, unsigned int ry,
+				int x, int y,
+				unsigned int width, unsigned int height,
+				double rx, double ry,
 				unsigned int bw, epx_flags_t bf, epx_pixel_t bc,
 				epx_flags_t ff, epx_pixel_t fc);
 extern void epx_draw_ellipse_border(epx_pixmap_t* pixmap, epx_gc_t* gc,

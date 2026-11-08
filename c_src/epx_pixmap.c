@@ -1609,13 +1609,19 @@ int epx_pixmap_set_format(epx_pixmap_t* dst, epx_format_t fmt)
     if (dst->pixel_format != fmt) {
 	uint8_t* data0;
 	unsigned int bytes_per_pixel = EPX_PIXEL_BYTE_SIZE(fmt);
-	unsigned int bytes_per_row   = bytes_per_pixel*dst->width;
+	uint64_t row_bytes = (uint64_t) bytes_per_pixel*dst->width;
+	unsigned int bytes_per_row;
 	size_t sz;
 	epx_pixel_unpack_t unpack;
 	epx_pixel_pack_t pack;
 
-	bytes_per_row += EPX_ALIGN_OFFS(bytes_per_row, EPX_PIXMAP_ALIGNMENT);
-	sz             = bytes_per_row*dst->height;
+	if (!dst->data0)  // a sub-pixmap shares its parent's pixels
+	    return -1;
+	row_bytes += EPX_ALIGN_OFFS(row_bytes, EPX_PIXMAP_ALIGNMENT);
+	if (row_bytes > INT_MAX)
+	    return -1;
+	bytes_per_row  = (unsigned int) row_bytes;
+	sz             = (size_t) bytes_per_row*dst->height;
 	
 	unpack = epx_pixel_unpack_func(fmt);
 	pack   = epx_pixel_pack_func(fmt);
@@ -1647,7 +1653,8 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
 {
     uint8_t* data0;
     unsigned int bytes_per_pixel = EPX_PIXEL_BYTE_SIZE(fmt);
-    unsigned int bytes_per_row   = bytes_per_pixel*width;
+    uint64_t row_bytes = (uint64_t) bytes_per_pixel*width;
+    unsigned int bytes_per_row;
     epx_pixel_unpack_t unpack;
     epx_pixel_pack_t pack;
 
@@ -1658,15 +1665,17 @@ int epx_pixmap_init(epx_pixmap_t* dst, unsigned int width, unsigned int height,
     dst->backend = 0;
     dst->parent  = 0;
     dst->user    = 0;
-    bytes_per_row += EPX_ALIGN_OFFS(bytes_per_row, EPX_PIXMAP_ALIGNMENT);
+    // the row stride is an int in the area functions
+    row_bytes += EPX_ALIGN_OFFS(row_bytes, EPX_PIXMAP_ALIGNMENT);
+    if (row_bytes > INT_MAX)
+	return -1;
+    bytes_per_row = (unsigned int) row_bytes;
 
     unpack = epx_pixel_unpack_func(fmt);
     pack   = epx_pixel_pack_func(fmt);
 
     if ((unpack == NULL) || (pack == NULL))
 	return -1;
-    if ((width > 0) && (bytes_per_row / width < bytes_per_pixel))
-	return -1;  // row size overflow
     if ((height > 0) && ((size_t)bytes_per_row > (SIZE_MAX-EPX_PIXMAP_ALIGNMENT)/height))
 	return -1;  // total size overflow
     if (!(data0 = (uint8_t*) calloc(1, (size_t)bytes_per_row*height+EPX_PIXMAP_ALIGNMENT-1)))
@@ -1991,11 +2000,18 @@ void epx_pixmap_fill_blend(epx_pixmap_t* dst, epx_pixel_t p)
 void epx_pixmap_flip(epx_pixmap_t* pic)
 {
     int n = pic->height/2;
-    uint8_t* ptr1 = EPX_PIXEL_ADDR(pic, 0, 0);
-    uint8_t* ptr2 = EPX_PIXEL_ADDR(pic, 0, pic->height-1);
+    uint8_t* ptr1;
+    uint8_t* ptr2;
+    // swap the pixels of a row only, a sub-pixmap's bytes_per_row is the
+    // row of its parent
+    size_t row_bytes = (size_t) pic->width * pic->bytes_per_pixel;
 
+    if (pic->height < 2)
+	return;
+    ptr1 = EPX_PIXEL_ADDR(pic, 0, 0);
+    ptr2 = EPX_PIXEL_ADDR(pic, 0, pic->height-1);
     while(n--) {
-	epx_swap_8(ptr1, ptr2, pic->bytes_per_row);
+	epx_swap_8(ptr1, ptr2, row_bytes);
 	ptr1 += pic->bytes_per_row;
 	ptr2 -= pic->bytes_per_row;
     }
@@ -2025,6 +2041,30 @@ static inline void shift_area(uint8_t* src, int src_wb, int src_pt,
     }
 }
 
+
+// reverse the order of n elements of size psz
+static void reverse_elems(uint8_t* p, size_t n, size_t psz)
+{
+    uint8_t* q;
+    if (n < 2) return;
+    q = p + (n-1)*psz;
+    while(p < q) {
+	epx_swap_8(p, q, psz);
+	p += psz;
+	q -= psz;
+    }
+}
+
+// rotate n elements of size psz left by k (element k first), in place
+// and without any memory: three reversals
+static void rotate_elems(uint8_t* p, size_t n, size_t k, size_t psz)
+{
+    if ((n < 2) || (k % n == 0)) return;
+    k %= n;
+    reverse_elems(p, k, psz);
+    reverse_elems(p + k*psz, n-k, psz);
+    reverse_elems(p, n, psz);
+}
 
 /* copy area and shift lines left or right */
 static inline void shift_area_rotate(uint8_t* src, int src_wb, int src_pt,
@@ -2061,8 +2101,16 @@ static inline void shift_area_rotate(uint8_t* src, int src_wb, int src_pt,
 	size_t ab = (size_t)a*src_psz;
 	uint8_t* save = malloc(ab);
 
-	if (save == NULL)
+	if (save == NULL) {
+	    // no memory for the wrapped pixels: rotate each row in place
+	    uint8_t* row = (amount > 0) ? src_from : dst_to;
+	    size_t k = (amount > 0) ? (size_t)a : (size_t)n;
+	    while(height--) {
+		rotate_elems(row, (size_t)(n+a), k, src_psz);
+		row += src_wb;
+	    }
 	    return;
+	}
 	while(height--) {
 	    memcpy(save, src_from, ab);
 	    memmove(dst, src, nb);
@@ -2093,7 +2141,10 @@ static inline void shift_area_rotate(uint8_t* src, int src_wb, int src_pt,
  */
 void epx_pixmap_copy_to(epx_pixmap_t* src, epx_pixmap_t* dst)
 {
+    // one run of bytes only between whole pixmaps, a sub-pixmap's rows
+    // are not one run of memory
     if (SIMD_ENABLED() &&
+	(src->data0 != NULL) && (dst->data0 != NULL) &&
 	(src->width==dst->width) &&
 	(src->height == dst->height) &&
 	(src->sz == dst->sz) &&
@@ -2214,22 +2265,18 @@ static void scroll_vertical(epx_pixmap_t* src, epx_pixmap_t* dst,
     else    { s0 = 0; d0 = amount; r0 = n; f0 = 0; }
 
     if (rotate && (src == dst)) {
-	// save the rows that are overwritten, packed without padding
+	// rotate the rows in place with three reversals, no memory is
+	// needed (row pixels only, a sub-pixmap's row is its parent's)
 	size_t rb = (size_t)w*dst->bytes_per_pixel;
-	uint8_t* save = malloc(rb*amount);
-	if (save == NULL)
-	    return;
-	epx_copy_area(EPX_PIXEL_ADDR(src,0,r0), src->bytes_per_row,
-		      src->pixel_format, save, rb, src->pixel_format,
-		      w, amount);
-	epx_copy_area(EPX_PIXEL_ADDR(src,0,s0), src->bytes_per_row,
-		      src->pixel_format,
-		      EPX_PIXEL_ADDR(dst,0,d0), dst->bytes_per_row,
-		      dst->pixel_format, w, n);
-	epx_copy_area(save, rb, src->pixel_format,
-		      EPX_PIXEL_ADDR(dst,0,f0), dst->bytes_per_row,
-		      dst->pixel_format, w, amount);
-	free(save);
+	unsigned int k = up ? amount : n;  // rows rotated up by k
+	unsigned int i, j;
+	(void) s0; (void) d0; (void) r0; (void) f0;
+	for (i = 0, j = k-1; i < j; i++, j--)
+	    epx_swap_8(EPX_PIXEL_ADDR(dst,0,i), EPX_PIXEL_ADDR(dst,0,j), rb);
+	for (i = k, j = h-1; i < j; i++, j--)
+	    epx_swap_8(EPX_PIXEL_ADDR(dst,0,i), EPX_PIXEL_ADDR(dst,0,j), rb);
+	for (i = 0, j = h-1; i < j; i++, j--)
+	    epx_swap_8(EPX_PIXEL_ADDR(dst,0,i), EPX_PIXEL_ADDR(dst,0,j), rb);
     }
     else {
 	epx_copy_area(EPX_PIXEL_ADDR(src,0,s0), src->bytes_per_row,
@@ -2264,10 +2311,25 @@ void epx_pixmap_scroll(epx_pixmap_t* src, epx_pixmap_t* dst,
 		       int horizontal, int vertical,
 		       int rotate, epx_pixel_t fill)
 {
+    // a scroll by 0,0 between two pixmaps is a copy
+    if ((vertical == 0) && (horizontal == 0)) {
+	if (src != dst) {
+	    unsigned int w = (src->width < dst->width) ? src->width : dst->width;
+	    unsigned int h = (src->height < dst->height) ? src->height : dst->height;
+	    epx_copy_area(src->data, src->bytes_per_row, src->pixel_format,
+			  dst->data, dst->bytes_per_row, dst->pixel_format,
+			  w, h);
+	}
+	return;
+    }
+    // vertical first, src -> dst, then horizontal on dst (the
+    // horizontal step must not read src again)
     if (vertical>0)
 	epx_pixmap_scroll_up(src, dst, rotate, vertical, fill);
     else if (vertical < 0)
 	epx_pixmap_scroll_down(src, dst, rotate, -vertical, fill);
+    if (vertical != 0)
+	src = dst;
     if (horizontal>0)
 	epx_pixmap_scroll_right(src, dst, rotate, horizontal, fill);
     else if (horizontal < 0)

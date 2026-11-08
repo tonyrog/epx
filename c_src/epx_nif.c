@@ -326,6 +326,8 @@ typedef struct _epx_nif_window_t {
 typedef struct _epx_nif_pixmap_t {
     epx_pixmap_t* pixmap;    
     ErlNifPid     own;      // "owner" pid storage
+    // a sub-pixmap keeps its parent's resource (and term) alive
+    struct _epx_nif_pixmap_t* parent;
 } epx_nif_pixmap_t;
 
 // Wrapper to handle reource atom name etc.
@@ -848,6 +850,25 @@ static int get_funsigned(ErlNifEnv* env, const ERL_NIF_TERM term,
     return 1;
 }
 
+// float to int/unsigned, saturating (a plain cast of an out of range
+// float is undefined, 4294967295.0f is 2^32 and became 0)
+static int float_to_int(float f)
+{
+    double d = round((double) f);
+    if (d != d) return 0;  // NaN
+    if (d >= (double) INT_MAX) return INT_MAX;
+    if (d <= (double) INT_MIN) return INT_MIN;
+    return (int) d;
+}
+
+static unsigned int float_to_unsigned(float f)
+{
+    double d = round((double) f);
+    if (!(d > 0.0)) return 0;  // also NaN
+    if (d >= (double) UINT_MAX) return UINT_MAX;
+    return (unsigned int) d;
+}
+
 static int get_coord(ErlNifEnv* env,
 		     epx_t2d_t* ctm,
 		     const ERL_NIF_TERM x, const ERL_NIF_TERM y,
@@ -858,8 +879,8 @@ static int get_coord(ErlNifEnv* env,
 	if (!get_fsigned(env, x, &xf)) return 0;
 	if (!get_fsigned(env, y, &yf)) return 0;
 	epx_t2d_transform_xy(ctm, &xf, &yf);
-	*xp = (int) roundf(xf);
-	*yp = (int) roundf(yf);
+	*xp = float_to_int(xf);
+	*yp = float_to_int(yf);
     }
     else {
 	if (!get_signed(env, x, xp)) return 0;
@@ -879,8 +900,8 @@ static int get_dim(ErlNifEnv* env,
 	if (!get_funsigned(env, w, &wf)) return 0;
 	if (!get_funsigned(env, h, &hf)) return 0;
 	epx_t2d_transform_wh(ctm, &wf, &hf);
-	*wp = (unsigned int) round(wf);
-	*hp = (unsigned int) round(hf);
+	*wp = float_to_unsigned(wf);
+	*hp = float_to_unsigned(hf);
     }
     else {
 	if (!get_unsigned(env, w, wp)) return 0;
@@ -1313,6 +1334,10 @@ static void pixmap_dtor(ErlNifEnv* env, void* obj)
 	epx_message_send(nif_backend->main, 0, &m);
     }
     epx_object_unref(pixmap);
+    if (pm->parent) {
+	enif_release_resource(pm->parent);
+	pm->parent = NULL;
+    }
 }
 
 static void window_dtor(ErlNifEnv* env, void* obj)
@@ -2075,10 +2100,9 @@ static int get_color(ErlNifEnv* env, const ERL_NIF_TERM term,
 	return 1;
     }
 
-    if (enif_get_atom(env, term, namebuf, sizeof(namebuf), ERL_NIF_LATIN1)) {
-	*pixel = epx_pixel_from_string(namebuf);
-	return 1;
-    }
+    // a color name, an unknown name is refused
+    if (enif_get_atom(env, term, namebuf, sizeof(namebuf), ERL_NIF_LATIN1))
+	return epx_pixel_lookup(namebuf, pixel);
 
     if (!enif_get_tuple(env, term, &arity, &elem))
 	return 0;
@@ -2794,6 +2818,7 @@ static ERL_NIF_TERM pixmap_create(ErlNifEnv* env, int argc,
     if ((pixmap = epx_pixmap_create(width, height, fmt)) == NULL)
 	return enif_make_badarg(env);
     pm = enif_alloc_resource(pixmap_res, sizeof(epx_nif_pixmap_t));
+    pm->parent = NULL;
     pm->pixmap = pixmap;
     pixmap->owner = (void*) enif_self(env, &pm->own);
     pixmap->res = pm;
@@ -2877,7 +2902,10 @@ static ERL_NIF_TERM pixmap_sub_pixmap(ErlNifEnv* env, int argc,
     if ((subpixmap = epx_pixmap_sub_pixmap(src, x, y, width, height)) == NULL)
 	return enif_make_badarg(env);
     pm = enif_alloc_resource(pixmap_res, sizeof(epx_nif_pixmap_t));
+    pm->parent = NULL;
     pm->pixmap = subpixmap;
+    pm->parent = (epx_nif_pixmap_t*) src->res;
+    enif_keep_resource(pm->parent);
     subpixmap->res = pm;
     subpixmap->owner = (void*) enif_self(env, &pm->own);    
     t = make_pixmap(env, subpixmap);
@@ -2899,6 +2927,7 @@ static ERL_NIF_TERM pixmap_copy(ErlNifEnv* env, int argc,
     if ((pixmap = epx_pixmap_copy(src)) == NULL)
 	return enif_make_badarg(env);
     pm = enif_alloc_resource(pixmap_res, sizeof(epx_nif_pixmap_t));
+    pm->parent = NULL;
     pm->pixmap = pixmap;
     pixmap->res = pm;
     pixmap->owner = (void*) enif_self(env, &pm->own);
@@ -2961,10 +2990,9 @@ static ERL_NIF_TERM pixmap_get_pixels(ErlNifEnv* env, int argc,
     if (!get_dim(env, src->ctm, argv[3], argv[4], &w, &h))
 	return enif_make_badarg(env);
 
-    // special case !parent, x=0, y=0, w=0, h=0 => all pixels (with alignment)
-    if (!src->parent && !x && !y && !w && !h)
-	bt = enif_make_resource_binary(env, src->res, src->data, src->sz);
-    else {
+    // an empty rectangle has no pixels (the pixels are always copied,
+    // never a binary of the pixmap's own memory)
+    {
 	epx_rect_t r  = {{x,y},{w,h}};
 	epx_rect_t sr = {{0,0},{src->width,src->height}};
 	size_t sz;
@@ -4601,8 +4629,21 @@ static ERL_NIF_TERM poly_draw(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_gc(env, argv[2], &gc))
 	return enif_make_badarg(env);
-    if (!get_coord(env, px->ctm, argv[3], argv[4], &x_offs, &y_offs))
-	return enif_make_badarg(env);
+    {
+	// the offset moves the polygon, it goes through the linear part
+	// of the transform only (the vertices get the translation)
+	float xf, yf;
+	if (!get_fcoord(env, NULL, argv[3], argv[4], &xf, &yf))
+	    return enif_make_badarg(env);
+	if (px->ctm) {
+	    epx_t2d_t* t = px->ctm;
+	    float dx = t->sx*xf + t->ry*yf;
+	    float dy = t->rx*xf + t->sy*yf;
+	    xf = dx; yf = dy;
+	}
+	x_offs = float_to_int(xf);
+	y_offs = float_to_int(yf);
+    }
 
     epx_poly_draw(poly, px, gc, x_offs, y_offs);
 
@@ -6377,6 +6418,7 @@ static ERL_NIF_TERM sft_glyph_render(ErlNifEnv* env, int argc,
     for (y = 0; y < h; y++)
 	memset(EPX_PIXEL_ADDR(pixmap, 0, y), 0, w*pixmap->bytes_per_pixel);
     pm = enif_alloc_resource(pixmap_res, sizeof(epx_nif_pixmap_t));
+    pm->parent = NULL;
     pm->pixmap = pixmap;
     pixmap->owner = (void*) enif_self(env, &pm->own);
     pixmap->res = pm;
@@ -7292,7 +7334,13 @@ static ERL_NIF_TERM window_create(ErlNifEnv* env, int argc,
 	return enif_make_badarg(env);
     if (!get_dim(env, NULL, argv[2], argv[3], &width, &height))
 	return enif_make_badarg(env);
-    if ((width == 0) || (height == 0))
+    // the size and place a window system takes (X11 uses 16 bits), a
+    // window outside is refused here as it can not be shown
+#define EPX_WINDOW_MAX_DIM 32767
+    if ((width == 0) || (height == 0) ||
+	(width > EPX_WINDOW_MAX_DIM) || (height > EPX_WINDOW_MAX_DIM) ||
+	(x < -EPX_WINDOW_MAX_DIM) || (x > EPX_WINDOW_MAX_DIM) ||
+	(y < -EPX_WINDOW_MAX_DIM) || (y > EPX_WINDOW_MAX_DIM))
 	return enif_make_badarg(env);
     if (argc == 5) {
 	if (!get_event_flags(env, argv[4], &events))

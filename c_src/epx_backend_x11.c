@@ -303,6 +303,16 @@ static void init_off_screen(X11Window* w)
     w->pm_height = 0;
 }
 
+// The contents of a new X pixmap is undefined, fill it with the
+// window background (white) so undrawn parts do not show old memory
+static void clear_pixmap(X11Backend* b, Pixmap pm, int width, int height)
+{
+    GC gc = XCreateGC(b->display, pm, 0, NULL);
+    XSetForeground(b->display, gc, b->white_pixel);
+    XFillRectangle(b->display, pm, gc, 0, 0, width, height);
+    XFreeGC(b->display, gc);
+}
+
 static int create_off_screen(X11Backend* b, X11Window* w)
 {
     if (b->double_buffer) {
@@ -310,6 +320,7 @@ static int create_off_screen(X11Backend* b, X11Window* w)
 			      w->width, w->height,
 			      DefaultDepth(b->display, b->screen));
 	if (w->pm == 0) return -1;
+	clear_pixmap(b, w->pm, w->width, w->height);
 	w->pm_width  = w->width;
 	w->pm_height = w->height;
     }
@@ -339,6 +350,7 @@ static int resize_off_screen(X11Backend* b, X11Window* w)
     // printf("pm: w=%d,h=%d\r\n", ww, hh);
     pm = XCreatePixmap(b->display, w->window, ww, hh, 
 		       DefaultDepth(b->display, b->screen));
+    clear_pixmap(b, pm, ww, hh);
     XCopyArea(b->display, w->pm, pm, w->gc, 0, 0, w->pm_width, w->pm_height,
 	      0, 0);
     XFreePixmap(b->display, w->pm);

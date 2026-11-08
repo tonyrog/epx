@@ -601,5 +601,6 @@ extern epx_format_t epx_pixel_format_from_name(char* name);
 extern char* epx_pixel_format_to_name(epx_format_t fmt,char* buf, size_t size);
 
 extern epx_pixel_t  epx_pixel_from_string(char* name);
+extern int epx_pixel_lookup(char* name, epx_pixel_t* pixel);
 
 #endif

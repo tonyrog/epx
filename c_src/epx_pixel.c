@@ -453,30 +453,41 @@ static struct {
 };
 
 // convert hex intege format 0xaarrggbb or color name to pixel
-epx_pixel_t epx_pixel_from_string(char* name)
+// Look up a color by name, or by hex value (rrggbb / aarrggbb).
+// Return 1 and the color, or 0 when the name is not known.
+int epx_pixel_lookup(char* name, epx_pixel_t* pixel)
 {
     char* eptr;
     unsigned long c;
+    int i = 0;
 
-    c = strtol(name,  &eptr, 16);
+    if (*name == '\0')
+	return 0;
+    c = strtoul(name, &eptr, 16);
     if (*eptr == '\0') {
-	epx_pixel_t p;
-	int a = (c >> 24);
-	p.a = (a==0) ? 255 : a;
-	p.r = (c >> 16) & 0xff;
-	p.g = (c >> 8) & 0xff;
-	p.b = c & 0xff;
-	return p;
+	int a = (c >> 24) & 0xff;
+	pixel->a = (a==0) ? 255 : a;
+	pixel->r = (c >> 16) & 0xff;
+	pixel->g = (c >> 8) & 0xff;
+	pixel->b = c & 0xff;
+	return 1;
     }
-    else {
-	int i = 0;
-
-	while(epx_color_table[i].name) {
-	    if (strcasecmp(name, epx_color_table[i].name) == 0)
-		return epx_color_table[i].pixel;
-	    i++;
+    while(epx_color_table[i].name) {
+	if (strcasecmp(name, epx_color_table[i].name) == 0) {
+	    *pixel = epx_color_table[i].pixel;
+	    return 1;
 	}
+	i++;
     }
+    return 0;
+}
+
+// Color by name, black when not known
+epx_pixel_t epx_pixel_from_string(char* name)
+{
+    epx_pixel_t p;
+    if (epx_pixel_lookup(name, &p))
+	return p;
     return epx_pixel_black;
 }
 

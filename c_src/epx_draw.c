@@ -24,12 +24,6 @@
 #include "../include/epx_colors.h"
 
 
-// style bits that make something to be painted, a style without any
-// of these (none or []) means nothing is drawn
-#define EPX_PAINT_STYLE_MASK \
-    (EPX_FLAG_SOLID|EPX_FLAG_BLEND|EPX_FLAG_SUM|EPX_FLAG_AALIAS| \
-     EPX_FLAG_TEXTURED|EPX_LINE_STYLE_DASHED|EPX_BORDER_STYLE_DASHED)
-
 #define no_paint(ff) (((ff) & EPX_PAINT_STYLE_MASK) == 0)
 
 #define no_border(ff) \
@@ -199,24 +193,9 @@ void epx_pixmap_draw_line(epx_pixmap_t* pixmap, epx_gc_t* gc,
     if (no_paint(gc->line_style))
 	return;
 
-    if (gc->line_width == 1) {
-	if (y1 == y0)
-	    epx_draw_line_horizontal(pixmap,x0,x1,y0,
-				     gc->line_style,
-				     gc->foreground_color);
-	else if (x1 == x0) {
-	    epx_draw_line_vertical(pixmap,x0,y0,y1,
-				   gc->line_style,
-				   gc->foreground_color);
-	}
-	else
-	    epx_draw_line_plain(pixmap,x0,y0,x1,y1,
-				gc->line_style,
-				gc->foreground_color);
-    }
-    else if (gc->line_width > 1)
-	epx_draw_line_thick(pixmap,x0,y0,x1,y1,gc->line_width,gc->line_style,
-			    gc->foreground_color);
+    if (gc->line_width > 0)
+	epx_draw_line(pixmap,x0,y0,x1,y1,gc->line_width,gc->line_style,
+		      gc->foreground_color);
 }
 
 void epx_pixmap_draw_ellipse(epx_pixmap_t* pixmap, epx_gc_t* gc,
@@ -290,8 +269,7 @@ void epx_pixmap_draw_roundrect(epx_pixmap_t* pixmap, epx_gc_t* gc,
 	bw = 1;
     }
     // radii are clamped to half the size inside
-    epx_draw_rrect_ring(pixmap, r.xy.x, r.xy.y,
-			epx_rect_right(&r), epx_rect_bottom(&r),
+    epx_draw_rrect_ring(pixmap, r.xy.x, r.xy.y, r.wh.width, r.wh.height,
 			rw, rh, bw, bf, gc->border_color,
 			ff, gc->fill_color);
 }

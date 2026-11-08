@@ -57,7 +57,7 @@ static inline int get_edge_orig_x0(epx_edge_t* ep, epx_pos_t* pos_table)
 
 static inline int get_edge_orig_y0(epx_edge_t* ep, epx_pos_t* pos_table)
 {
-    return pos_table[get_edge_orig_v0(ep)].x;
+    return pos_table[get_edge_orig_v0(ep)].y;
 }
 
 static void set_edge(epx_edge_t* ep, epx_vertex_t* vs, int v0, int v1)
@@ -352,6 +352,13 @@ void epx_poly_draw(epx_poly_t* poly,
     DEBUGF("draw ymin=%d, ymax=%d", ymin, ymax);
 
     if (gc->fill_style != EPX_FILL_STYLE_NONE) {
+	// only the rows inside the clip (rows are y+y_offs on the pixmap)
+	int ctop = epx_rect_top(&pixmap->clip) - y_offs;
+	int cbot = epx_rect_bottom(&pixmap->clip) - y_offs;
+	if (ymin < ctop) ymin = ctop;
+	if (ymax > cbot) ymax = cbot;
+    }
+    if ((gc->fill_style != EPX_FILL_STYLE_NONE) && (ymin <= ymax)) {
 	// Even-odd scan line fill, the interior is sampled on integer
 	// scan lines using half open edges [ylo,yhi) and the edges them
 	// self are added to the spans so the boundary is always covered.
@@ -423,21 +430,33 @@ void epx_poly_draw(epx_poly_t* poly,
 	free(xs);
 	free(sp);
     }
-    else if ((gc->line_style & (EPX_FLAG_SOLID|EPX_FLAG_BLEND|EPX_FLAG_SUM|
+    else if ((gc->fill_style == EPX_FILL_STYLE_NONE) &&
+	     ((gc->line_style & (EPX_FLAG_SOLID|EPX_FLAG_BLEND|EPX_FLAG_SUM|
 				 EPX_FLAG_AALIAS|EPX_FLAG_TEXTURED|
-				 EPX_LINE_STYLE_DASHED)) != 0) {
+				 EPX_LINE_STYLE_DASHED)) != 0)) {
 	int i;
+	int n = (int) poly->nes;
 	epx_pos_t* pt = poly->pos_table;
-	// FIXME: do not draw pixel twise!
-	for (i = 0; i < (int) poly->nes; i++) {
+	// Each edge is drawn in the polygon's own direction without its
+	// last pixel, that is the first pixel of the next edge, so every
+	// vertex is drawn once (a blended outline is even). Thick lines
+	// are drawn whole.
+	epx_flags_t flags = gc->line_style;
+	if ((gc->line_width <= 1) && (n > 2))
+	    flags |= EPX_FLAG_NLAST;
+	if (n == 2)  // the two edges are the same line
+	    n = 1;
+	for (i = 0; i < n; i++) {
 	    epx_edge_t* ep = &poly->edge_table[i];
+	    int v0 = get_edge_orig_v0(ep);
+	    int v1 = get_edge_orig_v1(ep);
 	    epx_draw_line(pixmap,
-			  pt[ep->v0].x + x_offs,
-			  pt[ep->v0].y + y_offs,
-			  pt[ep->v1].x + x_offs,
-			  pt[ep->v1].y + y_offs,
+			  pt[v0].x + x_offs,
+			  pt[v0].y + y_offs,
+			  pt[v1].x + x_offs,
+			  pt[v1].y + y_offs,
 			  gc->line_width,
-			  gc->line_style, gc->foreground_color);
+			  flags, gc->foreground_color);
 	}
     }
 }

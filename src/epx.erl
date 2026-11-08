@@ -1072,7 +1072,9 @@ pixmap_draw_strip(_Pixmap, _Gc, _Points) ->
 pixmap_draw_poly(Pixmap, Gc, Poly) when is_record(Poly, epx_poly) ->
     poly_draw(Poly, Pixmap, Gc, 0, 0);
 pixmap_draw_poly(Pixmap, Gc, Points) when is_list(Points) ->
-    poly_draw(poly_create(Points), Pixmap, Gc, 0, 0).
+    poly_draw(poly_create(Points), Pixmap, Gc, 0, 0);
+pixmap_draw_poly(_Pixmap, _Gc, _Points) ->
+    erlang:error(badarg).
 
 -spec pixmap_draw_poly(Pixmap::epx_pixmap(), Gc::epx_gc(),
 		       Poly::epx_poly()|[{X::coord(),Y::coord()}],
@@ -1081,7 +1083,9 @@ pixmap_draw_poly(Pixmap, Gc, Poly, Xoffs, Yoffs)
   when is_record(Poly, epx_poly) ->
     poly_draw(Poly, Pixmap, Gc, Xoffs, Yoffs);
 pixmap_draw_poly(Pixmap, Gc, Points, Xoffs, Yoffs) when is_list(Points) ->
-    poly_draw(poly_create(Points), Pixmap, Gc, Xoffs, Yoffs).
+    poly_draw(poly_create(Points), Pixmap, Gc, Xoffs, Yoffs);
+pixmap_draw_poly(_Pixmap, _Gc, _Points, _Xoffs, _Yoffs) ->
+    erlang:error(badarg).
 
 
 pixmap_ltm_translate(_Pixmap, _Tx, _Ty) ->

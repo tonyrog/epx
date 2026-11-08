@@ -202,11 +202,18 @@ void trace_aalias_line_1(epx_pixmap_t* pixmap, epx_line_t* line, int flags,
     LINE_DECL(0);
     LINE_SWAPIN(line,0);
 
+    // the first pixel is on the line
+    if (!(flags & EPX_FLAG_NFIRST) &&
+	epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip))
+	put_apixel(L(ptr,0), pixmap->func.unpack,pixmap->func.pack,
+		   flags, fg);
     if (line->delta.x > line->delta.y) {
 	while(L(x1,0) != L(x0,0)) {
 	    LINE_STEP(L(err,0),L(ptr,0),
 		      L(x0,0),line->delta.x,line->s.x,line->ws.x,
 		      L(y0,0),line->delta.y,line->s.y,line->ws.y);
+	    if ((L(x1,0) == L(x0,0)) && (flags & EPX_FLAG_NLAST))
+		break;
 	    /* FIXME more scaling needed for luminance to be correct ! */
 	    ae = (line->delta.x == 0) ? 0 : ((a*L(err,0)) / line->delta.x);
 
@@ -247,6 +254,8 @@ void trace_aalias_line_1(epx_pixmap_t* pixmap, epx_line_t* line, int flags,
 	    LINE_STEP(L(err,0),L(ptr,0),
 		      L(y0,0),line->delta.y,line->s.y,line->ws.y,
 		      L(x0,0),line->delta.x,line->s.x,line->ws.x);
+	    if ((L(y1,0) == L(y0,0)) && (flags & EPX_FLAG_NLAST))
+		break;
 	    /* FIXME more scaling needed for luminance to be correct ! */
 	    ae = (line->delta.y == 0) ? 0 : ((a*L(err,0)) / line->delta.y);
 	    if (ae < 0) {
@@ -284,18 +293,25 @@ void trace_aalias_line_1(epx_pixmap_t* pixmap, epx_line_t* line, int flags,
     LINE_SWAPOUT(line,0);
 }
 
-/* Trace a line with no antialiasing */
+/* Trace a line with no antialiasing, both end points are drawn unless
+ * EPX_FLAG_NFIRST / EPX_FLAG_NLAST say otherwise */
 void trace_line_1(epx_pixmap_t* pixmap, epx_line_t* line,
 		  int flags, epx_pixel_t fg)
 {
     LINE_DECL(0);
     LINE_SWAPIN(line,0);
 
+    if (!(flags & EPX_FLAG_NFIRST) &&
+	epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip))
+	put_apixel(L(ptr,0), pixmap->func.unpack,pixmap->func.pack,
+		   flags, fg);
     if (line->delta.x > line->delta.y) {
 	while(L(x1,0) != L(x0,0)) {
 	    LINE_STEP(L(err,0),L(ptr,0),
 		      L(x0,0),line->delta.x,line->s.x,line->ws.x,
 		      L(y0,0),line->delta.y,line->s.y,line->ws.y);
+	    if ((L(x1,0) == L(x0,0)) && (flags & EPX_FLAG_NLAST))
+		break;
 	    if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip)) {
 		put_apixel(L(ptr,0), pixmap->func.unpack,pixmap->func.pack,
 			   flags, fg);
@@ -307,6 +323,8 @@ void trace_line_1(epx_pixmap_t* pixmap, epx_line_t* line,
 	    LINE_STEP(L(err,0),L(ptr,0),
 		      L(y0,0),line->delta.y,line->s.y,line->ws.y,
 		      L(x0,0),line->delta.x,line->s.x,line->ws.x);
+	    if ((L(y1,0) == L(y0,0)) && (flags & EPX_FLAG_NLAST))
+		break;
 	    if (epx_point_xy_in_rect(L(x0,0),L(y0,0), &pixmap->clip)) {
 		put_apixel(L(ptr,0), pixmap->func.unpack,pixmap->func.pack,
 			   flags, fg);
@@ -595,14 +613,33 @@ void epx_draw_line_thick(epx_pixmap_t* pixmap,
 }
 
 
+// sign of a, -1, 0 or 1
+static inline int sgn(int a) { return (a > 0) - (a < 0); }
+
 void epx_draw_line(epx_pixmap_t* pixmap,int x0, int y0, int x1, int y1,
 		   unsigned int line_width,epx_flags_t flags, epx_pixel_t p)
 {
     if (line_width <= 1) {
-	if (y0 == y1)
-	    epx_draw_line_horizontal(pixmap, x0, x1, y1, flags, p);
-	else if (x0 == x1)
-	    epx_draw_line_vertical(pixmap, x0, y0, y1, flags, p);
+	// straight lines: drop the end points asked for here, the
+	// horizontal and vertical primitives always draw both ends
+	if ((x0 == x1) && (y0 == y1)) {
+	    if (!(flags & (EPX_FLAG_NFIRST|EPX_FLAG_NLAST)))
+		epx_draw_line_horizontal(pixmap, x0, x0, y0, flags, p);
+	}
+	else if (y0 == y1) {
+	    int s = sgn(x1 - x0);
+	    if (flags & EPX_FLAG_NFIRST) x0 += s;
+	    if (flags & EPX_FLAG_NLAST)  x1 -= s;
+	    if (sgn(x1 - x0) != -s)
+		epx_draw_line_horizontal(pixmap, x0, x1, y1, flags, p);
+	}
+	else if (x0 == x1) {
+	    int s = sgn(y1 - y0);
+	    if (flags & EPX_FLAG_NFIRST) y0 += s;
+	    if (flags & EPX_FLAG_NLAST)  y1 -= s;
+	    if (sgn(y1 - y0) != -s)
+		epx_draw_line_vertical(pixmap, x0, y0, y1, flags, p);
+	}
 	else
 	    epx_draw_line_plain(pixmap, x0, y0, x1, y1, flags, p);
     }
