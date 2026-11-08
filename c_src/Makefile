@@ -231,7 +231,8 @@ ifeq ($(FB),Yes)
 	BE_OBJS += epx_backend_fb.o
 endif
 
-CFG_LDFLAGS += $(CFG_LIB)
+CFG_LDFLAGS := $(CFG_LIB) $(CFG_LDFLAGS)
+# CFG_LDFLAGS += $(CFG_LIB)
 
 SIMD_OBJS = epx_simd_emu.o
 
@@ -340,6 +341,7 @@ nif_target: $(EPX_LIB) $(EPX_NIF)
 
 epx-config: $(OBJDIR)/epx-config
 	chmod +x $(OBJDIR)/epx-config
+	cp $(OBJDIR)/epx-config $(LIBDIR)/epx-config
 
 clean_target:
 	-rm -f $(EPX_LIB) $(OBJDIR)/*.o $(EPX_NIF)
