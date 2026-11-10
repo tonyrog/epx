@@ -19,9 +19,16 @@
 //
 
 #include <string.h>
-#include <unistd.h>  // WINDOWS fixme
-#ifndef WIN32
-#include <poll.h>    // WINDOWS fixme
+#include <stdint.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <fcntl.h>
+#include <poll.h>
+#ifdef __linux__
+#include <sys/eventfd.h>
+#endif
 #endif
 #include <errno.h>
 #include <math.h>
@@ -50,7 +57,9 @@
 #define EXCP_NOTSUP_N(env, arg_num, str) raise_exception((env), ATOM(notsup), (arg_num), (str), __FILE__, __LINE__)
 #define EXCP_BADARG_N(env, arg_num, str) raise_exception((env), ATOM(badarg), (arg_num), (str), __FILE__, __LINE__)
 
+#ifndef MAX_PATH  // windows.h has one
 #define MAX_PATH 1024
+#endif
 
 static int epx_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info);
 static int epx_upgrade(ErlNifEnv* env, void** priv_data, void** old_priv_data,
@@ -296,12 +305,28 @@ typedef struct _epx_queue_t {
     epx_qlink_t  ql[MAX_QLINK];  // "pre" allocated qlinks
 } epx_queue_t;
 
+// A wakeup signal for a thread that waits on an OS event source (the
+// backend's fd or handle) and on its message queue at the same time,
+// which an ErlNifCond can not do. The signal is a level: "look in the
+// queue". Threads that only wait on their queue use the queue's
+// ErlNifCond and need no wakeup.
+typedef struct {
+#if defined(_WIN32)
+    HANDLE ev;      // manual reset event object
+#elif defined(__linux__)
+    int fd;         // eventfd
+#else
+    int fd[2];      // non blocking pipe
+#endif
+} epx_wake_t;
+
 typedef struct _epx_thread_t {
     ErlNifTid   tid;     // thread id
     epx_queue_t q;       // message queue
     void*       arg;     // thread init argument
     int         stolen;  // if stolen main thread
-    int         wake[2]; // wakeup pipe (very unix, fixme)
+    int         has_wake;// the thread waits on wake and an OS event
+    epx_wake_t  wake;    // wakeup signal (when has_wake)
     void*       priv;    // private (upgrade) data
 } epx_thread_t;
 
@@ -787,7 +812,7 @@ static void nif_emit_log(int level, char* file, int line, ...)
 static int get_number(ErlNifEnv* env, const ERL_NIF_TERM term, double* number)
 {
     double x;
-    int64_t xi;
+    ErlNifSInt64 xi;
 
     if (enif_get_int64(env, term, &xi)) {
 	*number = (double) xi;
@@ -987,6 +1012,31 @@ static int epx_queue_get(epx_queue_t* q, epx_message_t* m)
 }
 
 
+// Get message from queue front if there is one, return 1 if a
+// message was taken and 0 if the queue was empty
+static int epx_queue_try_get(epx_queue_t* q, epx_message_t* m)
+{
+    epx_qlink_t* ql;
+
+    enif_mutex_lock(q->mtx);
+    if (!(ql = q->front)) {
+	enif_mutex_unlock(q->mtx);
+	return 0;
+    }
+    if (!(q->front = ql->next))
+	q->rear = 0;
+    q->len--;
+    *m = ql->mesg;
+    if ((ql >= &q->ql[0]) && (ql <= &q->ql[MAX_QLINK-1])) {
+	ql->next = q->free;
+	q->free = ql;
+    }
+    else
+	enif_free(ql);
+    enif_mutex_unlock(q->mtx);
+    return 1;
+}
+
 // Put message at queue rear
 static int epx_queue_put(epx_queue_t* q, epx_message_t* m)
 {
@@ -1082,26 +1132,128 @@ static char* format_message(epx_message_t* m)
     }
 }
 
-static int epx_thread_wakeup(epx_thread_t* thr)
+/******************************************************************************
+ *
+ *   Wakeup signal and waiting for an OS event or a wakeup
+ *
+ *****************************************************************************/
+
+static int epx_wake_init(epx_wake_t* w)
 {
-    int r = 0;
-    if (thr->wake[1] >= 0) {
-	if ((r=write(thr->wake[1], "W", 1)) == 1)
-	    r = 0;
-    }
-    return r;
+#if defined(_WIN32)
+    if ((w->ev = CreateEvent(NULL, TRUE, FALSE, NULL)) == NULL)
+	return -1;
+#elif defined(__linux__)
+    if ((w->fd = eventfd(0, EFD_NONBLOCK|EFD_CLOEXEC)) < 0)
+	return -1;
+#else
+    if (pipe(w->fd) < 0)
+	return -1;
+    fcntl(w->fd[0], F_SETFL, fcntl(w->fd[0], F_GETFL) | O_NONBLOCK);
+    fcntl(w->fd[1], F_SETFL, fcntl(w->fd[1], F_GETFL) | O_NONBLOCK);
+    fcntl(w->fd[0], F_SETFD, FD_CLOEXEC);
+    fcntl(w->fd[1], F_SETFD, FD_CLOEXEC);
+#endif
+    return 0;
 }
 
-// eat wakeup tokens
-static int epx_thread_wokeup(epx_thread_t* thr)
+static void epx_wake_destroy(epx_wake_t* w)
 {
-    char buf[1];
-    int r;
-    if ((thr->wake[0]) >= 0) {
-	r = read(thr->wake[0], &buf, 1);
-	return (r == 1) ? 0 : -1;
+#if defined(_WIN32)
+    CloseHandle(w->ev);
+#elif defined(__linux__)
+    close(w->fd);
+#else
+    close(w->fd[0]);
+    close(w->fd[1]);
+#endif
+}
+
+// set the signal (stays set until cleared)
+static void epx_wake_signal(epx_wake_t* w)
+{
+#if defined(_WIN32)
+    SetEvent(w->ev);
+#elif defined(__linux__)
+    uint64_t one = 1;
+    if (write(w->fd, &one, sizeof(one)) < 0) {
+	// EAGAIN: the counter is full, it is set anyway
     }
-    return 0;
+#else
+    if (write(w->fd[1], "W", 1) < 0) {
+	// EAGAIN: the pipe is full, it is set anyway
+    }
+#endif
+}
+
+// clear the signal, before the queue is looked at
+static void epx_wake_clear(epx_wake_t* w)
+{
+#if defined(_WIN32)
+    ResetEvent(w->ev);
+#elif defined(__linux__)
+    uint64_t n;
+    if (read(w->fd, &n, sizeof(n)) < 0) {
+	// EAGAIN: not set
+    }
+#else
+    char buf[64];
+    while(read(w->fd[0], buf, sizeof(buf)) > 0)
+	;
+#endif
+}
+
+#define EPX_WAIT_EVENT 1   // the OS event source is ready
+#define EPX_WAIT_WAKE  2   // the wakeup signal is set
+
+// Wait for the OS event source handle (an fd on unix, an event object
+// on windows) or the wakeup signal, timeout in ms (-1 = forever).
+// Return a mask of EPX_WAIT_EVENT/EPX_WAIT_WAKE, 0 on timeout and -1
+// on error.
+static int epx_wait(EPX_HANDLE_T handle, epx_wake_t* w, int timeout)
+{
+#if defined(_WIN32)
+    HANDLE hs[2];
+    DWORD n = 0, r;
+    hs[n++] = (HANDLE) handle;
+    if (w) hs[n++] = w->ev;
+    r = WaitForMultipleObjects(n, hs, FALSE,
+			       (timeout < 0) ? INFINITE : (DWORD) timeout);
+    if (r == WAIT_TIMEOUT)
+	return 0;
+    if (r == WAIT_OBJECT_0)
+	return EPX_WAIT_EVENT;
+    if (r == WAIT_OBJECT_0+1)
+	return EPX_WAIT_WAKE;
+    return -1;
+#else
+    struct pollfd fds[2];
+    int nfd = 1;
+    int n, res = 0;
+
+    fds[0].fd = (int)((intptr_t)handle);
+    fds[0].events = POLLIN;
+    fds[0].revents = 0;
+    if (w) {
+#if defined(__linux__)
+	fds[1].fd = w->fd;
+#else
+	fds[1].fd = w->fd[0];
+#endif
+	fds[1].events = POLLIN;
+	fds[1].revents = 0;
+	nfd++;
+    }
+    if ((n = poll(fds, nfd, timeout)) < 0)
+	return (errno == EINTR) ? 0 : -1;
+    if (n == 0)
+	return 0;
+    if (fds[0].revents & (POLLIN|POLLHUP|POLLERR))
+	res |= EPX_WAIT_EVENT;
+    if ((nfd > 1) && (fds[1].revents & POLLIN))
+	res |= EPX_WAIT_WAKE;
+    return res;
+#endif
 }
 
 static int epx_message_send(epx_thread_t* thr, epx_thread_t* sender,
@@ -1109,11 +1261,14 @@ static int epx_message_send(epx_thread_t* thr, epx_thread_t* sender,
 {
     int r;
     m->sender = sender;
-    epx_thread_wakeup(thr);
-    r=epx_queue_put(&thr->q, m);
+    // the message is in the queue before the waiter is woken
+    r = epx_queue_put(&thr->q, m);
+    if (thr->has_wake)
+	epx_wake_signal(&thr->wake);
     return r;
 }
 
+// blocking receive (waits on the queue's ErlNifCond)
 static int epx_message_recv(epx_thread_t* thr, epx_thread_t** from,
 			    epx_message_t* m)
 {
@@ -1122,7 +1277,18 @@ static int epx_message_recv(epx_thread_t* thr, epx_thread_t** from,
 	return r;
     if (from)
 	*from = m->sender;
-    return epx_thread_wokeup(thr);
+    return 0;
+}
+
+// non blocking receive, return 1 when a message was taken
+static int epx_message_try_recv(epx_thread_t* thr, epx_thread_t** from,
+				epx_message_t* m)
+{
+    if (!epx_queue_try_get(&thr->q, m))
+	return 0;
+    if (from)
+	*from = m->sender;
+    return 1;
 }
 
 #ifdef __not_used__
@@ -1162,13 +1328,15 @@ static epx_thread_t* epx_thread_start(void* (*func)(void* arg),
 
     if (!(thr = enif_alloc(sizeof(epx_thread_t))))
 	return 0;
-    thr->wake[0] = thr->wake[1] = -1;
+    thr->has_wake = 0;
+    thr->stolen = 0;
     thr->priv = NULL;
     if (epx_queue_init(&thr->q) < 0)
 	goto error;
     if (wakeup) {
-	if (pipe(thr->wake) < 0)
+	if (epx_wake_init(&thr->wake) < 0)
 	    goto error;
+	thr->has_wake = 1;
     }
     if (!(opts = enif_thread_opts_create("epx_thread_opts")))
 	goto error;
@@ -1190,8 +1358,7 @@ static epx_thread_t* epx_thread_start(void* (*func)(void* arg),
     enif_thread_opts_destroy(opts);
     return thr;
 error:
-    if (thr->wake[0] >= 0) close(thr->wake[0]);
-    if (thr->wake[1] >= 0) close(thr->wake[1]);
+    if (thr->has_wake) epx_wake_destroy(&thr->wake);
     enif_free(thr);
     return 0;
 }
@@ -1218,8 +1385,7 @@ static int epx_thread_stop(epx_thread_t* thr, epx_thread_t* sender,
     }
     DEBUGF("enif_thread_join: return=%d, exit_value=%p", r, *exit_value);
     epx_queue_destroy(&thr->q);
-    if (thr->wake[0] >= 0) close(thr->wake[0]);
-    if (thr->wake[1] >= 0) close(thr->wake[1]);
+    if (thr->has_wake) epx_wake_destroy(&thr->wake);
     enif_free(thr);
     return 0;
 }
@@ -1441,7 +1607,7 @@ static ERL_NIF_TERM make_object(ErlNifEnv* env, epx_object_t* epx_obj)
 {
     return enif_make_tuple3(env,
 			    *object_type[epx_obj->type],
-			    enif_make_ulong(env, (unsigned long) epx_obj->res),
+			    enif_make_ulong(env, (uintptr_t)epx_obj->res),
 			    enif_make_resource(env, epx_obj->res));
 }
 
@@ -1453,7 +1619,7 @@ static ERL_NIF_TERM make_window(ErlNifEnv* env, epx_window_t* window)
 	return enif_make_tuple3(env,
 				ATOM(epx_window),
 				enif_make_ulong(env,
-						(unsigned long) window->res),
+						(uintptr_t) window->res),
 				enif_make_resource(env, window->res));
 }
 
@@ -1465,7 +1631,7 @@ static ERL_NIF_TERM make_pixmap(ErlNifEnv* env, epx_pixmap_t* pixmap)
 	return enif_make_tuple3(env,
 				ATOM(epx_pixmap),
 				enif_make_ulong(env,
-						(unsigned long) pixmap->res),
+						(uintptr_t) pixmap->res),
 				enif_make_resource(env, pixmap->res));
 }
 
@@ -1489,7 +1655,7 @@ static int get_object(ErlNifEnv* env, const ERL_NIF_TERM arg,
 	return 0;
     if (!enif_get_resource(env, elem[2], res, (void**)&obj))
 	return 0;
-    if ((unsigned long) obj != handle)
+    if ((uintptr_t) obj != handle)
 	return 0;
     if (elem[0] != *object_type[obj->epx_obj->type])
 	return 0;
@@ -1574,7 +1740,7 @@ static int get_res(ErlNifEnv* env, const ERL_NIF_TERM arg,
 	return 0;
     if (!enif_get_resource(env, elem[2], res, &obj))
 	return 0;
-    if ((unsigned long)obj != handle)
+    if ((uintptr_t)obj != handle)
 	return 0;
     *obj_ptr = obj;
     return 1;
@@ -6832,58 +6998,58 @@ static void* backend_poll(void* arg)
 	epx_message_recv(self, &from, &message);
 
 	switch(backend_poll_dispatch(self, &message)) {
-	case 0: break;
-	poll_message:
+	case 0:
+	    break;
 	case 1: {
-	    struct pollfd fds[2];
-	    int nfd;
-	    int n;
-	    int timeout = 1000;
+	    // wait for the backend's event source (or a message), then
+	    // tell the sender and wait for the next POLL
+	    int polling = 1;
+	    // without a wakeup the queue is looked at each second
+	    int timeout = self->has_wake ? -1 : 1000;
+	    epx_wake_t* w = self->has_wake ? &self->wake : NULL;
 
-	    fds[0].fd = (int)((long)message.handle);
-	    fds[0].events = POLLIN;
-	    DEBUGF("backend_poll: poll fds[0]=%ld", fds[0].fd);
-	    
-	    nfd = 1;
-	    if (self->wake[0] >= 0) {
-		fds[1].fd = self->wake[0];
-		fds[1].events = POLLIN;
-		timeout = -1;   // timeout not needed
-		nfd++;
-		DEBUGF("backend_poll: poll fds[1]=%ld", fds[1].fd);
-	    }
-
-	    if ((n = poll(fds, nfd, timeout)) > 0) {
-		if (fds[0].revents & POLLIN) {
-		    DEBUGF("backend_poll: read fd=%d", fds[0].fd);
-		    message.type = EPX_MESSAGE_EVENT_READY;
-		    epx_message_send(from, self, &message);
+	    while(polling) {
+		int r;
+		DEBUGF("backend_poll: wait handle=%ld", message.handle);
+		r = epx_wait(message.handle, w, timeout);
+		if (r < 0) {
+		    ERRORF("backend_poll: error %s (%d)",
+			   strerror(errno), errno);
+		    // check EAGAIN or real error, loop or die
 		}
-		else if ((nfd>1) && (fds[1].revents & POLLIN)) {
-		    // system message!
+		if ((r > 0) && (r & EPX_WAIT_EVENT)) {
+		    epx_message_t ready = message;
+		    DEBUGF("backend_poll: event ready");
+		    ready.type = EPX_MESSAGE_EVENT_READY;
+		    epx_message_send(from, self, &ready);
+		    polling = 0;
+		}
+		if ((r == 0) || ((r > 0) && (r & EPX_WAIT_WAKE))) {
+		    // system messages: clear first, then empty the queue
 		    epx_message_t sys_message;
 		    epx_thread_t* sys_from;
-		    epx_message_recv(self, &sys_from, &sys_message);
-		    switch(backend_poll_dispatch(self, &sys_message)) {
-		    case 0: goto poll_message;
-		    case 1: goto poll_message;
-		    case 2: return (*sys_message.upgrade)(arg);
-		    default: goto poll_message;
+		    if (w) epx_wake_clear(w);
+		    while(epx_message_try_recv(self, &sys_from, &sys_message)) {
+			switch(backend_poll_dispatch(self, &sys_message)) {
+			case 1:  // poll again (maybe a new handle)
+			    message.handle = sys_message.handle;
+			    from = sys_from;
+			    polling = 1;
+			    break;
+			case 2:
+			    return (*sys_message.upgrade)(arg);
+			default:
+			    break;
+			}
 		    }
 		}
 	    }
-	    else if (n == 0) {           // timeout
-		goto poll_message;
-	    }
-	    else if (n < 0) {
-		ERRORF("backend_poll: error %s (%d)", errno, strerror(errno));
-		// check EAGAIN or real error, loop or die
-		goto poll_message;
-	    }
 	    break;
 	}
-	case 2: return (*message.upgrade)(arg);
-	default: goto poll_message;
+	case 2:
+	    return (*message.upgrade)(arg);
+	default:
+	    break;
 	}
     }
     return 0;

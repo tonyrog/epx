@@ -483,7 +483,7 @@ map_file(SFT_Font *font, const char *filename)
 	font->memory = NULL;
 	font->size   = 0;
 	font->source = SrcMapping;
-	if ((fd = open(filename, O_RDONLY)) < 0) {
+	if ((fd = open(filename, O_RDONLY|O_BINARY)) < 0) {
 		return -1;
 	}
 	if (fstat(fd, &info) < 0) {

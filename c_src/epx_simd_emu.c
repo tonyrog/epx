@@ -33,7 +33,7 @@ void epx_simd_copy_emu(uint8_t* src, uint8_t* dst, size_t n)
 
 void epx_simd_fill_32_emu(uint8_t* dst, uint32_t v, size_t n)
 {
-    switch((unsigned long)dst & 0x3) {
+    switch((uintptr_t)dst & 0x3) {
     case 0: {	/* 32 bit aligned */
 	uint32_t* ptr32 = (uint32_t*) dst;
 	while(n--) 

@@ -177,7 +177,7 @@ int epx_font_open_init(epx_font_t* font, char* file)
     size_t file_size;
     int res = -1;
 
-    if ((f = fopen(file, "r")) == 0) {
+    if ((f = fopen(file, "rb")) == 0) {
 	fprintf(stderr, "epx_font: file %s, open error: %s\n", 
 		file, strerror(errno));
 	return -1;
@@ -246,7 +246,7 @@ int epx_font_load(epx_font_t* font)
 	return -1;
     }
     
-    if ((f = fopen(font->file_name, "r")) == 0) {
+    if ((f = fopen(font->file_name, "rb")) == 0) {
 	fprintf(stderr, "epx_font: file %s, file error: %s\r\n",
 		font->file_name, strerror(errno));
 	return -1;
@@ -286,7 +286,7 @@ int epx_font_map(epx_font_t* font)
 	return -1;
     }
 
-    if ((fd = open(font->file_name, O_RDONLY)) < 0) {
+    if ((fd = open(font->file_name, O_RDONLY|O_BINARY)) < 0) {
 	fprintf(stderr, "epx_font: file %s, open error : %s\r\n",
 		font->file_name, strerror(errno));
 	return -1;

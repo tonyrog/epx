@@ -85,7 +85,7 @@ int epx_anim_open_init(epx_animation_t* anim, char* path)
 
     epx_anim_init(anim);
 
-    if ((fd = open(path, O_RDONLY)) < 0)
+    if ((fd = open(path, O_RDONLY|O_BINARY)) < 0)
 	return -1;
     sz = sizeof(epx_animation_header_t);
     if (read(fd, (char *) &anim->hdr, sz) != (int) sz) {
