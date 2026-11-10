@@ -21,6 +21,7 @@
 
 #include <stdlib.h>
 #include <memory.h>
+#include <string.h>
 #include <math.h>
 
 #include "epx_simd_int.h"
@@ -71,7 +72,7 @@ static inline void epx_fill_32(uint8_t* ptr,
     vp[0]=x0; vp[1]=x1; vp[2]=x2; vp[3]=x3;
 
     if (!SIMD_ENABLED() || (n < EPX_INLINE_FILL_SIZE)) {
-	if (((((unsigned long)ptr) & 0x3) == 0) && (n > 3)) {
+	if (((((uintptr_t)ptr) & 0x3) == 0) && (n > 3)) {
 	    uint32_t* ptr32 = (uint32_t*) ptr;
 	    while(n--)
 		*ptr32++ = v;
@@ -94,8 +95,8 @@ static void epx_fill_24(uint8_t* ptr,
 			uint8_t x0,uint8_t x1,uint8_t x2,
 			size_t n)
 {
-    if (((((unsigned long)ptr) & 0x3) == 0) && (n >= 4)) {
-	uint32_t* ptr32 = (u_int32_t*) ptr;
+    if (((((uintptr_t)ptr) & 0x3) == 0) && (n >= 4)) {
+	uint32_t* ptr32 = (uint32_t*) ptr;
 	uint32_t v0, v1, v2;
 	uint8_t* vp;
 
@@ -134,7 +135,7 @@ static void epx_fill_16(uint8_t* ptr,
 	n %= 2;
     }
     if (n) {
-	if ((((unsigned long) ptr) & 0x1) == 0) {
+	if ((((uintptr_t) ptr) & 0x1) == 0) {
 	    uint16_t v;
 	    uint8_t* vp = (uint8_t*) &v;
 	    uint16_t* ptr16 = (uint16_t*) ptr;

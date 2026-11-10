@@ -17,6 +17,7 @@
 //
 // Lock API functions
 //
+#include <stdint.h>
 #include "../include/epx_lock.h"
 
 #define NO_LOCK ((epx_lock_t) 0)
@@ -44,7 +45,7 @@ void epx_lock_destroy(epx_lock_t lock)
 int epx_lock_lock(epx_lock_t lock)
 {
     if ((lockf != 0) && (lock != NO_LOCK)) {
-	long r = (long) (*lockf)(EPX_LOCK_LOCK, lock);
+	uintptr_t r = (uintptr_t) (*lockf)(EPX_LOCK_LOCK, lock);
 	return (int) r;
     }
     return 0;
@@ -53,7 +54,7 @@ int epx_lock_lock(epx_lock_t lock)
 int epx_lock_unlock(epx_lock_t lock)
 {
     if ((lockf != 0) && (lock != NO_LOCK)) {
-	long r = (long) (*lockf)(EPX_LOCK_UNLOCK, lock);
+	uintptr_t r = (uintptr_t) (*lockf)(EPX_LOCK_UNLOCK, lock);
 	return (int) r;
     }
     return 0;

@@ -20,7 +20,9 @@
 
 #include <string.h>
 #include <unistd.h>  // WINDOWS fixme
+#ifndef WIN32
 #include <poll.h>    // WINDOWS fixme
+#endif
 #include <errno.h>
 #include <math.h>
 

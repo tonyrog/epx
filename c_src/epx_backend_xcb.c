@@ -414,7 +414,8 @@ static xcb_keysym_t keycode_to_keysym(XCBBackend* b, xcb_keycode_t code, int col
     return keysyms[col]; 
 }
 
-    
+
+#ifdef DEBUG
 // scan trough a screen and locate a "nice" visual 
 static int make_image_formats(const xcb_setup_t* setup,
 			      epx_format_t* efmt, size_t efmt_size)
@@ -464,6 +465,7 @@ static int make_image_formats(const xcb_setup_t* setup,
     }
     return n;
 }
+#endif
 
 // scan trough a screen and locate a "nice" visual 
 static int make_screen_formats(xcb_screen_t* screen, epx_format_t* efmt,

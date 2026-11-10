@@ -20,11 +20,13 @@
 
 #include "../include/epx_pixmap.h"
 
+/*
 #if defined(__APPLE__)
 #include <machine/endian.h>
 #else
 #include <endian.h>
 #endif
+*/
 
 #if 0
 static unsigned int nearest_pow2(unsigned int n)

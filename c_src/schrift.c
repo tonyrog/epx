@@ -27,18 +27,10 @@
 # define restrict __restrict
 #endif
 
-#if defined(_WIN32)
-# define WIN32_LEAN_AND_MEAN 1
-# include <windows.h>
-#else
-#ifndef _POSIX_C_SOURCE
-# define _POSIX_C_SOURCE 1
-#endif
+#include "epx_mmap.h"
 # include <fcntl.h>
-# include <sys/mman.h>
 # include <sys/stat.h>
 # include <unistd.h>
-#endif
 
 #include "schrift.h"
 
@@ -74,7 +66,7 @@
 /* Allocate values on the stack if they are small enough, else spill to heap. */
 #define STACK_ALLOC(var, type, thresh, count) \
 	type var##_stack_[thresh]; \
-	var = (count) <= (thresh) ? var##_stack_ : calloc(sizeof(type), count);
+	var = (count) <= (thresh) ? var##_stack_ : calloc((size_t) (count), sizeof(type));
 #define STACK_FREE(var) \
 	if (var != var##_stack_) free(var);
 
@@ -117,9 +109,6 @@ struct SFT_Font
 {
 	const uint8_t *memory;
 	uint_fast32_t  size;
-#if defined(_WIN32)
-	HANDLE         mapping;
-#endif
 	int            source;
 	
 	uint_least16_t unitsPerEm;
@@ -358,8 +347,7 @@ sft_kerning(const SFT *sft, SFT_Glyph leftGlyph, SFT_Glyph rightGlyph,
 			key[1] =  leftGlyph  & 0xFF;
 			key[2] = (rightGlyph >> 8) & 0xFF;
 			key[3] =  rightGlyph & 0xFF;
-			if ((match = bsearch(key, sft->font->memory + offset,
-				numPairs, 6, cmpu32)) != NULL) {
+			if ((match = bsearch(key, (void*)(sft->font->memory + offset), numPairs, 6, cmpu32)) != NULL) {
 				
 				value = geti16(sft->font, (uint_fast32_t) ((uint8_t *) match - sft->font->memory + 4));
 				if (flags & CROSS_STREAM_KERNING) {
@@ -487,69 +475,12 @@ fast_ceil(Float_t x)
 	return i + (i < x);
 }
 
-#if defined(_WIN32)
-
-static int
-map_file(SFT_Font *font, const char *filename)
-{
-	HANDLE file;
-	DWORD high, low;
-
-	font->mapping = NULL;
-	font->memory  = NULL;
-
-	file = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
-	if (file == INVALID_HANDLE_VALUE) {
-		return -1;
-	}
-
-	low = GetFileSize(file, &high);
-	if (low == INVALID_FILE_SIZE) {
-		CloseHandle(file);
-		return -1;
-	}
-
-	font->size = (size_t)high << (8 * sizeof(DWORD)) | low;
-
-	font->mapping = CreateFileMapping(file, NULL, PAGE_READONLY, high, low, NULL);
-	if (!font->mapping) {
-		CloseHandle(file);
-		return -1;
-	}
-
-	CloseHandle(file);
-
-	font->memory = MapViewOfFile(font->mapping, FILE_MAP_READ, 0, 0, 0);
-	if (!font->memory) {
-		CloseHandle(font->mapping);
-		font->mapping = NULL;
-		return -1;
-	}
-
-	return 0;
-}
-
-static void
-unmap_file(SFT_Font *font)
-{
-	if (font->memory) {
-		UnmapViewOfFile(font->memory);
-		font->memory = NULL;
-	}
-	if (font->mapping) {
-		CloseHandle(font->mapping);
-		font->mapping = NULL;
-	}
-}
-
-#else
-
 static int
 map_file(SFT_Font *font, const char *filename)
 {
 	struct stat info;
 	int fd;
-	font->memory = MAP_FAILED;
+	font->memory = NULL;
 	font->size   = 0;
 	font->source = SrcMapping;
 	if ((fd = open(filename, O_RDONLY)) < 0) {
@@ -560,20 +491,18 @@ map_file(SFT_Font *font, const char *filename)
 		return -1;
 	}
 	/* FIXME do some basic validation on info.st_size maybe - it is signed for example, so it *could* be negative .. */
-	font->memory = mmap(NULL, (size_t) info.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	font->memory = map_file_ro(fd, (size_t) info.st_size);
 	font->size   = (uint_fast32_t) info.st_size;
 	close(fd);
-	return font->memory == MAP_FAILED ? -1 : 0;
+	return font->memory == NULL ? -1 : 0;
 }
 
 static void
 unmap_file(SFT_Font *font)
 {
-	assert(font->memory != MAP_FAILED);
-	munmap((void *) font->memory, font->size);
+	assert(font->memory != NULL);
+	unmap_file_ro((void *) font->memory, font->size);
 }
-
-#endif
 
 static int
 init_font(SFT_Font *font)
@@ -947,7 +876,7 @@ gettable(SFT_Font *font, char tag[4], uint_fast32_t *offset)
 	numTables = getu16(font, 4);
 	if (!is_safe_offset(font, 12, (uint_fast32_t) numTables * 16))
 		return -1;
-	if (!(match = bsearch(tag, font->memory + 12, numTables, 16, cmpu32)))
+	if (!(match = bsearch(tag, (void*)(font->memory + 12), numTables, 16, cmpu32)))
 		return -1;
 	*offset = getu32(font, (uint_fast32_t) ((uint8_t *) match - font->memory + 8));
 	return 0;

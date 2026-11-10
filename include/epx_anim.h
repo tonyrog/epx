@@ -29,11 +29,11 @@
 #define EPX_ANIM_FILL      0x07  // fill count*color (ARGB format) pixels
 
 typedef struct {
-    u_int32_t  version;
-    u_int32_t  image_count;
-    u_int32_t  height;
-    u_int32_t  width;
-    u_int32_t  pixel_format;
+    uint32_t  version;
+    uint32_t  image_count;
+    uint32_t  height;
+    uint32_t  width;
+    uint32_t  pixel_format;
 } epx_animation_header_t;
 
 typedef struct _epx_animation_t {

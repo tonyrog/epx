@@ -26,12 +26,12 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include <sys/mman.h>
+//#include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
-
 #include "epx_simd_int.h"
+#include "epx_mmap.h"
 #include "../include/epx_pixmap.h"
 #include "../include/epx_anim.h"
 #include "../include/epx_colors.h"
@@ -59,7 +59,7 @@ void epx_anim_cleanup(epx_animation_t* anim)
 	anim->offset_array = NULL;
     }
     if (anim->mapped_data) {
-	munmap(anim->mapped_data, anim->mapped_size);
+	unmap_file_ro(anim->mapped_data, anim->mapped_size);
 	anim->mapped_data = NULL;
 	anim->mapped_size = 0;
     }
@@ -116,10 +116,7 @@ int epx_anim_open_init(epx_animation_t* anim, char* path)
     lseek(fd, 0, SEEK_CUR);
     fstat(fd, &cache_stat);
 
-    anim->mapped_data = (uint8_t*) mmap(0,
-					cache_stat.st_size,
-					PROT_READ, MAP_SHARED, 
-					fd, 0);
+    anim->mapped_data = (uint8_t*) map_file_ro(fd, cache_stat.st_size);
     anim->mapped_size = cache_stat.st_size;
     close(fd);
     fd = -1;
@@ -176,8 +173,8 @@ void epx_anim_copy_frame(epx_pixmap_t* pic,  epx_gc_t* gc, int x, int y,
 			 epx_anim_pixels_t* current)
 {
     (void) gc;
-    u_int8_t *src = (u_int8_t*) current;
-    u_int8_t* src_save = NULL;
+    uint8_t *src = (uint8_t*) current;
+    uint8_t* src_save = NULL;
     int n_blocks = 0;
     unsigned char *dst0 = EPX_PIXEL_ADDR(pic, x, y);
     int dst_wb = pic->bytes_per_row;
@@ -194,10 +191,10 @@ void epx_anim_copy_frame(epx_pixmap_t* pic,  epx_gc_t* gc, int x, int y,
 
 	while(w) {
 	    epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
-	    u_int32_t pcount;
+	    uint32_t pcount;
 
 	    if (hdr->type == EPX_ANIM_INDIRECT) {
-		u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
+		uint8_t *isrc = ((uint8_t*)base) + hdr->count;
 		n_blocks = hdr->nblocks;   // number of blocks to run 
 		src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		src = isrc;
@@ -263,9 +260,9 @@ void epx_anim_draw_frame(epx_pixmap_t* pic, epx_gc_t* gc, int x, int y,
 			 epx_anim_pixels_t* base,
 			 epx_anim_pixels_t* current)
 {
-    u_int8_t fader = gc->fader_value;
-    u_int8_t *src = (u_int8_t*) current;
-    u_int8_t* src_save = NULL;
+    uint8_t fader = gc->fader_value;
+    uint8_t *src = (uint8_t*) current;
+    uint8_t* src_save = NULL;
     int n_blocks = 0;
     unsigned char *dst0 = EPX_PIXEL_ADDR(pic, x, y);
     int dst_wb = pic->bytes_per_row;
@@ -311,10 +308,10 @@ clip:
 	    // The line is clipped but we must skip the source data
 	    while(w) {
 		epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
-		u_int32_t pcount;
+		uint32_t pcount;
 
 		if (hdr->type == EPX_ANIM_INDIRECT) {
-		    u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
+		    uint8_t *isrc = ((uint8_t*)base) + hdr->count;
 		    n_blocks = hdr->nblocks;   // number of blocks to run 
 		    src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		    src = isrc;
@@ -354,11 +351,11 @@ clip:
 	    unsigned char *dst = EPX_PIXEL_ADDR(pic, xi, yi);
 	    while(w) {
 		epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
-		u_int32_t pcount;
-		u_int8_t a;
+		uint32_t pcount;
+		uint8_t a;
 
 		if (hdr->type == EPX_ANIM_INDIRECT) {
-		    u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
+		    uint8_t *isrc = ((uint8_t*)base) + hdr->count;
 		    n_blocks = hdr->nblocks;   // number of blocks to run 
 		    src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		    src = isrc;
@@ -439,11 +436,11 @@ clip:
 
 	    while(w) {
 		epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
-		u_int32_t pcount;
-		u_int8_t a;
+		uint32_t pcount;
+		uint8_t a;
 
 		if (hdr->type == EPX_ANIM_INDIRECT) {
-		    u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
+		    uint8_t *isrc = ((uint8_t*)base) + hdr->count;
 		    n_blocks = hdr->nblocks;   // number of blocks to run 
 		    src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		    src = isrc;
@@ -461,7 +458,7 @@ clip:
 		    break;
 
 		case EPX_ANIM_SHADOW: {
-		    u_int8_t      *src1 = src;
+		    uint8_t      *src1 = src;
 		    unsigned char *dst1 = dst;
 		    int n, bx;
 			
@@ -484,7 +481,7 @@ clip:
 		}
 
 		case EPX_ANIM_RGBA: {
-		    u_int8_t      *src1 = src;
+		    uint8_t      *src1 = src;
 		    unsigned char *dst1 = dst;
 		    int n, bx;
 		    n = epx_intersect_segments(xi,pcount,clip_x0,clip_len,&bx);
@@ -504,7 +501,7 @@ clip:
 		}
 
 		case EPX_ANIM_BGRA: {
-		    u_int8_t      *src1 = src;
+		    uint8_t      *src1 = src;
 		    unsigned char *dst1 = dst;
 		    int n, bx;
 		    n = epx_intersect_segments(xi,pcount,clip_x0,clip_len,&bx);
@@ -524,7 +521,7 @@ clip:
 		}
 		    
 		case EPX_ANIM_COPY: {
-		    u_int8_t *src1      = src;
+		    uint8_t *src1      = src;
 		    unsigned char *dst1 = dst;
 		    int n, bx;
 		    n = epx_intersect_segments(xi,pcount,clip_x0,clip_len,&bx);
@@ -604,11 +601,11 @@ no_clip:
 
 	while(w) {
 	    epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
-	    u_int32_t pcount;
-	    u_int8_t a;
+	    uint32_t pcount;
+	    uint8_t a;
 
 	    if (hdr->type == EPX_ANIM_INDIRECT) {
-		u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
+		uint8_t *isrc = ((uint8_t*)base) + hdr->count;
 		n_blocks = hdr->nblocks;   // number of blocks to run 
 		src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		src = isrc;
@@ -694,11 +691,11 @@ bgra_noclip:
 
 	while(w) {
 	    epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
-	    u_int32_t pcount;
-	    u_int8_t  a;
+	    uint32_t pcount;
+	    uint8_t  a;
 
 	    if (hdr->type == EPX_ANIM_INDIRECT) {
-		u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
+		uint8_t *isrc = ((uint8_t*)base) + hdr->count;
 		n_blocks = hdr->nblocks;   // number of blocks to run 
 		src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		src = isrc;
@@ -789,11 +786,11 @@ rgba_noclip:
 
 	while(w) {
 	    epx_anim_pixels_t* hdr = (epx_anim_pixels_t*) src;
-	    u_int32_t pcount;
-	    u_int8_t  a;
+	    uint32_t pcount;
+	    uint8_t  a;
 
 	    if (hdr->type == EPX_ANIM_INDIRECT) {
-		u_int8_t *isrc = ((u_int8_t*)base) + hdr->count;
+		uint8_t *isrc = ((uint8_t*)base) + hdr->count;
 		n_blocks = hdr->nblocks;   // number of blocks to run 
 		src_save = src + sizeof(epx_anim_pixels_t); // continue point
 		src = isrc;

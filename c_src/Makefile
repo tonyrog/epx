@@ -6,8 +6,16 @@ MACHINE := $(shell uname -m)
 RELEASE := $(shell uname -r)
 ERL=$(shell readlink -f `which erl`)
 ERL_TOP=$(ERL:%/bin/erl=%)
-CC = gcc
-RANLIB = ranlib
+
+ifeq ($(TARGET), win32)
+	OSNAME = MINGW64_NT
+	CC = x86_64-w64-mingw32-gcc
+	RANLIB = x86_64-w64-mingw32-ranlib
+else
+	CC = gcc
+	RANLIB = ranlib
+endif
+
 
 EPX_DIR := $(shell cd ..; pwd)
 
@@ -86,6 +94,7 @@ endif
 
 # Windows: MSYS2 / MinGW-w64 (uname -s = MINGW64_NT-..., UCRT64_NT-...)
 # UNTESTED, see doc/WINDOWS.md
+
 ifneq (,$(findstring MINGW,$(OSNAME))$(findstring UCRT,$(OSNAME))$(findstring CLANG,$(OSNAME)))
 WIN32 = Yes
 LD_SHARED := $(CC) -shared
@@ -277,6 +286,7 @@ LIB_OBJS = \
 	epx_hash.o \
 	epx_dict.o \
 	epx_t2d.o \
+	epx_mmap.o \
 	epx_pixel.o \
 	epx_pixmap.o \
 	epx_bitmap.o \

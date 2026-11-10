@@ -77,7 +77,7 @@ static void edata_offset(epx_dict_data_t* a, long offset)
 	a->u.v_string.ptr = a->u.v_string.ptr + offset;
 	break;
     case EPX_DICT_BINARY:
-	a->u.v_binary.ptr = (void*) (((u_int8_t*)a->u.v_binary.ptr) + offset);
+	a->u.v_binary.ptr = (void*) (((uint8_t*)a->u.v_binary.ptr) + offset);
 	break;
     case EPX_DICT_SEQUENCE:
 	for (i = 0; i < (int) a->u.v_sequence.len; i++)
@@ -117,7 +117,7 @@ static size_t edata_size(epx_dict_data_t* a)
 }
 
 // Copy external data from a to b and store data in ptr
-static u_int8_t* edata_copy(epx_dict_data_t* b, epx_dict_data_t* a, u_int8_t* ptr)
+static uint8_t* edata_copy(epx_dict_data_t* b, epx_dict_data_t* a, uint8_t* ptr)
 {
     switch(a->type) {
     case EPX_DICT_STRING:
@@ -332,7 +332,7 @@ int epx_dict_init_copy(epx_dict_t* src, epx_dict_t* dst)
 	if (!ent)
 	    goto mem_error;
 	memcpy(ent, src->entry[i],sz);
-	offset = ((u_int8_t*) ent - (u_int8_t*) src->entry[i]);
+	offset = ((uint8_t*) ent - (uint8_t*) src->entry[i]);
 	edata_offset(&ent->key, offset);
 	edata_offset(&ent->data, offset);
 	dst->entry[i] = ent;
@@ -367,7 +367,7 @@ void epx_dict_sort(epx_dict_t* dict)
 // Copy dictionary data into dictionary entry
 static void edict_update_ent(epx_dict_entry_t* ent, epx_dict_data_t* key, epx_dict_data_t* data)
 {
-    u_int8_t* ptr = ent->mem;
+    uint8_t* ptr = ent->mem;
 
     if (!ent)
 	return;

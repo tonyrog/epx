@@ -20,6 +20,7 @@
  */
 #include <math.h>
 #include <memory.h>
+#include <string.h>
 #include "../include/epx_pixmap.h"
 #include "../include/epx_bitmap.h"
 
@@ -656,12 +657,14 @@ void epx_bitmap_scroll_down(epx_bitmap_t* src, epx_bitmap_t* dst,
 }
 
 // draw clipped horizontal line
+#ifdef not_used
 static void hline_(epx_bitmap_t* bitmap, int x1, int x2, int y, uint8_t pat)
 {
     uint8_t* ptr;
     ptr = EPX_BIT_ADDR(bitmap,0,y);
     set_bits(pat, ptr, x1, 1, (x2-x1)+1);
 }
+#endif
 
 // clip and draw horizontal line
 static void hline(epx_bitmap_t* bitmap, int x1, int x2, int y, uint8_t pat)

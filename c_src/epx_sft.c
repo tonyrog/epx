@@ -17,7 +17,6 @@
 /*
  *  EPX SFT functions
  */
-#include <sys/mman.h>
 #include <sys/types.h>
 #include <fcntl.h>
 #include <memory.h>

@@ -17,7 +17,7 @@
 /*
  *  EPX Font functions
  */
-#include <sys/mman.h>
+// #include <sys/mman.h>
 #include <sys/types.h>
 #include <fcntl.h>
 #include <memory.h>
@@ -27,6 +27,7 @@
 #include <wchar.h>
 #include <errno.h>
 
+#include "epx_mmap.h"
 #include "../include/epx_font.h"
 #include "../include/epx_pixmap.h"
 #include "../include/epx_gc.h"
@@ -71,7 +72,7 @@ void EPX_FONT_TYPE_RELEASE(void* arg)
     if (font->foundry_name) free(font->foundry_name);
     if (font->family_name)  free(font->family_name);
     if (font->font_map != 0)
-	munmap(font->font_map, font->file_size);
+	unmap_file_ro(font->font_map, font->file_size);
     else if (font->font_data != 0)
 	free(font->font_data);
     if (font->on_heap)
@@ -291,12 +292,9 @@ int epx_font_map(epx_font_t* font)
 	return -1;
     }
 
-    font->font_map = (epx_font_file_t*) mmap(0,
-					     font->file_size,
-					     PROT_READ, MAP_SHARED, 
-					     fd, 0);
+    font->font_map = (epx_font_file_t*) map_file_ro(fd, font->file_size);
     close(fd);
-    if ((void*) font->font_map == MAP_FAILED) {
+    if ((void*) font->font_map == NULL) {
 	fprintf(stderr, "epx_font: file %s, map error : %s\r\n",
 		font->file_name, strerror(errno));
 	font->font_map = 0;
@@ -310,7 +308,7 @@ int epx_font_unmap(epx_font_t* font)
 {
     if (!epx_font_is_mapped(font))
 	return 0;
-    if (munmap(font->font_map, font->file_size) < 0) {
+    if (unmap_file_ro(font->font_map, font->file_size) < 0) {
 	fprintf(stderr, "epx_font: file %s, munmap error : %s\r\n",
 		font->file_name, strerror(errno));
 	return -1;
