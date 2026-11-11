@@ -21,6 +21,7 @@
  *
  */
 #include <string.h>
+#include <stddef.h>
 
 #include "../include/epx_dict.h"
 
@@ -68,7 +69,7 @@ static int edata_cmp(const epx_dict_data_t* a, const epx_dict_data_t* b)
     }
 }
 
-static void edata_offset(epx_dict_data_t* a, long offset)
+static void edata_offset(epx_dict_data_t* a, ptrdiff_t offset)
 {
     int i;
 
@@ -325,7 +326,7 @@ int epx_dict_init_copy(epx_dict_t* src, epx_dict_t* dst)
 
     for (i = 0; i < src->used; i++) {
 	epx_dict_entry_t* ent;
-	long offset;
+	ptrdiff_t offset;
 
 	sz = sizeof(epx_dict_entry_t)+src->entry[i]->mem_size;
 	ent = (epx_dict_entry_t*)malloc(sz);

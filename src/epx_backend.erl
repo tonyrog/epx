@@ -308,6 +308,11 @@ assumed_backend() ->
 				    end
 			    end
 		    end;
+		{win32,_} ->
+		    case is_backend("win32") of
+			true -> "win32";
+			false -> "none"
+		    end;
 		{unix,_} -> 
 		    case is_backend("x11") of
 			true -> "x11";

@@ -35,6 +35,11 @@
 
 #define NIF_ERLANG   // use nif logging with %T
 #include "erl_nif.h"
+
+// erl_nif.h from the OTP of another platform (e.g. Linux headers in a
+// mingw build) gives terms of the wrong size and crashes on every call
+_Static_assert(sizeof(ERL_NIF_TERM) == sizeof(void*),
+	       "ERL_NIF_TERM size: use the erl_nif.h of the target OTP");
 #include "../include/epx.h"
 
 // #define NIF_TRACE
@@ -1607,7 +1612,7 @@ static ERL_NIF_TERM make_object(ErlNifEnv* env, epx_object_t* epx_obj)
 {
     return enif_make_tuple3(env,
 			    *object_type[epx_obj->type],
-			    enif_make_ulong(env, (uintptr_t)epx_obj->res),
+			    enif_make_uint64(env, (uintptr_t)epx_obj->res),
 			    enif_make_resource(env, epx_obj->res));
 }
 
@@ -1618,7 +1623,7 @@ static ERL_NIF_TERM make_window(ErlNifEnv* env, epx_window_t* window)
     else
 	return enif_make_tuple3(env,
 				ATOM(epx_window),
-				enif_make_ulong(env,
+				enif_make_uint64(env,
 						(uintptr_t) window->res),
 				enif_make_resource(env, window->res));
 }
@@ -1630,7 +1635,7 @@ static ERL_NIF_TERM make_pixmap(ErlNifEnv* env, epx_pixmap_t* pixmap)
     else
 	return enif_make_tuple3(env,
 				ATOM(epx_pixmap),
-				enif_make_ulong(env,
+				enif_make_uint64(env,
 						(uintptr_t) pixmap->res),
 				enif_make_resource(env, pixmap->res));
 }
@@ -1643,7 +1648,7 @@ static int get_object(ErlNifEnv* env, const ERL_NIF_TERM arg,
     const ERL_NIF_TERM* elem;
     epx_nif_object_t* obj;
     int arity;
-    unsigned long handle;
+    ErlNifUInt64 handle;
 
     if (!enif_get_tuple(env, arg, &arity, &elem))
 	return 0;
@@ -1651,7 +1656,7 @@ static int get_object(ErlNifEnv* env, const ERL_NIF_TERM arg,
 	return 0;
     if (!enif_is_atom(env, elem[0]))
 	return 0;	
-    if (!enif_get_ulong(env, elem[1], &handle))
+    if (!enif_get_uint64(env, elem[1], &handle))
 	return 0;
     if (!enif_get_resource(env, elem[2], res, (void**)&obj))
 	return 0;
@@ -1727,7 +1732,7 @@ static int get_res(ErlNifEnv* env, const ERL_NIF_TERM arg,
 {
     const ERL_NIF_TERM* elem;
     int arity;
-    unsigned long handle;
+    ErlNifUInt64 handle;
     void* obj;
 
     if (!enif_get_tuple(env, arg, &arity, &elem))
@@ -1736,7 +1741,7 @@ static int get_res(ErlNifEnv* env, const ERL_NIF_TERM arg,
 	return 0;
     if (elem[0] != type)
 	return 0;
-    if (!enif_get_ulong(env, elem[1], &handle))
+    if (!enif_get_uint64(env, elem[1], &handle))
 	return 0;
     if (!enif_get_resource(env, elem[2], res, &obj))
 	return 0;

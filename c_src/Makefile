@@ -6,8 +6,19 @@ MACHINE := $(shell uname -m)
 RELEASE := $(shell uname -r)
 ERL=$(shell readlink -f `which erl`)
 ERL_TOP=$(ERL:%/bin/erl=%)
+ERL_INCLUDE=$(ERL_TOP)/usr/include
+empty :=
+space := $(empty) $(empty)
 
 ifeq ($(TARGET), win32)
+	# The NIF must be compiled with the Windows OTP headers: on Win64
+	# long is 32 bits (erl_int_sizes_config.h), with the Linux headers
+	# ERL_NIF_TERM becomes 32 bits and every NIF call crashes.
+	WIN32_ERL_TOP ?= $(HOME)/.wine/drive_c/Program Files/Erlang OTP
+	ERL_INCLUDE = $(WIN32_ERL_TOP)/usr/include
+ifeq ($(wildcard $(subst $(space),\$(space),$(ERL_INCLUDE))/erl_int_sizes_config.h),)
+  $(error Windows OTP headers not found in "$(ERL_INCLUDE)", set WIN32_ERL_TOP)
+endif
 	OSNAME = MINGW64_NT
 	CC = x86_64-w64-mingw32-gcc
 	RANLIB = x86_64-w64-mingw32-ranlib
@@ -40,22 +51,38 @@ SSE4      = No
 AVX2      = No
 NEON      = No
 
-OBJDIR=../obj
+# Objects and the library are built per platform, obj/linux-x86_64,
+# obj/win32 ..., so builds for several platforms can live side by side.
+# The native build also installs epx.a and epx-config in priv/ (used by
+# epx-config users), a cross build (TARGET=...) only the NIF.
+ifeq ($(TARGET),)
+PLATFORM := $(shell uname -s | tr A-Z a-z)-$(MACHINE)
+NATIVE = Yes
+else
+PLATFORM := $(TARGET)
+NATIVE = No
+endif
+OBJDIR=../obj/$(PLATFORM)
+ifeq ($(NATIVE),Yes)
+CFG_EPX_LIB=$(EPX_DIR)/priv/epx.a
+else
+CFG_EPX_LIB=$(EPX_DIR)/obj/$(PLATFORM)/epx.a
+endif
 LIBDIR=../priv
 
 ifeq ($(TYPE), debug)
-CFG_LIB=$(EPX_DIR)/priv/epx.a -lm 
+CFG_LIB=$(CFG_EPX_LIB) -lm 
 DFLAGS += -DDEBUG -D_THREAD_SAFE -D_REENTRANT -DDLOG_DEFAULT=DLOG_DEBUG
 CFLAGS += -g -Wall -Wextra -Wswitch-default -Wswitch-enum -fno-common 
 endif
 
 ifeq ($(TYPE), release)
-CFG_LIB=$(EPX_DIR)/priv/epx.a -lm 
+CFG_LIB=$(CFG_EPX_LIB) -lm 
 DFLAGS += -D_THREAD_SAFE -D_REENTRANT
 CFLAGS += -O3 -Wall -Wextra -Wswitch-default -Wswitch-enum -fno-common
 endif
 
-nif_target:	CFLAGS += -I$(ERL_TOP)/usr/include
+nif_target:	CFLAGS += -I"$(ERL_INCLUDE)"
 
 CFG_CFLAGS=-I$(EPX_DIR)/include
 
@@ -307,7 +334,7 @@ LIB_OBJS = \
 	epx_simd.o \
 	epx.o
 
-EPX_LIB = $(LIBDIR)/epx.a
+EPX_LIB = $(OBJDIR)/epx.a
 ifeq ($(WIN32),Yes)
 EPX_NIF = $(LIBDIR)/epx_nif.dll
 else
@@ -345,17 +372,29 @@ release:
 	$(MAKE) lib_target TYPE=release
 	$(MAKE) epx-config TYPE=release
 
-lib_target: $(EPX_LIB)
+lib_target: $(EPX_LIB) install_lib
 
-nif_target: $(EPX_LIB) $(EPX_NIF)
+nif_target: $(EPX_LIB) $(EPX_NIF) install_lib
+
+install_lib: $(EPX_LIB)
+ifeq ($(NATIVE),Yes)
+	cp $(EPX_LIB) $(LIBDIR)/epx.a
+endif
 
 epx-config: $(OBJDIR)/epx-config
 	chmod +x $(OBJDIR)/epx-config
+ifeq ($(NATIVE),Yes)
 	cp $(OBJDIR)/epx-config $(LIBDIR)/epx-config
+endif
 
+# clean the current platform (make clean TARGET=win32 for win32)
 clean_target:
-	-rm -f $(EPX_LIB) $(OBJDIR)/*.o $(EPX_NIF)
+	-rm -f $(EPX_LIB) $(OBJDIR)/*.o $(OBJDIR)/*.d $(EPX_NIF)
+	-rm -f $(OBJDIR)/epx-config
 	-rm -f $(OBJDIR)/xdg-shell-client-protocol.h $(OBJDIR)/xdg-shell-protocol.c
+
+$(OBJDIR):
+	mkdir -p $@
 
 $(EPX_LIB): $(EPX_LIB_OBJS) $(EPX_SIMD_OBJS) $(EPX_BE_OBJS)
 	rm -f $@
@@ -367,23 +406,23 @@ endif
 $(EPX_NIF): $(EPX_LIB) $(OBJDIR)/epx_nif.o
 	$(LD_SHARED) -o $@ $(OBJDIR)/epx_nif.o $(DLL_LIBS)  $(EPX_LIB) $(LD_FLAGS) $(ARCH_FLAGS) $(BE_LD_FLAGS)
 
-$(OBJDIR)/epx_nif.o: epx_nif.c
-	$(CC) -c -o $@ -MMD -MF .epx_nif.d $(DFLAGS) $(CFLAGS) $(ARCH_FLAGS) epx_nif.c
+$(OBJDIR)/epx_nif.o: epx_nif.c | $(OBJDIR)
+	$(CC) -c -o $@ -MMD -MF $(OBJDIR)/epx_nif.d $(DFLAGS) $(CFLAGS) $(ARCH_FLAGS) epx_nif.c
 
-$(OBJDIR)/epx-config: epx-config.src ../vsn.mk
+$(OBJDIR)/epx-config: epx-config.src ../vsn.mk | $(OBJDIR)
 	sed -e 's;%EPX_VSN%;$(EPX_VSN);' -e 's;%CFLAGS%;$(CFG_CFLAGS);' -e 's;%LDFLAGS%;$(CFG_LDFLAGS);' $< > $@
 
 # we should probably generate dependcies dependent on (at least) debug flags!
-$(OBJDIR)/%.o:	%.c
-	$(CC) -c -o $@ -MMD -MF .$<.d $(CFLAGS) $(ARCH_FLAGS) $(DFLAGS) $<
+$(OBJDIR)/%.o:	%.c | $(OBJDIR)
+	$(CC) -c -o $@ -MMD -MF $(OBJDIR)/$*.d $(CFLAGS) $(ARCH_FLAGS) $(DFLAGS) $<
 
 #
 # Wayland xdg-shell protocol code generated from xdg-shell.xml
 #
-$(OBJDIR)/xdg-shell-client-protocol.h: xdg-shell.xml
+$(OBJDIR)/xdg-shell-client-protocol.h: xdg-shell.xml | $(OBJDIR)
 	$(WAYLAND_SCANNER) client-header $< $@
 
-$(OBJDIR)/xdg-shell-protocol.c: xdg-shell.xml
+$(OBJDIR)/xdg-shell-protocol.c: xdg-shell.xml | $(OBJDIR)
 	$(WAYLAND_SCANNER) private-code $< $@
 
 $(OBJDIR)/xdg-shell-protocol.o: $(OBJDIR)/xdg-shell-protocol.c
@@ -391,4 +430,4 @@ $(OBJDIR)/xdg-shell-protocol.o: $(OBJDIR)/xdg-shell-protocol.c
 
 $(OBJDIR)/epx_backend_wl.o: $(OBJDIR)/xdg-shell-client-protocol.h
 
--include .*.d
+-include $(OBJDIR)/*.d

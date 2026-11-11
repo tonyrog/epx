@@ -24,6 +24,28 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#ifndef _WIN32
+#include <sys/types.h>  // BYTE_ORDER (glibc, BSD, macOS)
+#endif
+
+// BYTE_ORDER is not defined on every platform (mingw/Windows has no
+// endian.h), and with all three undefined "BYTE_ORDER == BIG_ENDIAN"
+// is 0 == 0, true. Take it from the compiler when missing.
+#if !defined(BYTE_ORDER) || !defined(BIG_ENDIAN) || !defined(LITTLE_ENDIAN)
+#  undef BYTE_ORDER
+#  undef BIG_ENDIAN
+#  undef LITTLE_ENDIAN
+#  define LITTLE_ENDIAN 1234
+#  define BIG_ENDIAN    4321
+#  if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+#    define BYTE_ORDER BIG_ENDIAN
+#  elif defined(__BYTE_ORDER__) || defined(_WIN32)
+#    define BYTE_ORDER LITTLE_ENDIAN
+#  else
+#    error "can not determine BYTE_ORDER"
+#  endif
+#endif
+
 /* R=red, G=green, B=blue, A=alpha, X=ignore, L=luminance (gray level) */
 
 /*
